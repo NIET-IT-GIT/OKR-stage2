@@ -1379,7 +1379,7 @@ function appReducer(state, action) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [msalErr, setMsalErr] = useState("");
-  const { instance, inProgress } = useMsal();
+  const { instance, accounts, inProgress } = useMsal();
   const [state, rawDispatch] = useState({
     users: INIT_USERS,
     depts: INIT_DEPTS,
@@ -1409,7 +1409,11 @@ export default function App() {
   // Event-callback routing: fires immediately when MsalProvider processes the redirect
   useEffect(() => {
     const id = instance.addEventCallback((event) => {
-      if (event.eventType === EventType.LOGIN_SUCCESS && event.payload?.account) {
+      // LOGIN_SUCCESS payload IS the AccountInfo object (not a wrapper around it)
+      if (event.eventType === EventType.LOGIN_SUCCESS && event.payload?.username) {
+        routeByEmail(event.payload.username);
+      } else if (event.eventType === EventType.ACQUIRE_TOKEN_SUCCESS && event.payload?.account?.username) {
+        // ACQUIRE_TOKEN_SUCCESS payload is the full AuthenticationResult (.account exists)
         routeByEmail(event.payload.account.username);
       } else if (event.eventType === EventType.HANDLE_REDIRECT_END) {
         const all = instance.getAllAccounts();
@@ -1418,6 +1422,12 @@ export default function App() {
     });
     return () => { if (id) instance.removeEventCallback(id); };
   }, [instance, routeByEmail]);
+
+  // Reactive accounts watch: fires whenever MsalProvider's accounts state updates
+  useEffect(() => {
+    if (user || inProgress !== InteractionStatus.None || accounts.length === 0) return;
+    routeByEmail(accounts[0].username);
+  }, [accounts, inProgress, user]); // eslint-disable-line
 
   // Mount / inProgress-settled check: routes user if account already in cache
   useEffect(() => {
