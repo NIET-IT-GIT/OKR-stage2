@@ -2,9 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useMsal } from "@azure/msal-react";
 import { loginRequest } from "./authConfig";
 
-/* ─────────────────────────────────────────────────────────────
-   DESIGN TOKENS
-   ───────────────────────────────────────────────────────────── */
 const T = {
   bg: "#090b10", bgSoft: "#0e1118", surface: "#141720", surfaceHover: "#1a1e2b",
   raised: "#1c2030", border: "#222840", borderFocus: "#3d4870",
@@ -30,28 +27,27 @@ const APPROVAL = {
   rejected: { bg: T.badDim,  border: T.badBorder,  color: T.bad,  label: "Rejected"       },
 };
 
-/* ─────────────────────────────────────────────────────────────
-   MOCK DATA
-   ───────────────────────────────────────────────────────────── */
-const USERS = [
-  { id: "admin1", name: "Troy Yue",          email: "troy.yue@niet.edu.au",                        role: "admin",   av: "TY", title: "CEO" },
-  { id: "mgr1",   name: "Florence Fan",       email: "florence.fan@niet.edu.au",                    role: "manager", av: "FF", title: "Head of Admissions",  deptId: "admissions", teamIds: ["domestic","international"] },
-  { id: "mgr2",   name: "Olivia An",           email: "olivia.an@niet.edu.au",                       role: "manager", av: "OA", title: "Head of Marketing",   deptId: "marketing",  teamIds: ["digital"] },
-  { id: "mem1",   name: "Grace He",            email: "gracie.he@charltonbrown.edu.au",              role: "member",  av: "GH", title: "Admissions Officer",   teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem2",   name: "Mary Joy Caraig",     email: "mary.joy.caraig@charltonbrown.edu.au",        role: "member",  av: "MJ", title: "Admissions Officer",   teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem3",   name: "Tom Walker",          email: "tom@niet.edu.au",                             role: "member",  av: "TW", title: "Junior Officer",        teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem4",   name: "Amy Zhang",           email: "amy@niet.edu.au",                             role: "member",  av: "AZ", title: "Intl Officer",          teamId: "international", deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem5",   name: "Emma Wilson",         email: "emma@charltonbrown.edu.au",                   role: "member",  av: "EW", title: "Digital Specialist",    teamId: "digital",       deptId: "marketing",  mgrId: "mgr2" },
-  { id: "sam",    name: "Samuel Zhong",        email: "samuel.zhong@niet.edu.au",                    role: "admin",   av: "SZ", title: "IT Administrator" },
+/* ─── MOCK DATA ─── */
+const INIT_USERS = [
+  { id: "sysadmin", name: "System Admin",    email: "__admin__",                           role: "admin",   av: "SA", title: "System Administrator" },
+  { id: "admin1",   name: "Troy Yue",        email: "troy.yue@niet.edu.au",                role: "admin",   av: "TY", title: "CEO" },
+  { id: "mgr1",     name: "Florence Fan",    email: "florence.fan@niet.edu.au",            role: "manager", av: "FF", title: "Head of Admissions",  deptId: "admissions", teamIds: ["domestic","international"] },
+  { id: "mgr2",     name: "Olivia An",       email: "olivia.an@niet.edu.au",               role: "manager", av: "OA", title: "Head of Marketing",   deptId: "marketing",  teamIds: ["digital"] },
+  { id: "mem1",     name: "Grace He",        email: "gracie.he@charltonbrown.edu.au",      role: "member",  av: "GH", title: "Admissions Officer",  teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
+  { id: "mem2",     name: "Mary Joy Caraig", email: "mary.joy.caraig@charltonbrown.edu.au",role: "member",  av: "MJ", title: "Admissions Officer",  teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
+  { id: "mem3",     name: "Tom Walker",      email: "tom@niet.edu.au",                     role: "member",  av: "TW", title: "Junior Officer",       teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
+  { id: "mem4",     name: "Amy Zhang",       email: "amy@niet.edu.au",                     role: "member",  av: "AZ", title: "Intl Officer",         teamId: "international", deptId: "admissions", mgrId: "mgr1" },
+  { id: "mem5",     name: "Emma Wilson",     email: "emma@charltonbrown.edu.au",           role: "member",  av: "EW", title: "Digital Specialist",   teamId: "digital",       deptId: "marketing",  mgrId: "mgr2" },
+  { id: "sam",      name: "Samuel Zhong",    email: "samuel.zhong@niet.edu.au",            role: "admin",   av: "SZ", title: "IT Administrator" },
 ];
 
 const INIT_DEPTS = [
   { id: "admissions", name: "Admissions", head: "Florence Fan", college: "NIET",
     obj: "Drive enrolment targets for FY26 Q1",
     krs: [
-      { id: "AKR1", label: "New domestic enrolments",    target: 120, actual: 95 },
-      { id: "AKR2", label: "New international enrolments", target: 80, actual: 62 },
-      { id: "AKR3", label: "Conversion rate (%)",          target: 45, actual: 38 },
+      { id: "AKR1", label: "New domestic enrolments",     target: 120, actual: 95 },
+      { id: "AKR2", label: "New international enrolments", target: 80,  actual: 62 },
+      { id: "AKR3", label: "Conversion rate (%)",          target: 45,  actual: 38 },
     ],
     teams: [
       { id: "domestic", name: "Domestic Team", lead: "Florence Fan", obj: "Hit domestic enrolment KPIs",
@@ -64,8 +60,8 @@ const INIT_DEPTS = [
   { id: "marketing", name: "Marketing", head: "Olivia An", college: "NIET",
     obj: "Build brand awareness & lead generation",
     krs: [
-      { id: "MKR1", label: "Qualified leads",          target: 500, actual: 420 },
-      { id: "MKR2", label: "Social engagement (%)",    target: 5,   actual: 4.2 },
+      { id: "MKR1", label: "Qualified leads",       target: 500, actual: 420 },
+      { id: "MKR2", label: "Social engagement (%)", target: 5,   actual: 4.2 },
     ],
     teams: [
       { id: "digital", name: "Digital Marketing", lead: "Nick Egan", obj: "Drive online leads",
@@ -83,20 +79,20 @@ const INIT_DEPTS = [
 ];
 
 const INIT_MEMBER_DATA = {
-  mem1: { krs: [{ id: "GH1", label: "Monthly enrolments",       target: 8,   actual: 7  }, { id: "GH2", label: "Callback rate (%)",        target: 100, actual: 95 }, { id: "GH3", label: "Lead response <2h (%)", target: 95, actual: 88 }] },
-  mem2: { krs: [{ id: "MJ1", label: "Monthly enrolments",       target: 8,   actual: 9  }, { id: "MJ2", label: "Callback rate (%)",        target: 100, actual: 100}, { id: "MJ3", label: "Lead response <2h (%)", target: 95, actual: 97 }] },
-  mem3: { krs: [{ id: "TW1", label: "Monthly enrolments",       target: 6,   actual: 3  }, { id: "TW2", label: "Callback rate (%)",        target: 100, actual: 72 }, { id: "TW3", label: "Lead response <2h (%)", target: 95, actual: 65 }] },
-  mem4: { krs: [{ id: "AZ1", label: "Monthly intl enrolments",  target: 5,   actual: 4  }, { id: "AZ2", label: "Visa success rate (%)",    target: 90,  actual: 88 }] },
-  mem5: { krs: [{ id: "EW1", label: "Campaign leads/mo",        target: 50,  actual: 48 }, { id: "EW2", label: "Ad spend ROI (%)",         target: 300, actual: 280}] },
+  mem1: { krs: [{ id: "GH1", label: "Monthly enrolments",      target: 8,   actual: 7   }, { id: "GH2", label: "Callback rate (%)",     target: 100, actual: 95  }, { id: "GH3", label: "Lead response <2h (%)", target: 95, actual: 88 }] },
+  mem2: { krs: [{ id: "MJ1", label: "Monthly enrolments",      target: 8,   actual: 9   }, { id: "MJ2", label: "Callback rate (%)",     target: 100, actual: 100 }, { id: "MJ3", label: "Lead response <2h (%)", target: 95, actual: 97 }] },
+  mem3: { krs: [{ id: "TW1", label: "Monthly enrolments",      target: 6,   actual: 3   }, { id: "TW2", label: "Callback rate (%)",     target: 100, actual: 72  }, { id: "TW3", label: "Lead response <2h (%)", target: 95, actual: 65 }] },
+  mem4: { krs: [{ id: "AZ1", label: "Monthly intl enrolments", target: 5,   actual: 4   }, { id: "AZ2", label: "Visa success rate (%)", target: 90,  actual: 88  }] },
+  mem5: { krs: [{ id: "EW1", label: "Campaign leads/mo",       target: 50,  actual: 48  }, { id: "EW2", label: "Ad spend ROI (%)",      target: 300, actual: 280 }] },
 };
 
 const INIT_WEEKLY_SUBS = [
-  { id: "ws1", memberId: "mem1", week: "Wk 15 · Apr 13-19", items: "Closed 2 enrolments, 18 follow-up calls, updated CRM for 12 leads, attended open day",   date: "2026-04-14", approval: "approved", mgrNote: "Good work, keep push on callback rate." },
-  { id: "ws2", memberId: "mem1", week: "Wk 14 · Apr 6-12",  items: "Closed 1 enrolment, 15 follow-ups, prepared open day materials",                          date: "2026-04-07", approval: "approved", mgrNote: "" },
-  { id: "ws3", memberId: "mem2", week: "Wk 15 · Apr 13-19", items: "Closed 3 enrolments, launched referral campaign, 22 follow-ups, trained new agent partner",date: "2026-04-14", approval: "approved", mgrNote: "Excellent — top performer this week." },
-  { id: "ws4", memberId: "mem3", week: "Wk 15 · Apr 13-19", items: "8 follow-up calls, attended product training, updated 5 lead records",                    date: "2026-04-15", approval: "pending",  mgrNote: "" },
-  { id: "ws5", memberId: "mem4", week: "Wk 15 · Apr 13-19", items: "Processed 3 visa applications, met with 2 agents, follow-up with 10 prospective students", date: "2026-04-14", approval: "pending",  mgrNote: "" },
-  { id: "ws6", memberId: "mem5", week: "Wk 15 · Apr 13-19", items: "Launched 2 Google Ads campaigns, published 3 blog posts, social content for Instagram",    date: "2026-04-14", approval: "pending",  mgrNote: "" },
+  { id: "ws1", memberId: "mem1", week: "Wk 15 · Apr 13-19", items: "Closed 2 enrolments, 18 follow-up calls, updated CRM for 12 leads, attended open day",    date: "2026-04-14", approval: "approved", mgrNote: "Good work, keep push on callback rate." },
+  { id: "ws2", memberId: "mem1", week: "Wk 14 · Apr 6-12",  items: "Closed 1 enrolment, 15 follow-ups, prepared open day materials",                           date: "2026-04-07", approval: "approved", mgrNote: "" },
+  { id: "ws3", memberId: "mem2", week: "Wk 15 · Apr 13-19", items: "Closed 3 enrolments, launched referral campaign, 22 follow-ups, trained new agent partner", date: "2026-04-14", approval: "approved", mgrNote: "Excellent — top performer this week." },
+  { id: "ws4", memberId: "mem3", week: "Wk 15 · Apr 13-19", items: "8 follow-up calls, attended product training, updated 5 lead records",                     date: "2026-04-15", approval: "pending",  mgrNote: "" },
+  { id: "ws5", memberId: "mem4", week: "Wk 15 · Apr 13-19", items: "Processed 3 visa applications, met with 2 agents, follow-up with 10 prospective students",  date: "2026-04-14", approval: "pending",  mgrNote: "" },
+  { id: "ws6", memberId: "mem5", week: "Wk 15 · Apr 13-19", items: "Launched 2 Google Ads campaigns, published 3 blog posts, social content for Instagram",     date: "2026-04-14", approval: "pending",  mgrNote: "" },
 ];
 
 const INIT_MGR_SPRINTS = [
@@ -123,9 +119,7 @@ const INIT_MONTHLY_REPORTS = [
   }},
 ];
 
-/* ─────────────────────────────────────────────────────────────
-   HELPERS
-   ───────────────────────────────────────────────────────────── */
+/* ─── HELPERS ─── */
 function calcRate(krs) {
   if (!krs?.length) return 0;
   return krs.reduce((sum, kr) => sum + Math.min((kr.actual / kr.target) * 100, 100), 0) / krs.length;
@@ -142,10 +136,11 @@ function currentWeekLabel() {
 function currentMonth() {
   return new Date().toLocaleDateString("en-AU", { month: "long", year: "numeric" });
 }
+function makeAv(name) {
+  return (name || "?").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+}
 
-/* ─────────────────────────────────────────────────────────────
-   UI PRIMITIVES
-   ───────────────────────────────────────────────────────────── */
+/* ─── UI PRIMITIVES ─── */
 function Tag({ type = "green", label, small }) {
   const s = STATUS_THEME[type] || APPROVAL[type] || STATUS_THEME.green;
   return (
@@ -157,6 +152,19 @@ function Tag({ type = "green", label, small }) {
     }}>
       <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.color }} />
       {label || s.tag || s.label}
+    </span>
+  );
+}
+
+function RoleTag({ role }) {
+  const cfg = {
+    admin:   { color: T.brand,  bg: T.brandDim,  border: T.brandBorder, label: "Admin"   },
+    manager: { color: T.orange, bg: T.warnDim,   border: T.warnBorder,  label: "Manager" },
+    member:  { color: T.ok,     bg: T.okDim,     border: T.okBorder,    label: "Member"  },
+  }[role] || { color: T.textMuted, bg: T.raised, border: T.border, label: role };
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 5, padding: "2px 8px", fontSize: 9, fontWeight: 700, color: cfg.color, whiteSpace: "nowrap" }}>
+      {cfg.label}
     </span>
   );
 }
@@ -208,6 +216,21 @@ function Input({ value, onChange, placeholder, type, style: sx, ...props }) {
   );
 }
 
+function Select({ value, onChange, children, style: sx }) {
+  return (
+    <select value={value} onChange={onChange}
+      style={{
+        background: T.bgSoft, border: `1px solid ${T.border}`, borderRadius: 7,
+        padding: "10px 14px", color: value ? T.text : T.textMuted,
+        fontSize: 12, fontFamily: F.body, outline: "none", cursor: "pointer",
+        boxSizing: "border-box", ...sx,
+      }}
+      onFocus={e => e.target.style.borderColor = T.brand}
+      onBlur={e => e.target.style.borderColor = T.border}
+    >{children}</select>
+  );
+}
+
 function TextArea({ value, onChange, placeholder, rows = 4 }) {
   return (
     <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
@@ -255,21 +278,12 @@ function EmptyState({ text }) {
 
 function CountBadge({ count, color }) {
   if (!count) return null;
-  return (
-    <span style={{
-      background: color || T.warn, color: "#fff", borderRadius: 10,
-      padding: "1px 7px", fontSize: 9, fontWeight: 800, marginLeft: 6,
-    }}>{count}</span>
-  );
+  return <span style={{ background: color || T.warn, color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 9, fontWeight: 800, marginLeft: 6 }}>{count}</span>;
 }
 
-/* ── Sidebar ── */
 function Side({ items, active, onSelect, user, onLogout, pendingCounts }) {
   return (
-    <div style={{
-      width: 250, background: T.bgSoft, borderRight: `1px solid ${T.border}`,
-      display: "flex", flexDirection: "column", height: "100vh", flexShrink: 0,
-    }}>
+    <div style={{ width: 250, background: T.bgSoft, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", height: "100vh", flexShrink: 0 }}>
       <div style={{ padding: "20px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg, ${T.brand}, #7c5bf5)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: "#fff" }}>O</div>
@@ -329,51 +343,56 @@ function Pane({ children }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   LOGIN PAGE  (Microsoft OAuth only — no demo shortcuts)
+   LOGIN PAGE
    ───────────────────────────────────────────────────────────── */
-function LoginPage({ onLogin }) {
+function LoginPage({ onLogin, users }) {
   const { instance } = useMsal();
   const [show, setShow] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [msLoading, setMsLoading] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminUser, setAdminUser] = useState("");
+  const [adminPass, setAdminPass] = useState("");
   const [err, setErr] = useState("");
 
   useEffect(() => { setTimeout(() => setShow(true), 80); }, []);
 
   const handleMicrosoftLogin = async () => {
     setErr("");
-    setLoading(true);
+    setMsLoading(true);
     try {
       const result = await instance.loginPopup(loginRequest);
       const email = result.account?.username?.toLowerCase() || "";
-      const matched = USERS.find(u => u.email.toLowerCase() === email);
+      const matched = users.find(u => u.email.toLowerCase() === email);
       if (matched) {
         onLogin(matched);
       } else {
         setErr(`No account found for ${email}. Contact your administrator.`);
       }
     } catch (e) {
-      if (e.errorCode !== "user_cancelled") {
-        setErr("Sign-in failed. Please try again.");
-      }
+      if (e.errorCode !== "user_cancelled") setErr("Sign-in failed. Please try again.");
     } finally {
-      setLoading(false);
+      setMsLoading(false);
+    }
+  };
+
+  const handleAdminLogin = () => {
+    setErr("");
+    if (adminUser === "admin" && adminPass === "Ntr1#qez66") {
+      const u = users.find(u => u.id === "sysadmin");
+      onLogin(u);
+    } else {
+      setErr("Invalid credentials.");
     }
   };
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", fontFamily: F.body, position: "relative", overflow: "hidden" }}>
-      {/* Background decoration */}
       <div style={{ position: "absolute", inset: 0, opacity: 0.03, backgroundImage: `radial-gradient(${T.brand} 1px, transparent 1px)`, backgroundSize: "30px 30px" }} />
       <div style={{ position: "absolute", top: "-25%", right: "-8%", width: 650, height: 650, background: `radial-gradient(circle, ${T.brand}12, transparent 65%)`, borderRadius: "50%" }} />
       <div style={{ position: "absolute", bottom: "-20%", left: "-10%", width: 500, height: 500, background: `radial-gradient(circle, ${T.purple}15, transparent 65%)`, borderRadius: "50%" }} />
 
-      {/* Left — hero copy */}
-      <div style={{
-        flex: 1, display: "flex", flexDirection: "column", justifyContent: "center",
-        padding: "60px 72px", position: "relative", zIndex: 1,
-        opacity: show ? 1 : 0, transform: show ? "none" : "translateX(-20px)",
-        transition: "all 0.7s cubic-bezier(0.16,1,0.3,1)",
-      }}>
+      {/* Hero */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 72px", position: "relative", zIndex: 1, opacity: show ? 1 : 0, transform: show ? "none" : "translateX(-20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
           <div style={{ width: 46, height: 46, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #7c5bf5)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: "#fff" }}>O</div>
           <div>
@@ -397,55 +416,78 @@ function LoginPage({ onLogin }) {
         </div>
       </div>
 
-      {/* Right — sign-in card */}
-      <div style={{
-        width: 400, display: "flex", flexDirection: "column", justifyContent: "center",
-        padding: "60px 44px", position: "relative", zIndex: 1,
-        opacity: show ? 1 : 0, transform: show ? "none" : "translateY(20px)",
-        transition: "all 0.7s cubic-bezier(0.16,1,0.3,1) 0.15s",
-      }}>
+      {/* Sign-in card */}
+      <div style={{ width: 420, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 44px", position: "relative", zIndex: 1, opacity: show ? 1 : 0, transform: show ? "none" : "translateY(20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1) 0.15s" }}>
         <Card style={{ padding: "36px 30px" }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 800, color: T.text }}>Sign in</h2>
-          <p style={{ margin: "0 0 28px", fontSize: 12, color: T.textMuted }}>
-            Use your NIET Microsoft account to access your portal.
-          </p>
+          <p style={{ margin: "0 0 24px", fontSize: 12, color: T.textMuted }}>Use your NIET Microsoft account to access your portal.</p>
 
           {err && (
-            <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 12, color: T.bad, marginBottom: 18, lineHeight: 1.5 }}>
-              {err}
-            </div>
+            <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 12, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{err}</div>
           )}
 
-          {/* Microsoft Sign-In Button */}
-          <button
-            onClick={handleMicrosoftLogin}
-            disabled={loading}
-            style={{
-              width: "100%", padding: "13px 16px",
-              background: loading ? T.raised : "#fff",
-              border: `1px solid ${T.border}`,
-              borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
-              fontSize: 13, fontWeight: 700, color: "#1a1a1a",
-              fontFamily: F.body, transition: "all 0.15s",
-              opacity: loading ? 0.6 : 1,
-            }}
-            onMouseEnter={e => { if (!loading) e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.18)"; }}
+          {/* Microsoft button */}
+          <button onClick={handleMicrosoftLogin} disabled={msLoading} style={{
+            width: "100%", padding: "13px 16px", background: msLoading ? T.raised : "#fff",
+            border: `1px solid ${T.border}`, borderRadius: 8, cursor: msLoading ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
+            fontSize: 13, fontWeight: 700, color: "#1a1a1a", fontFamily: F.body, transition: "all 0.15s", opacity: msLoading ? 0.6 : 1,
+          }}
+            onMouseEnter={e => { if (!msLoading) e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.18)"; }}
             onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; }}
           >
-            {/* Microsoft logo SVG */}
             <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
               <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
               <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
               <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
               <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
             </svg>
-            {loading ? "Signing in…" : "Sign in with Microsoft"}
+            {msLoading ? "Signing in…" : "Sign in with Microsoft"}
           </button>
 
-          <p style={{ margin: "20px 0 0", fontSize: 10, color: T.textDim, textAlign: "center", lineHeight: 1.6 }}>
-            By signing in you agree to NIET Group's acceptable use policy.<br />
-            Your role is determined by your registered account.
+          {/* Divider */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0" }}>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+            <span style={{ fontSize: 10, color: T.textDim, fontWeight: 600, letterSpacing: "0.05em" }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+          </div>
+
+          {/* Admin credentials toggle */}
+          <button onClick={() => { setShowAdminLogin(p => !p); setErr(""); }} style={{
+            width: "100%", padding: "10px 14px", background: "transparent",
+            border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            fontSize: 12, fontWeight: 600, color: T.textSoft, fontFamily: F.body, transition: "all 0.12s",
+          }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = T.brandBorder}
+            onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
+          >
+            <span>Sign in with admin credentials</span>
+            <span style={{ fontSize: 10, color: T.textDim, transition: "transform 0.2s", display: "inline-block", transform: showAdminLogin ? "rotate(180deg)" : "none" }}>▼</span>
+          </button>
+
+          {showAdminLogin && (
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+              <Input
+                value={adminUser} onChange={e => { setAdminUser(e.target.value); setErr(""); }}
+                placeholder="Username" style={{ width: "100%" }}
+                onKeyDown={e => e.key === "Enter" && handleAdminLogin()}
+              />
+              <Input
+                type="password" value={adminPass} onChange={e => { setAdminPass(e.target.value); setErr(""); }}
+                placeholder="Password" style={{ width: "100%" }}
+                onKeyDown={e => e.key === "Enter" && handleAdminLogin()}
+              />
+              <button onClick={handleAdminLogin} style={{
+                width: "100%", padding: "11px", background: `linear-gradient(135deg, ${T.brand}, #5e6bf7)`,
+                border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 800,
+                cursor: "pointer", fontFamily: F.body,
+              }}>Sign In</button>
+            </div>
+          )}
+
+          <p style={{ margin: "18px 0 0", fontSize: 10, color: T.textDim, textAlign: "center", lineHeight: 1.6 }}>
+            Your role and portal access are determined by your registered account.
           </p>
         </Card>
       </div>
@@ -454,7 +496,215 @@ function LoginPage({ onLogin }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   1. ADMIN PORTAL
+   USER MANAGEMENT PAGE
+   ───────────────────────────────────────────────────────────── */
+const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [] };
+
+function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState(BLANK_FORM);
+  const [formErr, setFormErr] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState(BLANK_FORM);
+
+  const teamsForDept = (deptId) => depts.find(d => d.id === deptId)?.teams || [];
+
+  function handleAdd() {
+    if (!form.name.trim() || !form.email.trim()) { setFormErr("Name and email are required."); return; }
+    if (users.some(u => u.email.toLowerCase() === form.email.trim().toLowerCase())) { setFormErr("A user with this email already exists."); return; }
+    const id = `usr_${Date.now().toString(36)}`;
+    const newUser = {
+      id, name: form.name.trim(), email: form.email.trim().toLowerCase(),
+      role: form.role, av: makeAv(form.name), title: form.title.trim() || form.role,
+      ...(form.deptId && { deptId: form.deptId }),
+      ...(form.role === "member" && form.teamId && { teamId: form.teamId }),
+      ...(form.role === "manager" && form.teamIds?.length && { teamIds: form.teamIds }),
+    };
+    dispatch({ type: "ADD_USER", user: newUser });
+    setForm(BLANK_FORM); setFormErr(""); setShowAdd(false);
+  }
+
+  function startEdit(u) {
+    setEditId(u.id);
+    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [] });
+  }
+
+  function saveEdit() {
+    dispatch({ type: "UPDATE_USER", userId: editId, updates: {
+      name: editForm.name.trim(), email: editForm.email.trim().toLowerCase(),
+      role: editForm.role, av: makeAv(editForm.name), title: editForm.title.trim() || editForm.role,
+      deptId: editForm.deptId || undefined,
+      teamId: editForm.role === "member" ? (editForm.teamId || undefined) : undefined,
+      teamIds: editForm.role === "manager" ? (editForm.teamIds?.length ? editForm.teamIds : undefined) : undefined,
+    }});
+    setEditId(null);
+  }
+
+  const roleColor = { admin: T.brand, manager: T.orange, member: T.ok };
+
+  const roleCounts = users.reduce((a, u) => { a[u.role] = (a[u.role] || 0) + 1; return a; }, {});
+
+  return (<>
+    <Header title="User Management" sub="Add users, set roles, and control portal access"
+      right={<Btn primary onClick={() => { setShowAdd(p => !p); setFormErr(""); setForm(BLANK_FORM); }}>{showAdd ? "Cancel" : "+ Add User"}</Btn>} />
+    <Pane>
+      {/* Stats */}
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <Metric label="Total Users"  value={users.length} />
+        <Metric label="Admins"       value={roleCounts.admin   || 0} />
+        <Metric label="Managers"     value={roleCounts.manager || 0} />
+        <Metric label="Members"      value={roleCounts.member  || 0} />
+      </div>
+
+      {/* Add user form */}
+      {showAdd && (
+        <Card style={{ padding: 22 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16, color: T.text }}>New User</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Full Name *</div>
+              <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Jane Smith" style={{ width: "100%" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Email Address *</div>
+              <Input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="jane@niet.edu.au" style={{ width: "100%" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Role *</div>
+              <Select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value, deptId: "", teamId: "", teamIds: [] }))} style={{ width: "100%" }}>
+                <option value="admin">Admin</option>
+                <option value="manager">Manager</option>
+                <option value="member">Member</option>
+              </Select>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Job Title</div>
+              <Input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="e.g. Admissions Officer" style={{ width: "100%" }} />
+            </div>
+            {form.role !== "admin" && (
+              <div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Department</div>
+                <Select value={form.deptId} onChange={e => setForm(p => ({ ...p, deptId: e.target.value, teamId: "", teamIds: [] }))} style={{ width: "100%" }}>
+                  <option value="">— Select department —</option>
+                  {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </Select>
+              </div>
+            )}
+            {form.role === "member" && form.deptId && (
+              <div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Team</div>
+                <Select value={form.teamId} onChange={e => setForm(p => ({ ...p, teamId: e.target.value }))} style={{ width: "100%" }}>
+                  <option value="">— Select team —</option>
+                  {teamsForDept(form.deptId).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </Select>
+              </div>
+            )}
+            {form.role === "manager" && form.deptId && teamsForDept(form.deptId).length > 0 && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Manages Teams</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {teamsForDept(form.deptId).map(t => (
+                    <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textSoft, cursor: "pointer", padding: "6px 10px", background: form.teamIds.includes(t.id) ? T.brandDim : T.raised, border: `1px solid ${form.teamIds.includes(t.id) ? T.brandBorder : T.border}`, borderRadius: 6 }}>
+                      <input type="checkbox" checked={form.teamIds.includes(t.id)} onChange={e => setForm(p => ({ ...p, teamIds: e.target.checked ? [...p.teamIds, t.id] : p.teamIds.filter(id => id !== t.id) }))} style={{ accentColor: T.brand }} />
+                      {t.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          {formErr && <div style={{ padding: "8px 12px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, fontSize: 11, color: T.bad, marginBottom: 12 }}>{formErr}</div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Btn small onClick={() => { setShowAdd(false); setForm(BLANK_FORM); setFormErr(""); }}>Cancel</Btn>
+            <Btn primary small onClick={handleAdd}>Create User</Btn>
+          </div>
+        </Card>
+      )}
+
+      {/* User table */}
+      <Card style={{ overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 120px 120px 90px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+          <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Actions</span>
+        </div>
+        {users.map((u, i) => {
+          const dept = depts.find(d => d.id === u.deptId);
+          const team = dept?.teams.find(t => t.id === u.teamId || u.teamIds?.includes(t.id));
+          const isSystem = u.id === "sysadmin";
+          const isSelf = u.id === currentUserId;
+
+          if (editId === u.id) {
+            const editTeams = teamsForDept(editForm.deptId);
+            return (
+              <div key={u.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "12px 18px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                  <Input value={editForm.name}   onChange={e => setEditForm(p => ({ ...p, name:  e.target.value }))} placeholder="Name"  style={{ fontSize: 11, padding: "7px 10px" }} />
+                  <Input value={editForm.email}  onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} placeholder="Email" style={{ fontSize: 11, padding: "7px 10px" }} />
+                  <Input value={editForm.title}  onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} placeholder="Title" style={{ fontSize: 11, padding: "7px 10px" }} />
+                  <Select value={editForm.role} onChange={e => setEditForm(p => ({ ...p, role: e.target.value, deptId: "", teamId: "", teamIds: [] }))} style={{ fontSize: 11, padding: "7px 10px" }}>
+                    <option value="admin">Admin</option>
+                    <option value="manager">Manager</option>
+                    <option value="member">Member</option>
+                  </Select>
+                  {editForm.role !== "admin" && (
+                    <Select value={editForm.deptId} onChange={e => setEditForm(p => ({ ...p, deptId: e.target.value, teamId: "", teamIds: [] }))} style={{ fontSize: 11, padding: "7px 10px" }}>
+                      <option value="">— Department —</option>
+                      {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </Select>
+                  )}
+                  {editForm.role === "member" && editForm.deptId && (
+                    <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value }))} style={{ fontSize: 11, padding: "7px 10px" }}>
+                      <option value="">— Team —</option>
+                      {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </Select>
+                  )}
+                </div>
+                {editForm.role === "manager" && editForm.deptId && editTeams.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                    {editTeams.map(t => (
+                      <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: T.textSoft, cursor: "pointer", padding: "5px 9px", background: editForm.teamIds.includes(t.id) ? T.brandDim : T.raised, border: `1px solid ${editForm.teamIds.includes(t.id) ? T.brandBorder : T.border}`, borderRadius: 5 }}>
+                        <input type="checkbox" checked={editForm.teamIds.includes(t.id)} onChange={e => setEditForm(p => ({ ...p, teamIds: e.target.checked ? [...p.teamIds, t.id] : p.teamIds.filter(id => id !== t.id) }))} style={{ accentColor: T.brand }} />
+                        {t.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn small onClick={() => setEditId(null)}>Cancel</Btn>
+                  <Btn primary small onClick={saveEdit}>Save</Btn>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 120px 120px 90px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
+              <Avatar letters={u.av} size={26} />
+              <div>
+                <div style={{ fontWeight: 600, color: T.text }}>{u.name}{isSelf && <span style={{ fontSize: 9, color: T.brand, marginLeft: 6 }}>you</span>}</div>
+                <div style={{ fontSize: 10, color: T.textMuted }}>{isSystem ? "System login only" : u.email}</div>
+              </div>
+              <span style={{ fontSize: 11, color: T.textSoft }}>{u.title}</span>
+              <RoleTag role={u.role} />
+              <span style={{ fontSize: 11, color: T.textMuted }}>{dept?.name || "—"}</span>
+              <span style={{ fontSize: 11, color: T.textMuted }}>{team?.name || (u.teamIds?.length ? `${u.teamIds.length} teams` : "—")}</span>
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                {!isSystem && (
+                  <button onClick={() => startEdit(u)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>Edit</button>
+                )}
+                {!isSystem && !isSelf && (
+                  <button onClick={() => dispatch({ type: "REMOVE_USER", userId: u.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </Card>
+    </Pane>
+  </>);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ADMIN PORTAL
    ───────────────────────────────────────────────────────────── */
 function AdminPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("overview");
@@ -463,7 +713,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [newKr, setNewKr] = useState({ label: "", target: "" });
   const [addTarget, setAddTarget] = useState(null);
 
-  const { depts, memberData, mgrSprints, monthlyReports } = state;
+  const { depts, memberData, mgrSprints, monthlyReports, users } = state;
   const navItems = [
     { id: "overview",    icon: "◎", label: "Company Overview"  },
     { id: "departments", icon: "⬛", label: "Departments"       },
@@ -471,13 +721,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     { id: "reports",     icon: "⊞", label: "Monthly Reports"   },
     { id: "sprints",     icon: "↻", label: "Manager Sprints"   },
     { id: "leaderboard", icon: "▲", label: "Leaderboard"       },
+    { id: "users",       icon: "⊹", label: "User Management"   },
   ];
 
   const deptRanks = depts.map(d => ({ ...d, rate: calcRate(d.krs), status: getStatus(calcRate(d.krs)) })).sort((a, b) => b.rate - a.rate);
   const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
   const allMembers = [];
   depts.forEach(d => d.teams.forEach(t => t.members.forEach(mId => {
-    const u = USERS.find(x => x.id === mId); const kd = memberData[mId];
+    const u = users.find(x => x.id === mId); const kd = memberData[mId];
     if (u && kd) { const r = calcRate(kd.krs); allMembers.push({ ...u, dept: d.name, team: t.name, rate: r, status: getStatus(r) }); }
   })));
   allMembers.sort((a, b) => b.rate - a.rate);
@@ -494,7 +745,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
-        {/* ── Overview ── */}
+        {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} />}
+
         {page === "overview" && (<>
           <Header title="Company Overview" sub="FY26 Q1 · All colleges · All departments"
             right={<div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 10, color: T.textMuted, fontFamily: F.mono }}>Time: {TP}%</span><Tag type={getStatus(compRate)} /></div>} />
@@ -522,7 +774,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* ── Departments ── */}
         {page === "departments" && (<>
           <Header title="Department Detail" sub="View KRs, teams, and member performance" />
           <Pane>
@@ -542,8 +793,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.05em" }}>DEPARTMENT KEY RESULTS</div>
                   {dept.krs.map((kr, i) => { const cr = Math.min((kr.actual / kr.target) * 100, 100); const cs = getStatus(cr);
                     return (<div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 80px 80px 60px 150px 70px", padding: "10px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
-                      <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textDim }}>{kr.id}</span>
-                      <span>{kr.label}</span>
+                      <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textDim }}>{kr.id}</span><span>{kr.label}</span>
                       <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}</span>
                       <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700 }}>{fmt(kr.actual)}</span>
                       <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
@@ -553,7 +803,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   })}
                 </Card>
                 {dept.teams.map(t => { const tr = calcRate(t.krs); const ts = getStatus(tr);
-                  const tMembers = t.members.map(mId => { const u = USERS.find(x => x.id === mId); const kd = memberData[mId]; if (!u || !kd) return null; const mr = calcRate(kd.krs); return { ...u, rate: mr, status: getStatus(mr) }; }).filter(Boolean).sort((a, b) => b.rate - a.rate);
+                  const tMembers = t.members.map(mId => { const u = users.find(x => x.id === mId); const kd = memberData[mId]; if (!u || !kd) return null; const mr = calcRate(kd.krs); return { ...u, rate: mr, status: getStatus(mr) }; }).filter(Boolean).sort((a, b) => b.rate - a.rate);
                   return (
                     <Card key={t.id} style={{ overflow: "hidden" }}>
                       <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -579,7 +829,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* ── Setup ── */}
         {page === "setup" && (<>
           <Header title="OKR / KPI Setup" sub="Add, edit, or remove key results for each department and team" />
           <Pane>
@@ -627,16 +876,11 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* ── Monthly Reports ── */}
         {page === "reports" && (<>
           <Header title="Monthly KPI Reports" sub="Published reports visible to ALL teams across the company"
             right={<Btn primary onClick={() => {
-              const report = {
-                id: `mr${Date.now()}`, month: currentMonth(),
-                publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
-                data: {
-                  companyRate: Math.round(compRate * 10) / 10,
-                  deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
+              const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
+                data: { companyRate: Math.round(compRate * 10) / 10, deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
                   topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
                   redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
                 },
@@ -665,19 +909,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </div>
                   <div>
                     <SectionLabel>Top Performers</SectionLabel>
-                    {r.data.topPerformers.map((p, i) => (
-                      <div key={i} style={{ padding: "5px 0", fontSize: 12, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 10 }}>★</span> {p}
-                      </div>
-                    ))}
-                    {r.data.redFlags.length > 0 && (<>
-                      <SectionLabel>Action Required</SectionLabel>
-                      {r.data.redFlags.map((f, i) => (
-                        <div key={i} style={{ padding: "5px 0", fontSize: 12, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 10 }}>⚠</span> {f}
-                        </div>
-                      ))}
-                    </>)}
+                    {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 12, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
+                    {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 12, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
                   </div>
                 </div>
               </Card>
@@ -685,19 +918,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* ── Manager Sprints ── */}
         {page === "sprints" && (<>
           <Header title="Manager Weekly Sprints" sub="Sprint reports submitted by team managers" />
           <Pane>
             {state.mgrSprints.length === 0 && <EmptyState text="No manager sprint reports yet." />}
-            {state.mgrSprints.map(s => { const mgr = USERS.find(u => u.id === s.mgrId); return (
+            {state.mgrSprints.map(s => { const mgr = users.find(u => u.id === s.mgrId); return (
               <Card key={s.id} style={{ padding: "16px 20px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Avatar letters={mgr?.av || "?"} size={28} />
                     <div><div style={{ fontSize: 13, fontWeight: 700 }}>{mgr?.name}</div><div style={{ fontSize: 10, color: T.textMuted }}>{mgr?.title}</div></div>
                   </div>
-                  <div style={{ textAlign: "right" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{s.week}</div><div style={{ fontSize: 10, color: T.textMuted }}>{s.date}</div></div>
+                  <div style={{ textAlign: "right" }}><div style={{ fontSize: 12, fontWeight: 700 }}>{s.week}</div><div style={{ fontSize: 10, color: T.textMuted }}>{s.date}</div></div>
                 </div>
                 <p style={{ margin: 0, fontSize: 12, color: T.textSoft, lineHeight: 1.7 }}>{s.summary}</p>
               </Card>
@@ -705,7 +937,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* ── Leaderboard ── */}
         {page === "leaderboard" && (<>
           <Header title="Company Leaderboard" sub="All staff ranked by KPI completion · FY26 Q1" />
           <Pane>
@@ -740,17 +971,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   2. MANAGER PORTAL
+   MANAGER PORTAL
    ───────────────────────────────────────────────────────────── */
 function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("dashboard");
   const [newSprint, setNewSprint] = useState({ week: currentWeekLabel(), summary: "" });
   const [newProj, setNewProj] = useState({ name: "", due: "" });
 
-  const { depts, memberData, weeklySubs, mgrSprints, projects, monthlyReports } = state;
+  const { depts, memberData, weeklySubs, mgrSprints, projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
   const myTeamMemberIds = dept?.teams.filter(t => user.teamIds?.includes(t.id)).flatMap(t => t.members) || [];
-  const myMembers = USERS.filter(u => myTeamMemberIds.includes(u.id));
+  const myMembers = users.filter(u => myTeamMemberIds.includes(u.id));
   const pendingSubs = weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId) && s.approval === "pending");
   const mySprints = mgrSprints.filter(s => s.mgrId === user.id);
   const myProjects = projects.filter(p => p.mgrId === user.id);
@@ -769,7 +1000,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
-        {/* Dashboard */}
         {page === "dashboard" && (<>
           <Header title={`${dept?.name || "Team"} Dashboard`} sub={`${dept?.college} · Manager view`} />
           <Pane>
@@ -800,13 +1030,12 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* Approvals */}
         {page === "approvals" && (<>
           <Header title="Approve Member Submissions" sub={`${pendingSubs.length} pending review`} />
           <Pane>
             {pendingSubs.length === 0 && <EmptyState text="All member submissions have been reviewed." />}
             {weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).sort((a, b) => { const o = { pending: 0, approved: 1, rejected: 2 }; return o[a.approval] - o[b.approval] || b.date.localeCompare(a.date); }).map(sub => {
-              const mem = USERS.find(u => u.id === sub.memberId);
+              const mem = users.find(u => u.id === sub.memberId);
               return (
                 <Card key={sub.id} style={{ padding: "16px 20px", borderLeft: sub.approval === "pending" ? `3px solid ${T.warn}` : sub.approval === "rejected" ? `3px solid ${T.bad}` : `3px solid ${T.ok}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -833,7 +1062,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* Weekly Sprint */}
         {page === "sprints" && (<>
           <Header title="Weekly Sprint Report" sub="Submitted to company admin" />
           <Pane>
@@ -861,7 +1089,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* Projects */}
         {page === "projects" && (<>
           <Header title="Projects" sub="Create and track team projects" />
           <Pane>
@@ -888,7 +1115,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* Edit Member KPIs */}
         {page === "members" && (<>
           <Header title="Edit Member KPIs" sub="Review and adjust KPI actuals submitted by your team" />
           <Pane>
@@ -920,7 +1146,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* Monthly Reports (read-only) */}
         {page === "reports" && (<>
           <Header title="Monthly KPI Reports" sub="Published company-wide reports — visible to all teams" />
           <Pane>
@@ -951,7 +1176,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   3. MEMBER PORTAL
+   MEMBER PORTAL
    ───────────────────────────────────────────────────────────── */
 function MemberPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("mykpis");
@@ -965,10 +1190,10 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const thisWeekSub = mySubs.find(s => s.week === currentWeekLabel());
 
   const navItems = [
-    { id: "mykpis",  icon: "◎", label: "My KPIs"           },
-    { id: "submit",  icon: "✎", label: "Weekly Submission"  },
-    { id: "history", icon: "⊞", label: "My History"         },
-    { id: "reports", icon: "⊠", label: "Monthly Reports"   },
+    { id: "mykpis",  icon: "◎", label: "My KPIs"          },
+    { id: "submit",  icon: "✎", label: "Weekly Submission" },
+    { id: "history", icon: "⊞", label: "My History"        },
+    { id: "reports", icon: "⊠", label: "Monthly Reports"  },
   ];
 
   return (
@@ -976,7 +1201,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ submit: thisWeekSub ? 0 : 1 }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
-        {/* My KPIs */}
         {page === "mykpis" && (<>
           <Header title="My KPIs" sub={`${user.title} · FY26 Q1`} right={<Tag type={st} />} />
           <Pane>
@@ -1005,7 +1229,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* Weekly Submission */}
         {page === "submit" && (<>
           <Header title="Weekly Submission" sub="Submit your work outcomes — due every week"
             right={thisWeekSub ? <Tag type="approved" label="This week: Submitted" /> : <Tag type="rejected" label="This week: Not yet submitted" />} />
@@ -1040,7 +1263,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* History */}
         {page === "history" && (<>
           <Header title="My Submission History" sub="All weekly submissions and their approval status" />
           <Pane>
@@ -1058,7 +1280,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {/* Monthly Reports */}
         {page === "reports" && (<>
           <Header title="Monthly KPI Reports" sub="Company-wide reports — published at end of each month" />
           <Pane>
@@ -1116,11 +1337,31 @@ function appReducer(state, action) {
       return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
     })};
     case "UPDATE_MEMBER_KR": return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...state.memberData[action.memberId], krs: state.memberData[action.memberId].krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
-    case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,     ...state.weeklySubs]  };
+    case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
     case "APPROVE_SUB":     return { ...state, weeklySubs:  state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
-    case "ADD_MGR_SPRINT":  return { ...state, mgrSprints:  [action.sprint,  ...state.mgrSprints]  };
-    case "ADD_PROJECT":     return { ...state, projects:    [...state.projects, action.project]     };
+    case "ADD_MGR_SPRINT":  return { ...state, mgrSprints:  [action.sprint, ...state.mgrSprints]  };
+    case "ADD_PROJECT":     return { ...state, projects:    [...state.projects, action.project]    };
     case "PUBLISH_REPORT":  return { ...state, monthlyReports: [action.report, ...state.monthlyReports] };
+
+    case "ADD_USER": {
+      const u = action.user;
+      const newDepts = u.role === "member" && u.teamId
+        ? state.depts.map(d => d.id !== u.deptId ? d : { ...d, teams: d.teams.map(t => t.id !== u.teamId ? t : { ...t, members: [...t.members, u.id] }) })
+        : state.depts;
+      const newMemberData = u.role === "member"
+        ? { ...state.memberData, [u.id]: { krs: [] } }
+        : state.memberData;
+      return { ...state, users: [...state.users, u], depts: newDepts, memberData: newMemberData };
+    }
+
+    case "UPDATE_USER": {
+      const updated = { ...state.users.find(u => u.id === action.userId), ...action.updates };
+      return { ...state, users: state.users.map(u => u.id === action.userId ? updated : u) };
+    }
+
+    case "REMOVE_USER":
+      return { ...state, users: state.users.filter(u => u.id !== action.userId) };
+
     default: return state;
   }
 }
@@ -1131,6 +1372,7 @@ function appReducer(state, action) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [state, rawDispatch] = useState({
+    users: INIT_USERS,
     depts: INIT_DEPTS,
     memberData: INIT_MEMBER_DATA,
     weeklySubs: INIT_WEEKLY_SUBS,
@@ -1140,7 +1382,7 @@ export default function App() {
   });
   const dispatch = useCallback((action) => rawDispatch(prev => appReducer(prev, action)), []);
 
-  if (!user) return <LoginPage onLogin={setUser} />;
+  if (!user) return <LoginPage onLogin={setUser} users={state.users} />;
   const logout = () => setUser(null);
 
   if (user.role === "admin")   return <AdminPortal   user={user} onLogout={logout} state={state} dispatch={dispatch} />;
