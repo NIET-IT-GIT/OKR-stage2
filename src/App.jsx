@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { useMsal } from "@azure/msal-react";
+import { useMsal, useAccount } from "@azure/msal-react";
+import { InteractionStatus } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
 
 const T = {
@@ -346,7 +347,7 @@ function Pane({ children }) {
    LOGIN PAGE
    ───────────────────────────────────────────────────────────── */
 function LoginPage({ onLogin, users }) {
-  const { instance } = useMsal();
+  const { instance, accounts, inProgress } = useMsal();
   const [show, setShow] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -356,22 +357,39 @@ function LoginPage({ onLogin, users }) {
 
   useEffect(() => { setTimeout(() => setShow(true), 80); }, []);
 
+  // Handles both popup result AND redirect-based auth (popup blocked by browser).
+  // When MSAL finishes processing (inProgress becomes None) and an account exists,
+  // we match the email and route the user to their portal.
+  useEffect(() => {
+    if (inProgress !== InteractionStatus.None) return;
+    if (accounts.length === 0) return;
+    const email = accounts[0].username?.toLowerCase() || "";
+    const matched = users.find(u => u.email.toLowerCase() === email);
+    if (matched) {
+      onLogin(matched);
+    } else {
+      setErr(`No account found for ${email}. Contact your administrator.`);
+      setMsLoading(false);
+    }
+  }, [accounts, inProgress]);
+
   const handleMicrosoftLogin = async () => {
     setErr("");
     setMsLoading(true);
     try {
       const result = await instance.loginPopup(loginRequest);
+      // Popup resolved directly — route immediately without waiting for the effect.
       const email = result.account?.username?.toLowerCase() || "";
       const matched = users.find(u => u.email.toLowerCase() === email);
       if (matched) {
         onLogin(matched);
       } else {
         setErr(`No account found for ${email}. Contact your administrator.`);
+        setMsLoading(false);
       }
     } catch (e) {
-      if (e.errorCode !== "user_cancelled") setErr("Sign-in failed. Please try again.");
-    } finally {
       setMsLoading(false);
+      if (e.errorCode !== "user_cancelled") setErr("Sign-in failed. Please try again.");
     }
   };
 
