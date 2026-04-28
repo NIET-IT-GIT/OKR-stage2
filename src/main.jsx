@@ -7,14 +7,12 @@ import App from "./App.jsx";
 
 const msalInstance = new PublicClientApplication(msalConfig);
 
-// MSAL v3+ requires initialize() before any auth operations.
-// We also process handleRedirectPromise here so the redirect-based
-// auth code in the URL is consumed before React renders.
-(async () => {
-  await msalInstance.initialize();
-  // handleRedirectPromise throws no_token_request_cache_error on normal
-  // loads when there is no pending redirect — ignore it and always render.
-  await msalInstance.handleRedirectPromise().catch(() => null);
+// initialize() is required for msal-browser v3+ before any auth operation.
+// Do NOT call handleRedirectPromise() here — MsalProvider calls it internally
+// and fires the LOGIN_SUCCESS / HANDLE_REDIRECT_END events that update
+// useMsal()'s accounts state. Calling it early consumes the auth code
+// before the provider can process it, so accounts never updates.
+msalInstance.initialize().then(() => {
   createRoot(document.getElementById("root")).render(
     <StrictMode>
       <MsalProvider instance={msalInstance}>
@@ -22,4 +20,4 @@ const msalInstance = new PublicClientApplication(msalConfig);
       </MsalProvider>
     </StrictMode>
   );
-})().catch(console.error);
+}).catch(console.error);
