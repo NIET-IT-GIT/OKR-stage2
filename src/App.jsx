@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useMsal, useAccount } from "@azure/msal-react";
+import { useMsal } from "@azure/msal-react";
 import { InteractionStatus } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
 
@@ -357,9 +357,9 @@ function LoginPage({ onLogin, users }) {
 
   useEffect(() => { setTimeout(() => setShow(true), 80); }, []);
 
-  // Handles both popup result AND redirect-based auth (popup blocked by browser).
-  // When MSAL finishes processing (inProgress becomes None) and an account exists,
-  // we match the email and route the user to their portal.
+  // After loginRedirect returns the user to the app, handleRedirectPromise
+  // (called in main.jsx) sets the account. Once inProgress settles to None
+  // and accounts is populated, we match the email and route to the portal.
   useEffect(() => {
     if (inProgress !== InteractionStatus.None) return;
     if (accounts.length === 0) return;
@@ -373,20 +373,28 @@ function LoginPage({ onLogin, users }) {
     }
   }, [accounts, inProgress]);
 
+  // Show a clean loading screen while MSAL is processing the redirect response
+  // so the landing page never flashes after coming back from Microsoft.
+  if (inProgress === InteractionStatus.HandleRedirect) {
+    return (
+      <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", border: `3px solid ${T.border}`, borderTopColor: T.brand, animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <div style={{ color: T.textMuted, fontSize: 13 }}>Signing you in…</div>
+        </div>
+      </div>
+    );
+  }
+
   const handleMicrosoftLogin = async () => {
     setErr("");
     setMsLoading(true);
     try {
-      const result = await instance.loginPopup(loginRequest);
-      // Popup resolved directly — route immediately without waiting for the effect.
-      const email = result.account?.username?.toLowerCase() || "";
-      const matched = users.find(u => u.email.toLowerCase() === email);
-      if (matched) {
-        onLogin(matched);
-      } else {
-        setErr(`No account found for ${email}. Contact your administrator.`);
-        setMsLoading(false);
-      }
+      // loginRedirect navigates the whole page to Microsoft — no popup needed.
+      // The user is brought back to the app and handleRedirectPromise in
+      // main.jsx processes the auth code before React renders.
+      await instance.loginRedirect(loginRequest);
     } catch (e) {
       setMsLoading(false);
       if (e.errorCode !== "user_cancelled") setErr("Sign-in failed. Please try again.");
