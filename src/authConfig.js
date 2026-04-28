@@ -12,4 +12,7 @@ export const msalConfig = {
 
 export const loginRequest = {
   scopes: ["User.Read"],
+  // Popup must redirect to a script-free page so the parent window can read
+  // the auth code from popupWindow.location.hash before any JS strips it.
+  redirectUri: `${window.location.origin}/blank.html`,
 };
