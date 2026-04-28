@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useMsal } from "@azure/msal-react";
-import { InteractionStatus } from "@azure/msal-browser";
+import { InteractionStatus, EventType } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
 
 const T = {
@@ -346,8 +346,8 @@ function Pane({ children }) {
 /* ─────────────────────────────────────────────────────────────
    LOGIN PAGE
    ───────────────────────────────────────────────────────────── */
-function LoginPage({ onLogin, users }) {
-  const { instance, accounts, inProgress } = useMsal();
+function LoginPage({ onLogin, users, inProgress, msalErr }) {
+  const { instance } = useMsal();
   const [show, setShow] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -357,25 +357,9 @@ function LoginPage({ onLogin, users }) {
 
   useEffect(() => { setTimeout(() => setShow(true), 80); }, []);
 
-  // After loginRedirect returns the user to the app, handleRedirectPromise
-  // (called in main.jsx) sets the account. Once inProgress settles to None
-  // and accounts is populated, we match the email and route to the portal.
-  useEffect(() => {
-    if (inProgress !== InteractionStatus.None) return;
-    if (accounts.length === 0) return;
-    const email = accounts[0].username?.toLowerCase() || "";
-    const matched = users.find(u => u.email.toLowerCase() === email);
-    if (matched) {
-      onLogin(matched);
-    } else {
-      setErr(`No account found for ${email}. Contact your administrator.`);
-      setMsLoading(false);
-    }
-  }, [accounts, inProgress]);
-
   // Show a clean loading screen while MSAL is processing the redirect response
   // so the landing page never flashes after coming back from Microsoft.
-  if (inProgress === InteractionStatus.HandleRedirect) {
+  if (inProgress === InteractionStatus.HandleRedirect || inProgress === InteractionStatus.Login) {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
         <div style={{ textAlign: "center" }}>
@@ -391,9 +375,6 @@ function LoginPage({ onLogin, users }) {
     setErr("");
     setMsLoading(true);
     try {
-      // loginRedirect navigates the whole page to Microsoft — no popup needed.
-      // The user is brought back to the app and handleRedirectPromise in
-      // main.jsx processes the auth code before React renders.
       await instance.loginRedirect(loginRequest);
     } catch (e) {
       setMsLoading(false);
@@ -448,8 +429,8 @@ function LoginPage({ onLogin, users }) {
           <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 800, color: T.text }}>Sign in</h2>
           <p style={{ margin: "0 0 24px", fontSize: 12, color: T.textMuted }}>Use your NIET Microsoft account to access your portal.</p>
 
-          {err && (
-            <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 12, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{err}</div>
+          {(err || msalErr) && (
+            <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 12, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{err || msalErr}</div>
           )}
 
           {/* Microsoft button */}
@@ -1397,6 +1378,8 @@ function appReducer(state, action) {
    ───────────────────────────────────────────────────────────── */
 export default function App() {
   const [user, setUser] = useState(null);
+  const [msalErr, setMsalErr] = useState("");
+  const { instance, inProgress } = useMsal();
   const [state, rawDispatch] = useState({
     users: INIT_USERS,
     depts: INIT_DEPTS,
@@ -1408,8 +1391,47 @@ export default function App() {
   });
   const dispatch = useCallback((action) => rawDispatch(prev => appReducer(prev, action)), []);
 
-  if (!user) return <LoginPage onLogin={setUser} users={state.users} />;
-  const logout = () => setUser(null);
+  const usersRef = useRef(state.users);
+  useEffect(() => { usersRef.current = state.users; }, [state.users]);
+
+  const routeByEmail = useCallback((email) => {
+    if (!email) return;
+    const lc = email.toLowerCase();
+    const matched = usersRef.current.find(u => u.email.toLowerCase() === lc);
+    if (matched) {
+      setMsalErr("");
+      setUser(matched);
+    } else {
+      setMsalErr(`No account found for ${lc}. Contact your administrator.`);
+    }
+  }, []);
+
+  // Event-callback routing: fires immediately when MsalProvider processes the redirect
+  useEffect(() => {
+    const id = instance.addEventCallback((event) => {
+      if (event.eventType === EventType.LOGIN_SUCCESS && event.payload?.account) {
+        routeByEmail(event.payload.account.username);
+      } else if (event.eventType === EventType.HANDLE_REDIRECT_END) {
+        const all = instance.getAllAccounts();
+        if (all.length > 0) routeByEmail(all[0].username);
+      }
+    });
+    return () => { if (id) instance.removeEventCallback(id); };
+  }, [instance, routeByEmail]);
+
+  // Mount / inProgress-settled check: routes user if account already in cache
+  useEffect(() => {
+    if (user || inProgress !== InteractionStatus.None) return;
+    const all = instance.getAllAccounts();
+    if (all.length > 0) routeByEmail(all[0].username);
+  }, [inProgress]); // eslint-disable-line
+
+  if (!user) return <LoginPage onLogin={setUser} users={state.users} inProgress={inProgress} msalErr={msalErr} />;
+  const logout = () => {
+    setUser(null);
+    setMsalErr("");
+    try { instance.clearCache(); } catch (_) {}
+  };
 
   if (user.role === "admin")   return <AdminPortal   user={user} onLogout={logout} state={state} dispatch={dispatch} />;
   if (user.role === "manager") return <ManagerPortal user={user} onLogout={logout} state={state} dispatch={dispatch} />;
