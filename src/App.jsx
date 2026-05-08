@@ -5,17 +5,21 @@ import { loginRequest } from "./authConfig";
 import { createClient } from "@supabase/supabase-js";
 
 const T = {
-  bg: "#090b10", bgSoft: "#0e1118", surface: "#141720", surfaceHover: "#1a1e2b",
-  raised: "#1c2030", border: "#222840", borderFocus: "#3d4870",
-  text: "#e4e7f1", textSoft: "#9da3be", textMuted: "#636a88", textDim: "#3b4160",
-  brand: "#4b7cf3", brandSoft: "#3661d4", brandDim: "rgba(75,124,243,0.07)",
-  brandBorder: "rgba(75,124,243,0.22)",
-  ok: "#2dd47a", okDim: "rgba(45,212,122,0.07)", okBorder: "rgba(45,212,122,0.22)",
-  warn: "#f0b030", warnDim: "rgba(240,176,48,0.07)", warnBorder: "rgba(240,176,48,0.22)",
-  bad: "#f04848", badDim: "rgba(240,72,72,0.07)", badBorder: "rgba(240,72,72,0.22)",
-  orange: "#e0823a", purple: "#9b6cf7",
+  bg: "#F5F5F7", bgSoft: "#FAFAFA", surface: "#FFFFFF", surfaceHover: "#F5F5F7",
+  raised: "#F2F2F2", border: "rgba(0,0,0,0.08)", borderFocus: "#0071E3",
+  text: "#1D1D1F", textSoft: "#3A3A3C", textMuted: "#6E6E73", textDim: "#AEAEB2",
+  brand: "#0071E3", brandSoft: "#0077ED", brandDim: "rgba(0,113,227,0.07)",
+  brandBorder: "rgba(0,113,227,0.18)",
+  ok: "#28CD41", okDim: "rgba(52,199,89,0.08)", okBorder: "rgba(52,199,89,0.22)",
+  warn: "#FF9F0A", warnDim: "rgba(255,159,10,0.08)", warnBorder: "rgba(255,159,10,0.22)",
+  bad: "#FF3B30", badDim: "rgba(255,59,48,0.08)", badBorder: "rgba(255,59,48,0.22)",
+  orange: "#FF9500", purple: "#BF5AF2",
+  glass: "rgba(255,255,255,0.72)",
+  glassBorder: "rgba(255,255,255,0.5)",
+  shadow: "0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.05)",
+  shadowSm: "0 1px 2px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.04)",
 };
-const F = { body: "'Outfit', 'DM Sans', system-ui, sans-serif", mono: "'JetBrains Mono', 'Fira Code', monospace" };
+const F = { body: "-apple-system,'SF Pro Text',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif", mono: "'SF Mono','Fira Code','Cascadia Code',monospace" };
 const TP = 66.7;
 
 const STATUS_THEME = {
@@ -211,12 +215,12 @@ function Tag({ type = "green", label, small }) {
   const s = STATUS_THEME[type] || APPROVAL[type] || STATUS_THEME.green;
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      background: s.bg, border: `1px solid ${s.border}`, borderRadius: 5,
-      padding: small ? "2px 7px" : "3px 10px",
-      fontSize: small ? 9 : 10, fontWeight: 700, color: s.color, letterSpacing: "0.03em", whiteSpace: "nowrap",
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: s.bg, border: `1px solid ${s.border}`, borderRadius: 20,
+      padding: small ? "2px 8px" : "3px 10px",
+      fontSize: small ? 9 : 10, fontWeight: 600, color: s.color, letterSpacing: "0.02em", whiteSpace: "nowrap",
     }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.color }} />
+      <span style={{ width: 4, height: 4, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
       {label || s.tag || s.label}
     </span>
   );
@@ -229,7 +233,7 @@ function RoleTag({ role }) {
     member:  { color: T.ok,     bg: T.okDim,     border: T.okBorder,    label: "Member"  },
   }[role] || { color: T.textMuted, bg: T.raised, border: T.border, label: role };
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 5, padding: "2px 8px", fontSize: 9, fontWeight: 700, color: cfg.color, whiteSpace: "nowrap" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 20, padding: "2px 9px", fontSize: 9, fontWeight: 600, color: cfg.color, whiteSpace: "nowrap", letterSpacing: "0.02em" }}>
       {cfg.label}
     </span>
   );
@@ -238,19 +242,19 @@ function RoleTag({ role }) {
 function Bar({ value, status, h = 6 }) {
   const c = STATUS_THEME[status]?.color || T.brand;
   return (
-    <div style={{ flex: 1, height: h, background: T.raised, borderRadius: h, overflow: "hidden", position: "relative" }}>
-      <div style={{ width: `${Math.min(value, 100)}%`, height: "100%", background: c, borderRadius: h, transition: "width 0.5s ease" }} />
-      <div style={{ position: "absolute", left: `${TP}%`, top: 0, bottom: 0, width: 1.5, background: T.textDim, opacity: 0.6 }} />
+    <div style={{ flex: 1, height: h, background: "rgba(0,0,0,0.06)", borderRadius: h, overflow: "hidden", position: "relative" }}>
+      <div style={{ width: `${Math.min(value, 100)}%`, height: "100%", background: c, borderRadius: h, transition: "width 0.6s cubic-bezier(0.4,0,0.2,1)" }} />
+      <div style={{ position: "absolute", left: `${TP}%`, top: 0, bottom: 0, width: 1, background: T.textDim, opacity: 0.5 }} />
     </div>
   );
 }
 
 function Metric({ label, value, sub, status }) {
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "16px 18px", flex: 1, minWidth: 130 }}>
-      <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: status ? STATUS_THEME[status]?.color : T.text, fontFamily: F.mono }}>{value}</div>
-      {sub && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3 }}>{sub}</div>}
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 20px", flex: 1, minWidth: 130, boxShadow: T.shadowSm }}>
+      <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: status ? STATUS_THEME[status]?.color : T.text, fontFamily: F.mono, letterSpacing: "-0.02em" }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: T.textDim, marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -258,12 +262,14 @@ function Metric({ label, value, sub, status }) {
 function Btn({ children, primary, danger, small, disabled, onClick, style: sx }) {
   return (
     <button onClick={disabled ? undefined : onClick} style={{
-      background: primary ? T.brand : danger ? T.bad : "transparent",
+      background: primary ? T.brand : danger ? T.bad : T.surface,
       color: primary || danger ? "#fff" : T.textSoft,
       border: primary || danger ? "none" : `1px solid ${T.border}`,
-      borderRadius: 7, padding: small ? "6px 12px" : "9px 18px",
-      fontSize: small ? 11 : 12, fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer",
-      opacity: disabled ? 0.4 : 1, transition: "all 0.15s", fontFamily: F.body, ...sx,
+      borderRadius: 9, padding: small ? "6px 13px" : "9px 18px",
+      fontSize: small ? 11 : 12, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer",
+      opacity: disabled ? 0.35 : 1, transition: "all 0.15s", fontFamily: F.body,
+      boxShadow: primary ? "0 1px 4px rgba(0,113,227,0.22)" : danger ? "0 1px 4px rgba(255,59,48,0.18)" : T.shadowSm,
+      letterSpacing: "-0.01em", ...sx,
     }}>{children}</button>
   );
 }
@@ -272,12 +278,13 @@ function Input({ value, onChange, placeholder, type, style: sx, ...props }) {
   return (
     <input type={type || "text"} value={value} onChange={onChange} placeholder={placeholder} {...props}
       style={{
-        background: T.bgSoft, border: `1px solid ${T.border}`, borderRadius: 7,
-        padding: "10px 14px", color: T.text, fontSize: 12, fontFamily: F.body, outline: "none",
-        transition: "border-color 0.2s", boxSizing: "border-box", ...sx,
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9,
+        padding: "9px 13px", color: T.text, fontSize: 13, fontFamily: F.body, outline: "none",
+        transition: "border-color 0.15s, box-shadow 0.15s", boxSizing: "border-box",
+        boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)", ...sx,
       }}
-      onFocus={e => e.target.style.borderColor = T.brand}
-      onBlur={e => e.target.style.borderColor = T.border}
+      onFocus={e => { e.target.style.borderColor = T.brand; e.target.style.boxShadow = `0 0 0 3px rgba(0,113,227,0.12), inset 0 1px 2px rgba(0,0,0,0.04)`; }}
+      onBlur={e => { e.target.style.borderColor = T.border; e.target.style.boxShadow = "inset 0 1px 2px rgba(0,0,0,0.04)"; }}
     />
   );
 }
@@ -286,10 +293,10 @@ function Select({ value, onChange, children, style: sx }) {
   return (
     <select value={value} onChange={onChange}
       style={{
-        background: T.bgSoft, border: `1px solid ${T.border}`, borderRadius: 7,
-        padding: "10px 14px", color: value ? T.text : T.textMuted,
-        fontSize: 12, fontFamily: F.body, outline: "none", cursor: "pointer",
-        boxSizing: "border-box", ...sx,
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9,
+        padding: "9px 13px", color: value ? T.text : T.textMuted,
+        fontSize: 13, fontFamily: F.body, outline: "none", cursor: "pointer",
+        boxSizing: "border-box", boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)", ...sx,
       }}
       onFocus={e => e.target.style.borderColor = T.brand}
       onBlur={e => e.target.style.borderColor = T.border}
@@ -301,12 +308,12 @@ function TextArea({ value, onChange, placeholder, rows = 4 }) {
   return (
     <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
       style={{
-        width: "100%", boxSizing: "border-box", background: T.bgSoft, border: `1px solid ${T.border}`, borderRadius: 7,
-        padding: "10px 14px", color: T.text, fontSize: 12, fontFamily: F.body, outline: "none", resize: "vertical",
-        transition: "border-color 0.2s",
+        width: "100%", boxSizing: "border-box", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9,
+        padding: "10px 13px", color: T.text, fontSize: 13, fontFamily: F.body, outline: "none", resize: "vertical",
+        transition: "border-color 0.15s, box-shadow 0.15s", boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)",
       }}
-      onFocus={e => e.target.style.borderColor = T.brand}
-      onBlur={e => e.target.style.borderColor = T.border}
+      onFocus={e => { e.target.style.borderColor = T.brand; e.target.style.boxShadow = `0 0 0 3px rgba(0,113,227,0.12), inset 0 1px 2px rgba(0,0,0,0.04)`; }}
+      onBlur={e => { e.target.style.borderColor = T.border; e.target.style.boxShadow = "inset 0 1px 2px rgba(0,0,0,0.04)"; }}
     />
   );
 }
@@ -315,9 +322,10 @@ function Avatar({ letters, size = 32, color }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: "50%", flexShrink: 0,
-      background: color || `linear-gradient(135deg, ${T.brandSoft}, ${T.brand})`,
+      background: color || `linear-gradient(145deg, ${T.brandSoft}, ${T.brand})`,
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: size * 0.34, fontWeight: 800, color: "#fff",
+      fontSize: size * 0.33, fontWeight: 600, color: "#fff", letterSpacing: "0.01em",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
     }}>{letters}</div>
   );
 }
@@ -325,67 +333,72 @@ function Avatar({ letters, size = 32, color }) {
 function Card({ children, style: sx, onClick }) {
   return (
     <div onClick={onClick} style={{
-      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, ...sx,
-      cursor: onClick ? "pointer" : "default", transition: "border-color 0.15s",
+      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14,
+      boxShadow: T.shadowSm, ...sx,
+      cursor: onClick ? "pointer" : "default", transition: "box-shadow 0.18s, border-color 0.18s",
     }}
-      onMouseEnter={onClick ? e => e.currentTarget.style.borderColor = T.brand : undefined}
-      onMouseLeave={onClick ? e => e.currentTarget.style.borderColor = T.border : undefined}
+      onMouseEnter={onClick ? e => { e.currentTarget.style.boxShadow = T.shadow; e.currentTarget.style.borderColor = "rgba(0,0,0,0.12)"; } : undefined}
+      onMouseLeave={onClick ? e => { e.currentTarget.style.boxShadow = T.shadowSm; e.currentTarget.style.borderColor = T.border; } : undefined}
     >{children}</div>
   );
 }
 
-function SectionLabel({ children }) {
-  return <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>{children}</div>;
+function SectionLabel({ children, style: sx }) {
+  return <div style={{ fontSize: 10, fontWeight: 600, color: T.textMuted, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 10, ...sx }}>{children}</div>;
 }
 
 function EmptyState({ text }) {
-  return <div style={{ padding: "40px 20px", textAlign: "center", color: T.textMuted, fontSize: 13 }}>{text}</div>;
+  return <div style={{ padding: "48px 20px", textAlign: "center", color: T.textDim, fontSize: 13, fontWeight: 400 }}>{text}</div>;
 }
 
 function CountBadge({ count, color }) {
   if (!count) return null;
-  return <span style={{ background: color || T.warn, color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 9, fontWeight: 800, marginLeft: 6 }}>{count}</span>;
+  return <span style={{ background: color || T.bad, color: "#fff", borderRadius: 20, padding: "1px 6px", fontSize: 9, fontWeight: 700, marginLeft: 6, letterSpacing: "0.02em" }}>{count}</span>;
 }
 
 function Side({ items, active, onSelect, user, onLogout, pendingCounts }) {
   return (
-    <div style={{ width: 250, background: T.bgSoft, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", height: "100vh", flexShrink: 0 }}>
-      <div style={{ padding: "20px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg, ${T.brand}, #7c5bf5)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: "#fff" }}>O</div>
+    <div style={{
+      width: 240, background: T.glass, borderRight: `1px solid ${T.border}`,
+      backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)",
+      display: "flex", flexDirection: "column", height: "100vh", flexShrink: 0,
+    }}>
+      <div style={{ padding: "22px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(145deg, ${T.brand}, #0052A3)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", boxShadow: "0 2px 8px rgba(0,113,227,0.28)" }}>O</div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>OKR Tracker</div>
-            <div style={{ fontSize: 9, color: T.textMuted, letterSpacing: "0.08em" }}>NIET GROUP</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>OKR Tracker</div>
+            <div style={{ fontSize: 9, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase" }}>NIET GROUP</div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: T.surface, borderRadius: 8, border: `1px solid ${T.border}` }}>
-          <Avatar letters={user.av} size={34} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 11px", background: "rgba(0,0,0,0.03)", borderRadius: 11, border: `1px solid ${T.border}` }}>
+          <Avatar letters={user.av} size={32} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
-            <div style={{ fontSize: 9, color: T.textMuted }}>{user.title}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>{user.name}</div>
+            <div style={{ fontSize: 10, color: T.textMuted }}>{user.title}</div>
           </div>
         </div>
       </div>
-      <div style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
+      <div style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
         {items.map(item => (
           <button key={item.id} onClick={() => onSelect(item.id)} style={{
             background: active === item.id ? T.brandDim : "transparent",
             border: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
-            borderRadius: 8, padding: "10px 14px", cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 10,
-            color: active === item.id ? T.brand : T.textSoft,
-            fontSize: 12, fontWeight: active === item.id ? 700 : 500, textAlign: "left", width: "100%",
-            transition: "all 0.12s", fontFamily: F.body,
+            borderRadius: 9, padding: "9px 12px", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 9,
+            color: active === item.id ? T.brand : T.textMuted,
+            fontSize: 12, fontWeight: active === item.id ? 600 : 400, textAlign: "left", width: "100%",
+            transition: "all 0.12s", fontFamily: F.body, letterSpacing: "-0.01em",
           }}>
-            <span style={{ fontSize: 14, width: 20, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
+            <span style={{ fontSize: 13, width: 18, textAlign: "center", flexShrink: 0, opacity: active === item.id ? 1 : 0.6 }}>{item.icon}</span>
             <span style={{ flex: 1 }}>{item.label}</span>
             {pendingCounts?.[item.id] > 0 && <CountBadge count={pendingCounts[item.id]} />}
           </button>
         ))}
       </div>
-      <div style={{ padding: "10px 8px", borderTop: `1px solid ${T.border}` }}>
-        <button onClick={onLogout} style={{ background: "none", border: "none", borderRadius: 8, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, color: T.textMuted, fontSize: 12, width: "100%", fontFamily: F.body }}>
-          <span>↩</span> Sign Out
+      <div style={{ padding: "10px 8px 14px", borderTop: `1px solid ${T.border}` }}>
+        <button onClick={onLogout} style={{ background: "none", border: "none", borderRadius: 9, padding: "9px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 9, color: T.textMuted, fontSize: 12, width: "100%", fontFamily: F.body, letterSpacing: "-0.01em" }}>
+          <span style={{ fontSize: 13, width: 18, textAlign: "center", opacity: 0.6 }}>↩</span> Sign Out
         </button>
       </div>
     </div>
@@ -394,10 +407,10 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts }) {
 
 function Header({ title, sub, right }) {
   return (
-    <div style={{ padding: "20px 28px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+    <div style={{ padding: "24px 32px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", background: T.glass, backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", position: "sticky", top: 0, zIndex: 10 }}>
       <div>
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.text }}>{title}</h1>
-        {sub && <p style={{ margin: "3px 0 0", fontSize: 12, color: T.textMuted }}>{sub}</p>}
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: T.text, letterSpacing: "-0.03em" }}>{title}</h1>
+        {sub && <p style={{ margin: "3px 0 0", fontSize: 12, color: T.textMuted, fontWeight: 400 }}>{sub}</p>}
       </div>
       {right}
     </div>
@@ -405,7 +418,7 @@ function Header({ title, sub, right }) {
 }
 
 function Pane({ children }) {
-  return <div style={{ padding: 28, display: "flex", flexDirection: "column", gap: 22 }}>{children}</div>;
+  return <div style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: 20 }}>{children}</div>;
 }
 
 /* ─────────────────────────────────────────────────────────────
