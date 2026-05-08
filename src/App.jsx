@@ -479,9 +479,13 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", fontFamily: F.body, position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", display: "flex", fontFamily: F.body, position: "relative", overflow: "hidden" }}>
+      {/* Background image with dark overlay */}
+      <div style={{ position: "absolute", inset: 0, backgroundImage: "url('/bg_lp.png')", backgroundSize: "cover", backgroundPosition: "center", zIndex: 0 }} />
+      <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,20,0.72)", zIndex: 1 }} />
+
       {msalErr && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, fontFamily: F.body }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, fontFamily: F.body }}>
           <div style={{ background: T.surface, border: `1px solid ${T.badBorder}`, borderRadius: 14, padding: "36px 32px", maxWidth: 420, width: "90%", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: T.bad, marginBottom: 10 }}>Access Not Granted</div>
             <p style={{ margin: "0 0 8px", fontSize: 13, color: T.textSoft, lineHeight: 1.65 }}>
@@ -494,37 +498,33 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
           </div>
         </div>
       )}
-      <div style={{ position: "absolute", inset: 0, opacity: 0.03, backgroundImage: `radial-gradient(${T.brand} 1px, transparent 1px)`, backgroundSize: "30px 30px" }} />
-      <div style={{ position: "absolute", top: "-25%", right: "-8%", width: 650, height: 650, background: `radial-gradient(circle, ${T.brand}12, transparent 65%)`, borderRadius: "50%" }} />
-      <div style={{ position: "absolute", bottom: "-20%", left: "-10%", width: 500, height: 500, background: `radial-gradient(circle, ${T.purple}15, transparent 65%)`, borderRadius: "50%" }} />
-
       {/* Hero */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 72px", position: "relative", zIndex: 1, opacity: show ? 1 : 0, transform: show ? "none" : "translateX(-20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1)" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 72px", position: "relative", zIndex: 2, opacity: show ? 1 : 0, transform: show ? "none" : "translateX(-20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
           <div style={{ width: 46, height: 46, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #7c5bf5)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: "#fff" }}>O</div>
           <div>
-            <div style={{ fontSize: 21, fontWeight: 900, color: T.text }}>NIET OKR Performance Tracker</div>
-            <div style={{ fontSize: 10, color: T.textMuted, letterSpacing: "0.14em" }}>NIET · CHARLTON BROWN · RHODES · EDUCARE</div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>NIET OKR Performance Tracker</div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", letterSpacing: "0.14em" }}>NIET · CHARLTON BROWN · RHODES · EDUCARE</div>
           </div>
         </div>
-        <h1 style={{ margin: "0 0 14px", fontSize: 44, fontWeight: 900, lineHeight: 1.08, color: T.text, letterSpacing: "-0.03em", maxWidth: 460 }}>
-          Align goals.<br /><span style={{ color: T.brand }}>Track everyone.</span><br />Drive results.
+        <h1 style={{ margin: "0 0 14px", fontSize: 44, fontWeight: 900, lineHeight: 1.08, color: "#fff", letterSpacing: "-0.03em", maxWidth: 460 }}>
+          Align goals.<br /><span style={{ color: "#A78BFA" }}>Track everyone.</span><br />Drive results.
         </h1>
-        <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.7, maxWidth: 400 }}>
+        <p style={{ margin: 0, fontSize: 14, color: "rgba(255,255,255,0.65)", lineHeight: 1.7, maxWidth: 400 }}>
           Monthly KPI reporting, weekly outcome tracking, real-time leaderboards — full transparency from company goals down to every team member.
         </p>
         <div style={{ marginTop: 48, display: "flex", gap: 36 }}>
           {[{ n: "Monthly", l: "KPI Reports" }, { n: "Weekly", l: "Submissions" }, { n: "Real-time", l: "Rankings" }, { n: "100%", l: "Transparent" }].map((x, i) => (
             <div key={i}>
-              <div style={{ fontSize: 18, fontWeight: 900, color: T.brand, fontFamily: F.mono }}>{x.n}</div>
-              <div style={{ fontSize: 9, color: T.textMuted, letterSpacing: "0.06em", marginTop: 2 }}>{x.l}</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#A78BFA", fontFamily: F.mono }}>{x.n}</div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: "0.06em", marginTop: 2 }}>{x.l}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Sign-in card */}
-      <div style={{ width: 420, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 44px", position: "relative", zIndex: 1, opacity: show ? 1 : 0, transform: show ? "none" : "translateY(20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1) 0.15s" }}>
+      <div style={{ width: 420, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 44px", position: "relative", zIndex: 2, opacity: show ? 1 : 0, transform: show ? "none" : "translateY(20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1) 0.15s" }}>
         <Card style={{ padding: "36px 30px" }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 800, color: T.text }}>Sign in</h2>
           <p style={{ margin: "0 0 24px", fontSize: 12, color: T.textMuted }}>Use your NIET Microsoft account to access your portal.</p>
