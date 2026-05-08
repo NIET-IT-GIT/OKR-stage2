@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useMsal } from "@azure/msal-react";
-import { InteractionStatus, EventType } from "@azure/msal-browser";
+import { EventType } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
+import { createClient } from "@supabase/supabase-js";
 
 const T = {
   bg: "#090b10", bgSoft: "#0e1118", surface: "#141720", surfaceHover: "#1a1e2b",
@@ -139,6 +140,70 @@ function currentMonth() {
 }
 function makeAv(name) {
   return (name || "?").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
+/* ─── DB API (Supabase) ─── */
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+async function dbGet() {
+  const { data, error } = await supabase.from("app_data").select("collection, id, doc");
+  if (error) throw new Error(error.message);
+  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [] };
+  for (const row of data) {
+    if (result[row.collection]) result[row.collection].push(row.doc);
+  }
+  return result;
+}
+
+async function dbUpsert(collection, item) {
+  const { error } = await supabase
+    .from("app_data")
+    .upsert({ collection, id: item.id, doc: item }, { onConflict: "collection,id" });
+  if (error) throw new Error(`dbUpsert(${collection}/${item.id}): ${error.message}`);
+}
+
+async function dbDelete(collection, id) {
+  const { error } = await supabase.from("app_data").delete().eq("collection", collection).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+async function dbSeed(data) {
+  const rows = [];
+  for (const [collection, items] of Object.entries(data)) {
+    for (const item of items) rows.push({ collection, id: item.id, doc: item });
+  }
+  const { error } = await supabase.from("app_data").upsert(rows);
+  if (error) throw new Error(error.message);
+}
+
+// Diffs prev vs next state and syncs only changed items to Supabase.
+async function syncChanges(prev, next) {
+  const tasks = [];
+  for (const col of ["users", "depts", "weeklySubs", "mgrSprints", "projects", "monthlyReports"]) {
+    const prevArr = prev[col] || [];
+    const nextArr = next[col] || [];
+    for (const item of nextArr) {
+      const old = prevArr.find(x => x.id === item.id);
+      if (!old || JSON.stringify(old) !== JSON.stringify(item)) tasks.push(dbUpsert(col, item));
+    }
+    for (const item of prevArr) {
+      if (!nextArr.find(x => x.id === item.id)) tasks.push(dbDelete(col, item.id));
+    }
+  }
+  // memberData is keyed by memberId in state
+  const prevMd = prev.memberData || {};
+  const nextMd = next.memberData || {};
+  for (const [id, data] of Object.entries(nextMd)) {
+    const old = prevMd[id];
+    if (!old || JSON.stringify(old) !== JSON.stringify(data)) tasks.push(dbUpsert("memberData", { id, ...data }));
+  }
+  for (const id of Object.keys(prevMd)) {
+    if (!nextMd[id]) tasks.push(dbDelete("memberData", id));
+  }
+  await Promise.all(tasks);
 }
 
 /* ─── UI PRIMITIVES ─── */
@@ -344,9 +409,31 @@ function Pane({ children }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   LOADING SCREEN
+   ───────────────────────────────────────────────────────────── */
+function LoadingScreen({ error }) {
+  return (
+    <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: F.body, flexDirection: "column", gap: 14 }}>
+      {error ? (
+        <>
+          <span style={{ fontSize: 22, color: T.bad }}>⚠</span>
+          <div style={{ fontSize: 13, color: T.bad, textAlign: "center", maxWidth: 320 }}>{error}</div>
+        </>
+      ) : (
+        <>
+          <span style={{ fontSize: 22, color: T.brand, animation: "spin 1s linear infinite" }}>◌</span>
+          <div style={{ fontSize: 13, color: T.textMuted }}>Loading data…</div>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
    LOGIN PAGE
    ───────────────────────────────────────────────────────────── */
-function LoginPage({ onLogin, users, inProgress, msalErr }) {
+function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
   const { instance } = useMsal();
   const [show, setShow] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
@@ -356,20 +443,6 @@ function LoginPage({ onLogin, users, inProgress, msalErr }) {
   const [err, setErr] = useState("");
 
   useEffect(() => { setTimeout(() => setShow(true), 80); }, []);
-
-  // Show a clean loading screen while MSAL is processing the redirect response
-  // so the landing page never flashes after coming back from Microsoft.
-  if (inProgress === InteractionStatus.HandleRedirect || inProgress === InteractionStatus.Login) {
-    return (
-      <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ width: 40, height: 40, borderRadius: "50%", border: `3px solid ${T.border}`, borderTopColor: T.brand, animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          <div style={{ color: T.textMuted, fontSize: 13 }}>Signing you in…</div>
-        </div>
-      </div>
-    );
-  }
 
   const handleMicrosoftLogin = async () => {
     setErr("");
@@ -394,6 +467,20 @@ function LoginPage({ onLogin, users, inProgress, msalErr }) {
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", fontFamily: F.body, position: "relative", overflow: "hidden" }}>
+      {msalErr && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, fontFamily: F.body }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.badBorder}`, borderRadius: 14, padding: "36px 32px", maxWidth: 420, width: "90%", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.bad, marginBottom: 10 }}>Access Not Granted</div>
+            <p style={{ margin: "0 0 8px", fontSize: 13, color: T.textSoft, lineHeight: 1.65 }}>
+              The account <span style={{ color: T.text, fontWeight: 600 }}>{msalErr}</span> is not registered in this system.
+            </p>
+            <p style={{ margin: "0 0 24px", fontSize: 13, color: T.textSoft, lineHeight: 1.65 }}>
+              Please contact your <strong style={{ color: T.text }}>team manager</strong> or the <strong style={{ color: T.text }}>IT team</strong> to request access.
+            </p>
+            <Btn primary onClick={onDismissErr}>OK</Btn>
+          </div>
+        </div>
+      )}
       <div style={{ position: "absolute", inset: 0, opacity: 0.03, backgroundImage: `radial-gradient(${T.brand} 1px, transparent 1px)`, backgroundSize: "30px 30px" }} />
       <div style={{ position: "absolute", top: "-25%", right: "-8%", width: 650, height: 650, background: `radial-gradient(circle, ${T.brand}12, transparent 65%)`, borderRadius: "50%" }} />
       <div style={{ position: "absolute", bottom: "-20%", left: "-10%", width: 500, height: 500, background: `radial-gradient(circle, ${T.purple}15, transparent 65%)`, borderRadius: "50%" }} />
@@ -429,8 +516,8 @@ function LoginPage({ onLogin, users, inProgress, msalErr }) {
           <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 800, color: T.text }}>Sign in</h2>
           <p style={{ margin: "0 0 24px", fontSize: 12, color: T.textMuted }}>Use your NIET Microsoft account to access your portal.</p>
 
-          {(err || msalErr) && (
-            <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 12, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{err || msalErr}</div>
+          {err && (
+            <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 12, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{err}</div>
           )}
 
           {/* Microsoft button */}
@@ -597,28 +684,6 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                 </Select>
               </div>
             )}
-            {form.role === "member" && form.deptId && (
-              <div>
-                <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Team</div>
-                <Select value={form.teamId} onChange={e => setForm(p => ({ ...p, teamId: e.target.value }))} style={{ width: "100%" }}>
-                  <option value="">— Select team —</option>
-                  {teamsForDept(form.deptId).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </Select>
-              </div>
-            )}
-            {form.role === "manager" && form.deptId && teamsForDept(form.deptId).length > 0 && (
-              <div style={{ gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Manages Teams</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {teamsForDept(form.deptId).map(t => (
-                    <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textSoft, cursor: "pointer", padding: "6px 10px", background: form.teamIds.includes(t.id) ? T.brandDim : T.raised, border: `1px solid ${form.teamIds.includes(t.id) ? T.brandBorder : T.border}`, borderRadius: 6 }}>
-                      <input type="checkbox" checked={form.teamIds.includes(t.id)} onChange={e => setForm(p => ({ ...p, teamIds: e.target.checked ? [...p.teamIds, t.id] : p.teamIds.filter(id => id !== t.id) }))} style={{ accentColor: T.brand }} />
-                      {t.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
           {formErr && <div style={{ padding: "8px 12px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, fontSize: 11, color: T.bad, marginBottom: 12 }}>{formErr}</div>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -630,8 +695,8 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
 
       {/* User table */}
       <Card style={{ overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 120px 120px 90px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-          <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Actions</span>
+        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 160px 90px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+          <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span style={{ textAlign: "right" }}>Actions</span>
         </div>
         {users.map((u, i) => {
           const dept = depts.find(d => d.id === u.deptId);
@@ -658,23 +723,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                       {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </Select>
                   )}
-                  {editForm.role === "member" && editForm.deptId && (
-                    <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value }))} style={{ fontSize: 11, padding: "7px 10px" }}>
-                      <option value="">— Team —</option>
-                      {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </Select>
-                  )}
                 </div>
-                {editForm.role === "manager" && editForm.deptId && editTeams.length > 0 && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                    {editTeams.map(t => (
-                      <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: T.textSoft, cursor: "pointer", padding: "5px 9px", background: editForm.teamIds.includes(t.id) ? T.brandDim : T.raised, border: `1px solid ${editForm.teamIds.includes(t.id) ? T.brandBorder : T.border}`, borderRadius: 5 }}>
-                        <input type="checkbox" checked={editForm.teamIds.includes(t.id)} onChange={e => setEditForm(p => ({ ...p, teamIds: e.target.checked ? [...p.teamIds, t.id] : p.teamIds.filter(id => id !== t.id) }))} style={{ accentColor: T.brand }} />
-                        {t.name}
-                      </label>
-                    ))}
-                  </div>
-                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <Btn small onClick={() => setEditId(null)}>Cancel</Btn>
                   <Btn primary small onClick={saveEdit}>Save</Btn>
@@ -684,7 +733,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
           }
 
           return (
-            <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 120px 120px 90px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
+            <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 160px 90px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
               <Avatar letters={u.av} size={26} />
               <div>
                 <div style={{ fontWeight: 600, color: T.text }}>{u.name}{isSelf && <span style={{ fontSize: 9, color: T.brand, marginLeft: 6 }}>you</span>}</div>
@@ -693,15 +742,271 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
               <span style={{ fontSize: 11, color: T.textSoft }}>{u.title}</span>
               <RoleTag role={u.role} />
               <span style={{ fontSize: 11, color: T.textMuted }}>{dept?.name || "—"}</span>
-              <span style={{ fontSize: 11, color: T.textMuted }}>{team?.name || (u.teamIds?.length ? `${u.teamIds.length} teams` : "—")}</span>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                 {!isSystem && (
                   <button onClick={() => startEdit(u)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>Edit</button>
                 )}
                 {!isSystem && !isSelf && (
-                  <button onClick={() => dispatch({ type: "REMOVE_USER", userId: u.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                  <button onClick={() => { if (window.confirm(`Delete user "${u.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_USER", userId: u.id }); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>✕</button>
                 )}
               </div>
+            </div>
+          );
+        })}
+      </Card>
+    </Pane>
+  </>);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DEPARTMENT MANAGEMENT PAGE
+   ───────────────────────────────────────────────────────────── */
+const BLANK_DEPT = { name: "", obj: "", head: "", college: "" };
+
+function DeptMgmtPage({ depts, users, memberData, dispatch }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState(BLANK_DEPT);
+  const [addErr, setAddErr] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState(BLANK_DEPT);
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [selDept, setSelDept] = useState(null);
+  const [showAddTeam, setShowAddTeam] = useState(null);
+  const [addTeamForm, setAddTeamForm] = useState({ name: "", lead: "", obj: "" });
+  const [editTeam, setEditTeam] = useState(null);
+  const [editTeamForm, setEditTeamForm] = useState({ name: "", lead: "", obj: "" });
+  const [confirmDelTeam, setConfirmDelTeam] = useState(null);
+
+  function handleAdd() {
+    if (!addForm.name.trim()) { setAddErr("Department name is required."); return; }
+    if (depts.some(d => d.name.toLowerCase() === addForm.name.trim().toLowerCase())) { setAddErr("A department with this name already exists."); return; }
+    const id = `dept_${Date.now().toString(36)}`;
+    dispatch({ type: "ADD_DEPT", dept: { id, name: addForm.name.trim(), obj: addForm.obj.trim(), head: addForm.head.trim(), college: addForm.college.trim(), krs: [], teams: [] } });
+    setAddForm(BLANK_DEPT); setAddErr(""); setShowAdd(false);
+  }
+
+  function startEdit(d) {
+    setEditId(d.id);
+    setEditForm({ name: d.name, obj: d.obj || "", head: d.head || "", college: d.college || "" });
+  }
+
+  function saveEdit() {
+    if (!editForm.name.trim()) return;
+    dispatch({ type: "UPDATE_DEPT", deptId: editId, updates: { name: editForm.name.trim(), obj: editForm.obj.trim(), head: editForm.head.trim(), college: editForm.college.trim() } });
+    setEditId(null);
+  }
+
+  const labelStyle = { fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 };
+
+  return (<>
+    <Header title="Departments" sub="Manage department structure and descriptions"
+      right={<Btn primary onClick={() => { setShowAdd(p => !p); setAddErr(""); setAddForm(BLANK_DEPT); }}>{showAdd ? "Cancel" : "+ Add Department"}</Btn>} />
+    <Pane>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <Metric label="Total Departments" value={depts.length} />
+        <Metric label="Total Teams" value={depts.reduce((a, d) => a + d.teams.length, 0)} />
+      </div>
+
+      {showAdd && (
+        <Card style={{ padding: 22 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16 }}>New Department</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <div style={labelStyle}>Department Name *</div>
+              <Input value={addForm.name} onChange={e => setAddForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Finance" style={{ width: "100%" }} />
+            </div>
+            <div>
+              <div style={labelStyle}>Department Head</div>
+              <Input value={addForm.head} onChange={e => setAddForm(p => ({ ...p, head: e.target.value }))} placeholder="e.g. Jane Smith" style={{ width: "100%" }} />
+            </div>
+            <div>
+              <div style={labelStyle}>College / Group</div>
+              <Input value={addForm.college} onChange={e => setAddForm(p => ({ ...p, college: e.target.value }))} placeholder="e.g. NIET" style={{ width: "100%" }} />
+            </div>
+            <div>
+              <div style={labelStyle}>Description / Objective</div>
+              <Input value={addForm.obj} onChange={e => setAddForm(p => ({ ...p, obj: e.target.value }))} placeholder="e.g. Drive enrolment targets" style={{ width: "100%" }} />
+            </div>
+          </div>
+          {addErr && <div style={{ padding: "8px 12px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, fontSize: 11, color: T.bad, marginBottom: 12 }}>{addErr}</div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Btn small onClick={() => { setShowAdd(false); setAddForm(BLANK_DEPT); setAddErr(""); }}>Cancel</Btn>
+            <Btn primary small onClick={handleAdd}>Create Department</Btn>
+          </div>
+        </Card>
+      )}
+
+      <Card style={{ overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 200px 80px 80px 110px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+          <span>Department / Description</span><span>Head · College</span><span>Teams</span><span>Completion</span><span style={{ textAlign: "right" }}>Actions</span>
+        </div>
+        {depts.length === 0 && <EmptyState text="No departments yet. Add one above." />}
+        {depts.map((d, i) => {
+          const r = calcRate(d.krs); const s = getStatus(r);
+          if (editId === d.id) {
+            return (
+              <div key={d.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "14px 18px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                  <div><div style={labelStyle}>Name *</div><Input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} style={{ fontSize: 11, padding: "7px 10px", width: "100%" }} /></div>
+                  <div><div style={labelStyle}>Description / Objective</div><Input value={editForm.obj} onChange={e => setEditForm(p => ({ ...p, obj: e.target.value }))} style={{ fontSize: 11, padding: "7px 10px", width: "100%" }} /></div>
+                  <div><div style={labelStyle}>Department Head</div><Input value={editForm.head} onChange={e => setEditForm(p => ({ ...p, head: e.target.value }))} style={{ fontSize: 11, padding: "7px 10px", width: "100%" }} /></div>
+                  <div><div style={labelStyle}>College / Group</div><Input value={editForm.college} onChange={e => setEditForm(p => ({ ...p, college: e.target.value }))} style={{ fontSize: 11, padding: "7px 10px", width: "100%" }} /></div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn small onClick={() => setEditId(null)}>Cancel</Btn>
+                  <Btn primary small onClick={saveEdit}>Save</Btn>
+                </div>
+              </div>
+            );
+          }
+          const isSelected = selDept === d.id;
+          return (
+            <div key={d.id}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 200px 80px 80px 110px", padding: "12px 18px", gap: 10, alignItems: "center", background: isSelected ? T.brandDim : i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
+                <div style={{ cursor: "pointer" }} onClick={() => { setSelDept(isSelected ? null : d.id); }}>
+                  <div style={{ fontWeight: 700, color: isSelected ? T.brand : T.text }}>{d.name}</div>
+                  {d.obj && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{d.obj}</div>}
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: T.textSoft }}>{d.head || "—"}</div>
+                  <div style={{ fontSize: 10, color: T.textMuted }}>{d.college || ""}</div>
+                </div>
+                <span style={{ fontSize: 11, color: T.textSoft }}>{d.teams.length} team{d.teams.length !== 1 ? "s" : ""}</span>
+                <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</span>
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <button onClick={() => startEdit(d)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>Edit</button>
+                  {confirmDel === d.id ? (<>
+                    <button onClick={() => { dispatch({ type: "REMOVE_DEPT", deptId: d.id }); setConfirmDel(null); if (selDept === d.id) setSelDept(null); }} style={{ background: T.bad, border: "none", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#fff", fontSize: 10, fontWeight: 700, fontFamily: F.body }}>Confirm</button>
+                    <button onClick={() => setConfirmDel(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.textSoft, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                  </>) : (
+                    <button onClick={() => setConfirmDel(d.id)} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                  )}
+                </div>
+              </div>
+              {isSelected && (() => {
+                const r2 = calcRate(d.krs); const s2 = getStatus(r2);
+                const deptMembers = users
+                  .filter(u => u.role === "member" && u.deptId === d.id)
+                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = calcRate(kd.krs); return { ...u, rate: mr, status: getStatus(mr) }; })
+                  .sort((a, b) => b.rate - a.rate);
+                return (
+                  <div style={{ background: T.bgSoft, borderBottom: `1px solid ${T.border}`, padding: "16px 18px" }}>
+                    <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+                      <Metric label="Completion" value={`${r2.toFixed(1)}%`} status={s2} />
+                      <Metric label="Teams"   value={d.teams.length} />
+                      <Metric label="Members" value={deptMembers.length} />
+                    </div>
+
+                    {d.krs.length > 0 && (
+                      <Card style={{ overflow: "hidden", marginBottom: 14 }}>
+                        <div style={{ padding: "9px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.05em" }}>DEPARTMENT KEY RESULTS</div>
+                        {d.krs.map((kr, ki) => { const cr = Math.min((kr.actual / kr.target) * 100, 100); const cs = getStatus(cr);
+                          return (<div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 70px 70px 55px 130px 65px", padding: "9px 16px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
+                            <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textDim }}>{kr.id}</span><span>{kr.label}</span>
+                            <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}</span>
+                            <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700 }}>{fmt(kr.actual)}</span>
+                            <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
+                            <Bar value={cr} status={cs} h={5} />
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={cs} small /></div>
+                          </div>);
+                        })}
+                      </Card>
+                    )}
+
+                    <Card style={{ overflow: "hidden", marginBottom: 14 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "28px 36px 1fr 120px 55px 140px 70px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                        <span>#</span><span></span><span>Name</span><span>Title</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                      </div>
+                      {deptMembers.length === 0
+                        ? <div style={{ padding: "14px 18px", fontSize: 12, color: T.textMuted }}>No members assigned to this department.</div>
+                        : deptMembers.map((m, mi) => (
+                          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "28px 36px 1fr 120px 55px 140px 70px", padding: "9px 18px", gap: 10, alignItems: "center", background: mi % 2 ? T.raised : "transparent", borderBottom: mi < deptMembers.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 12 }}>
+                            <span style={{ fontFamily: F.mono, fontWeight: 800, color: mi === 0 ? T.ok : mi === deptMembers.length - 1 && deptMembers.length > 2 ? T.bad : T.textMuted }}>#{mi + 1}</span>
+                            <Avatar letters={m.av} size={26} />
+                            <div><span style={{ fontWeight: 600 }}>{m.name}</span></div>
+                            <span style={{ fontSize: 10, color: T.textMuted }}>{m.title || "—"}</span>
+                            <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
+                            <Bar value={m.rate} status={m.status} h={4} />
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
+                          </div>
+                        ))
+                      }
+                    </Card>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <SectionLabel style={{ margin: 0 }}>Teams</SectionLabel>
+                      <Btn small primary onClick={() => { setShowAddTeam(showAddTeam === d.id ? null : d.id); setAddTeamForm({ name: "", lead: "", obj: "" }); setEditTeam(null); }}>
+                        {showAddTeam === d.id ? "Cancel" : "+ Add Team"}
+                      </Btn>
+                    </div>
+
+                    {showAddTeam === d.id && (
+                      <Card style={{ padding: 16, marginBottom: 10, borderLeft: `3px solid ${T.brand}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>New Team</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                          <div><div style={labelStyle}>Team Name *</div><Input value={addTeamForm.name} onChange={e => setAddTeamForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Domestic Team" style={{ width: "100%" }} /></div>
+                          <div><div style={labelStyle}>Team Lead</div><Input value={addTeamForm.lead} onChange={e => setAddTeamForm(p => ({ ...p, lead: e.target.value }))} placeholder="e.g. Jane Smith" style={{ width: "100%" }} /></div>
+                          <div><div style={labelStyle}>Objective</div><Input value={addTeamForm.obj} onChange={e => setAddTeamForm(p => ({ ...p, obj: e.target.value }))} placeholder="e.g. Hit domestic KPIs" style={{ width: "100%" }} /></div>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <Btn small onClick={() => { setShowAddTeam(null); setAddTeamForm({ name: "", lead: "", obj: "" }); }}>Cancel</Btn>
+                          <Btn primary small disabled={!addTeamForm.name.trim()} onClick={() => {
+                            dispatch({ type: "ADD_TEAM", deptId: d.id, team: { id: `t${Date.now().toString(36)}`, name: addTeamForm.name.trim(), lead: addTeamForm.lead.trim(), obj: addTeamForm.obj.trim(), krs: [], members: [] } });
+                            setShowAddTeam(null); setAddTeamForm({ name: "", lead: "", obj: "" });
+                          }}>Create Team</Btn>
+                        </div>
+                      </Card>
+                    )}
+
+                    {d.teams.length === 0 && showAddTeam !== d.id && (
+                      <div style={{ fontSize: 11, color: T.textMuted, padding: "8px 0 12px" }}>No teams yet. Add one above.</div>
+                    )}
+
+                    {d.teams.map(t => { const tr = calcRate(t.krs); const ts = getStatus(tr);
+                      const isEditingTeam = editTeam?.deptId === d.id && editTeam?.teamId === t.id;
+                      return (
+                        <Card key={t.id} style={{ overflow: "hidden", marginBottom: 8 }}>
+                          {isEditingTeam ? (
+                            <div style={{ padding: 14 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                                <div><div style={labelStyle}>Team Name *</div><Input value={editTeamForm.name} onChange={e => setEditTeamForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%" }} /></div>
+                                <div><div style={labelStyle}>Team Lead</div><Input value={editTeamForm.lead} onChange={e => setEditTeamForm(p => ({ ...p, lead: e.target.value }))} style={{ width: "100%" }} /></div>
+                                <div><div style={labelStyle}>Objective</div><Input value={editTeamForm.obj} onChange={e => setEditTeamForm(p => ({ ...p, obj: e.target.value }))} style={{ width: "100%" }} /></div>
+                              </div>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <Btn small onClick={() => setEditTeam(null)}>Cancel</Btn>
+                                <Btn primary small disabled={!editTeamForm.name.trim()} onClick={() => {
+                                  dispatch({ type: "UPDATE_TEAM", deptId: d.id, teamId: t.id, updates: { name: editTeamForm.name.trim(), lead: editTeamForm.lead.trim(), obj: editTeamForm.obj.trim() } });
+                                  setEditTeam(null);
+                                }}>Save</Btn>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div>
+                                <span style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</span>
+                                {t.lead && <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 10 }}>Lead: {t.lead}</span>}
+                                {t.obj && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{t.obj}</div>}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color }}>{tr.toFixed(1)}%</span>
+                                <Tag type={ts} small />
+                                <button onClick={() => { setEditTeam({ deptId: d.id, teamId: t.id }); setEditTeamForm({ name: t.name, lead: t.lead || "", obj: t.obj || "" }); setShowAddTeam(null); }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>Edit</button>
+                                {confirmDelTeam?.deptId === d.id && confirmDelTeam?.teamId === t.id ? (<>
+                                  <button onClick={() => { dispatch({ type: "REMOVE_TEAM", deptId: d.id, teamId: t.id }); setConfirmDelTeam(null); }} style={{ background: T.bad, border: "none", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#fff", fontSize: 10, fontWeight: 700, fontFamily: F.body }}>Confirm</button>
+                                  <button onClick={() => setConfirmDelTeam(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.textSoft, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                                </>) : (
+                                  <button onClick={() => setConfirmDelTeam({ deptId: d.id, teamId: t.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -717,34 +1022,43 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("overview");
   const [selDept, setSelDept] = useState(null);
   const [selTeam, setSelTeam] = useState(null);
-  const [newKr, setNewKr] = useState({ label: "", target: "" });
+  const [newKr, setNewKr] = useState({ label: "", target: "", unit: "", dataSource: "" });
   const [addTarget, setAddTarget] = useState(null);
+  const [showGenReport, setShowGenReport] = useState(false);
+  const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
+  const [editProjId, setEditProjId] = useState(null);
+  const [editProjForm, setEditProjForm] = useState({ name: "", progress: 0, status: "active", log: "", due: "" });
+  const [subFilter, setSubFilter] = useState("all");
 
-  const { depts, memberData, mgrSprints, monthlyReports, users } = state;
+  const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users } = state;
   const navItems = [
-    { id: "overview",    icon: "◎", label: "Company Overview"  },
-    { id: "departments", icon: "⬛", label: "Departments"       },
-    { id: "setup",       icon: "⚙", label: "OKR / KPI Setup"   },
-    { id: "reports",     icon: "⊞", label: "Monthly Reports"   },
-    { id: "sprints",     icon: "↻", label: "Manager Sprints"   },
-    { id: "leaderboard", icon: "▲", label: "Leaderboard"       },
-    { id: "users",       icon: "⊹", label: "User Management"   },
+    { id: "overview",     icon: "◎", label: "Company Overview"    },
+    { id: "departments",  icon: "⬛", label: "Departments"         },
+    { id: "setup",        icon: "⚙", label: "OKR / KPI Setup"     },
+    { id: "submissions",  icon: "✉", label: "Weekly Submissions"  },
+    { id: "reports",      icon: "⊞", label: "Monthly Reports"     },
+    { id: "projects",     icon: "⚡", label: "Projects"            },
+    { id: "leaderboard",  icon: "▲", label: "Leaderboard"         },
+    { id: "users",        icon: "⊹", label: "User Management"     },
   ];
 
   const deptRanks = depts.map(d => ({ ...d, rate: calcRate(d.krs), status: getStatus(calcRate(d.krs)) })).sort((a, b) => b.rate - a.rate);
   const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
-  const allMembers = [];
-  depts.forEach(d => d.teams.forEach(t => t.members.forEach(mId => {
-    const u = users.find(x => x.id === mId); const kd = memberData[mId];
-    if (u && kd) { const r = calcRate(kd.krs); allMembers.push({ ...u, dept: d.name, team: t.name, rate: r, status: getStatus(r) }); }
-  })));
-  allMembers.sort((a, b) => b.rate - a.rate);
+  const allMembers = users
+    .filter(u => u.role === "member")
+    .map(u => {
+      const kd = memberData[u.id] || { krs: [] };
+      const r = calcRate(kd.krs);
+      const deptName = depts.find(d => d.id === u.deptId)?.name || "—";
+      return { ...u, deptName, rate: r, status: getStatus(r) };
+    })
+    .sort((a, b) => b.rate - a.rate);
 
   function addKr(deptId, teamId) {
     if (!newKr.label || !newKr.target) return;
-    const kr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, target: Number(newKr.target), actual: 0 };
+    const kr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, target: Number(newKr.target), actual: 0, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim() };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
-    setNewKr({ label: "", target: "" }); setAddTarget(null);
+    setNewKr({ label: "", target: "", unit: "", dataSource: "" }); setAddTarget(null);
   }
 
   return (
@@ -781,60 +1095,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {page === "departments" && (<>
-          <Header title="Department Detail" sub="View KRs, teams, and member performance" />
-          <Pane>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {depts.map(d => <Btn key={d.id} primary={selDept === d.id} small onClick={() => { setSelDept(d.id); setSelTeam(null); }}>{d.name}</Btn>)}
-            </div>
-            {selDept && (() => {
-              const dept = depts.find(d => d.id === selDept); if (!dept) return null;
-              const r = calcRate(dept.krs); const s = getStatus(r);
-              return (<>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                  <div><h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{dept.name}</h2><p style={{ margin: "2px 0", fontSize: 12, color: T.textMuted }}>{dept.obj} · Head: {dept.head}</p></div>
-                  <Tag type={s} />
-                </div>
-                <div style={{ display: "flex", gap: 12 }}><Metric label="Completion" value={`${r.toFixed(1)}%`} status={s} /><Metric label="Teams" value={dept.teams.length} /></div>
-                <Card style={{ overflow: "hidden" }}>
-                  <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.05em" }}>DEPARTMENT KEY RESULTS</div>
-                  {dept.krs.map((kr, i) => { const cr = Math.min((kr.actual / kr.target) * 100, 100); const cs = getStatus(cr);
-                    return (<div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 80px 80px 60px 150px 70px", padding: "10px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
-                      <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textDim }}>{kr.id}</span><span>{kr.label}</span>
-                      <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}</span>
-                      <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700 }}>{fmt(kr.actual)}</span>
-                      <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
-                      <Bar value={cr} status={cs} h={5} />
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={cs} small /></div>
-                    </div>);
-                  })}
-                </Card>
-                {dept.teams.map(t => { const tr = calcRate(t.krs); const ts = getStatus(tr);
-                  const tMembers = t.members.map(mId => { const u = users.find(x => x.id === mId); const kd = memberData[mId]; if (!u || !kd) return null; const mr = calcRate(kd.krs); return { ...u, rate: mr, status: getStatus(mr) }; }).filter(Boolean).sort((a, b) => b.rate - a.rate);
-                  return (
-                    <Card key={t.id} style={{ overflow: "hidden" }}>
-                      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div><span style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</span><span style={{ fontSize: 10, color: T.textMuted, marginLeft: 10 }}>Lead: {t.lead}</span></div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color }}>{tr.toFixed(1)}%</span><Tag type={ts} small /></div>
-                      </div>
-                      {tMembers.map((m, mi) => (
-                        <div key={m.id} style={{ display: "grid", gridTemplateColumns: "28px 36px 1fr 100px 55px 140px 70px", padding: "9px 18px", gap: 10, alignItems: "center", background: mi % 2 ? T.raised : "transparent", borderBottom: mi < tMembers.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 12 }}>
-                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: mi === 0 ? T.ok : mi === tMembers.length - 1 && tMembers.length > 2 ? T.bad : T.textMuted }}>#{mi + 1}</span>
-                          <Avatar letters={m.av} size={26} />
-                          <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 10 }}>{m.title}</span></div>
-                          <span style={{ fontSize: 10, color: T.textMuted, textAlign: "right" }}>{memberData[m.id]?.krs.length || 0} KRs</span>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
-                          <Bar value={m.rate} status={m.status} h={4} />
-                          <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
-                        </div>
-                      ))}
-                    </Card>
-                  );
-                })}
-              </>);
-            })()}
-          </Pane>
-        </>)}
+        {page === "departments" && <DeptMgmtPage depts={depts} users={users} memberData={memberData} dispatch={dispatch} />}
 
         {page === "setup" && (<>
           <Header title="OKR / KPI Setup" sub="Add, edit, or remove key results for each department and team" />
@@ -842,31 +1103,36 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{depts.map(d => <Btn key={d.id} primary={selDept === d.id} small onClick={() => { setSelDept(d.id); setSelTeam(null); setAddTarget(null); }}>{d.name}</Btn>)}</div>
             {selDept && (() => {
               const dept = depts.find(d => d.id === selDept); if (!dept) return null;
+              const COL = "50px 160px 90px 80px 90px 500px 50px";
               const renderEditor = (krs, deptId, teamId) => (
                 <Card style={{ overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 100px 100px 50px", padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                    <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span></span>
+                  <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                    <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span>Data Source</span><span></span>
                   </div>
                   {krs.map((kr, i) => (
-                    <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 100px 100px 50px", padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
+                    <div key={kr.id} style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
                       <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textDim }}>{kr.id}</span>
-                      <span>{kr.label}</span>
+                      <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
                       <Input value={kr.target} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 12, fontFamily: F.mono }} />
                       <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
+                      <Input value={kr.unit || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "unit", value: e.target.value })} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 11 }} />
+                      <Input value={kr.dataSource || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "dataSource", value: e.target.value })} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 11 }} />
                       <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 10, fontWeight: 700 }}>✕</button>
                     </div>
                   ))}
                   {addTarget === (teamId || `dept-${deptId}`) ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 100px 100px 50px", padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
+                    <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
                       <span style={{ fontSize: 10, color: T.brand }}>NEW</span>
                       <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description" style={{ padding: "5px 8px", fontSize: 12 }} />
                       <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target" style={{ textAlign: "right", padding: "5px 8px", fontSize: 12, fontFamily: F.mono }} />
                       <span />
+                      <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 11 }} />
+                      <Input value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 11 }} />
                       <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 10, fontWeight: 700 }}>✓</button>
                     </div>
                   ) : (
                     <div style={{ padding: "10px 16px" }}>
-                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 11, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 11, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
                     </div>
                   )}
                 </Card>
@@ -883,24 +1149,128 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
+        {page === "submissions" && (<>
+          <Header title="Weekly Staff Submissions" sub="All weekly work outcome submissions — managers approve in their portal" />
+          <Pane>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <Metric label="Total"    value={weeklySubs.length} />
+              <Metric label="Pending"  value={weeklySubs.filter(s => s.approval === "pending").length}  status="yellow" />
+              <Metric label="Approved" value={weeklySubs.filter(s => s.approval === "approved").length} status="green"  />
+              <Metric label="Rejected" value={weeklySubs.filter(s => s.approval === "rejected").length} status="red"    />
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["all", "pending", "approved", "rejected"].map(f => (
+                <Btn key={f} small primary={subFilter === f} onClick={() => setSubFilter(f)}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </Btn>
+              ))}
+            </div>
+            {weeklySubs.length === 0 && <EmptyState text="No weekly submissions yet." />}
+            {(() => {
+              const filtered = weeklySubs
+                .filter(s => subFilter === "all" || s.approval === subFilter)
+                .sort((a, b) => b.date.localeCompare(a.date));
+              if (filtered.length === 0) return <EmptyState text={`No ${subFilter} submissions.`} />;
+              return filtered.map(s => {
+                const mem = users.find(u => u.id === s.memberId);
+                const dept = depts.find(d => d.id === mem?.deptId);
+                const mgr = users.find(u => u.role === "manager" && u.deptId === mem?.deptId);
+                return (
+                  <Card key={s.id} style={{ padding: "16px 20px", borderLeft: s.approval === "pending" ? `3px solid ${T.warn}` : s.approval === "approved" ? `3px solid ${T.ok}` : `3px solid ${T.bad}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <Avatar letters={mem?.av || "?"} size={30} />
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{mem?.name || "Unknown"}</div>
+                          <div style={{ fontSize: 10, color: T.textMuted }}>{mem?.title || "—"}{dept ? ` · ${dept.name}` : ""}{mgr ? ` · Manager: ${mgr.name}` : ""}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{s.week}</div>
+                          <div style={{ fontSize: 10, color: T.textMuted }}>{s.date}</div>
+                        </div>
+                        <Tag type={s.approval} label={APPROVAL[s.approval]?.label || s.approval} />
+                      </div>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 12, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{s.items}</p>
+                    {s.mgrNote && <div style={{ marginTop: 8, fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>Manager note: {s.mgrNote}</div>}
+                  </Card>
+                );
+              });
+            })()}
+          </Pane>
+        </>)}
+
         {page === "reports" && (<>
           <Header title="Monthly KPI Reports" sub="Published reports visible to ALL teams across the company"
-            right={<Btn primary onClick={() => {
-              const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
-                data: { companyRate: Math.round(compRate * 10) / 10, deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
-                  topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
-                  redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
-                },
-              };
-              dispatch({ type: "PUBLISH_REPORT", report });
-            }}>Publish {currentMonth()} Report</Btn>} />
+            right={<div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={() => { setShowGenReport(v => !v); setGenPeriod({ label: "", from: "", to: "" }); }}>{showGenReport ? "Cancel" : "Generate for Period"}</Btn>
+              <Btn primary onClick={() => {
+                const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
+                  data: { companyRate: Math.round(compRate * 10) / 10, deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
+                    topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
+                    redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
+                  },
+                };
+                dispatch({ type: "PUBLISH_REPORT", report });
+              }}>Publish {currentMonth()} Report</Btn>
+            </div>} />
           <Pane>
+            {showGenReport && (
+              <Card style={{ padding: 20, borderLeft: `3px solid ${T.brand}` }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Generate Report for Specific Period</div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4 }}>Period Label</div>
+                    <Input value={genPeriod.label} onChange={e => setGenPeriod(p => ({ ...p, label: e.target.value }))} placeholder="e.g. Q1 FY2026, March 2026" style={{ width: 200 }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4 }}>From</div>
+                    <Input type="date" value={genPeriod.from} onChange={e => setGenPeriod(p => ({ ...p, from: e.target.value }))} style={{ width: 150 }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4 }}>To</div>
+                    <Input type="date" value={genPeriod.to} onChange={e => setGenPeriod(p => ({ ...p, to: e.target.value }))} style={{ width: 150 }} />
+                  </div>
+                  <Btn primary disabled={!genPeriod.label} onClick={() => {
+                    const label = genPeriod.label.trim();
+                    const range = genPeriod.from && genPeriod.to ? ` (${genPeriod.from} → ${genPeriod.to})` : "";
+                    const report = {
+                      id: `mr${Date.now()}`,
+                      month: label,
+                      publishedDate: new Date().toISOString().slice(0, 10),
+                      publishedBy: user.id,
+                      periodFrom: genPeriod.from || null,
+                      periodTo: genPeriod.to || null,
+                      data: {
+                        companyRate: Math.round(compRate * 10) / 10,
+                        deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
+                        topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
+                        redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
+                      },
+                    };
+                    dispatch({ type: "PUBLISH_REPORT", report });
+                    setShowGenReport(false);
+                    setGenPeriod({ label: "", from: "", to: "" });
+                  }}>Generate & Publish</Btn>
+                </div>
+              </Card>
+            )}
             {state.monthlyReports.length === 0 && <EmptyState text="No monthly reports published yet." />}
             {state.monthlyReports.map(r => (
               <Card key={r.id} style={{ overflow: "hidden" }}>
                 <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div><div style={{ fontSize: 16, fontWeight: 800 }}>{r.month}</div><div style={{ fontSize: 10, color: T.textMuted }}>Published: {r.publishedDate} · Visible to all teams</div></div>
-                  <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800 }}>{r.month}</div>
+                    <div style={{ fontSize: 10, color: T.textMuted }}>
+                      Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · Period: ${r.periodFrom} → ${r.periodTo}` : ""} · Visible to all teams
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                    <button onClick={() => { if (window.confirm(`Delete report "${r.month}"? This cannot be undone.`)) dispatch({ type: "REMOVE_REPORT", reportId: r.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete report">✕</button>
+                  </div>
                 </div>
                 <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div>
@@ -925,22 +1295,107 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {page === "sprints" && (<>
-          <Header title="Manager Weekly Sprints" sub="Sprint reports submitted by team managers" />
+        {page === "projects" && (<>
+          <Header title="Manager Projects" sub="All projects submitted by department managers" />
           <Pane>
-            {state.mgrSprints.length === 0 && <EmptyState text="No manager sprint reports yet." />}
-            {state.mgrSprints.map(s => { const mgr = users.find(u => u.id === s.mgrId); return (
-              <Card key={s.id} style={{ padding: "16px 20px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <Avatar letters={mgr?.av || "?"} size={28} />
-                    <div><div style={{ fontSize: 13, fontWeight: 700 }}>{mgr?.name}</div><div style={{ fontSize: 10, color: T.textMuted }}>{mgr?.title}</div></div>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <Metric label="Total Projects" value={projects.length} />
+              <Metric label="Active"         value={projects.filter(p => p.status === "active").length}   status="yellow" />
+              <Metric label="Completed"      value={projects.filter(p => p.status !== "active").length}   status="green"  />
+            </div>
+            {projects.length === 0 && <EmptyState text="No projects submitted by managers yet." />}
+            {projects.length > 0 && (() => {
+              const managers = users.filter(u => u.role === "manager");
+              return managers.map(mgr => {
+                const mgrProjects = projects.filter(p => p.mgrId === mgr.id);
+                if (mgrProjects.length === 0) return null;
+                const dept = depts.find(d => d.id === mgr.deptId);
+                return (
+                  <div key={mgr.id} style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                      <Avatar letters={mgr.av} size={28} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{mgr.name}</div>
+                        <div style={{ fontSize: 10, color: T.textMuted }}>{mgr.title}{dept ? ` · ${dept.name}` : ""}</div>
+                      </div>
+                      <span style={{ marginLeft: "auto", fontSize: 10, color: T.textMuted }}>{mgrProjects.length} project{mgrProjects.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    {mgrProjects.map(p => {
+                      const isActive = p.status === "active";
+                      const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
+                      const isEditing = editProjId === p.id;
+                      return (
+                        <Card key={p.id} style={{ overflow: "hidden", marginBottom: 8 }}>
+                          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700 }}>{p.name}</div>
+                              <div style={{ fontSize: 10, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Tag type={isActive ? "pending" : "approved"} label={isActive ? "ACTIVE" : "COMPLETED"} small />
+                              <Btn small onClick={() => {
+                                if (isEditing) { setEditProjId(null); return; }
+                                setEditProjId(p.id);
+                                setEditProjForm({ name: p.name, progress: p.progress, status: p.status, log: p.log || "", due: p.due || "" });
+                              }}>{isEditing ? "Cancel" : "Edit"}</Btn>
+                              <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>
+                            </div>
+                          </div>
+                          {!isEditing && (
+                            <div style={{ padding: "12px 18px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: p.log ? 10 : 0 }}>
+                                <Bar value={p.progress} status={ps} h={6} />
+                                <span style={{ fontFamily: F.mono, fontSize: 12, fontWeight: 700, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
+                              </div>
+                              {p.log && <p style={{ margin: 0, fontSize: 11, color: T.textSoft, lineHeight: 1.6, padding: "8px 12px", background: T.raised, borderRadius: 6 }}>{p.log}</p>}
+                            </div>
+                          )}
+                          {isEditing && (
+                            <div style={{ padding: "14px 18px" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                <div>
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Name</div>
+                                  <Input value={editProjForm.name} onChange={e => setEditProjForm(f => ({ ...f, name: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 12 }} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Completion %</div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <input type="range" min={0} max={100} value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Number(e.target.value) }))} style={{ flex: 1 }} />
+                                    <Input value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 50, textAlign: "right", padding: "5px 8px", fontSize: 12, fontFamily: F.mono }} />
+                                  </div>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
+                                  <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 12, fontFamily: F.body }}>
+                                    <option value="active">Active</option>
+                                    <option value="completed">Completed</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
+                                  <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 12 }} />
+                                </div>
+                              </div>
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
+                                <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Notes, updates, observations..." rows={3} />
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                                <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
+                                <Btn primary small disabled={!editProjForm.name.trim()} onClick={() => {
+                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                                  setEditProjId(null);
+                                }}>Save</Btn>
+                              </div>
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
                   </div>
-                  <div style={{ textAlign: "right" }}><div style={{ fontSize: 12, fontWeight: 700 }}>{s.week}</div><div style={{ fontSize: 10, color: T.textMuted }}>{s.date}</div></div>
-                </div>
-                <p style={{ margin: 0, fontSize: 12, color: T.textSoft, lineHeight: 1.7 }}>{s.summary}</p>
-              </Card>
-            ); })}
+                );
+              });
+            })()}
           </Pane>
         </>)}
 
@@ -954,16 +1409,15 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               <Metric label="Behind"   value={allMembers.filter(m => m.status === "red").length}    status="red"    />
             </div>
             <Card style={{ overflow: "hidden" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "36px 32px 1fr 100px 90px 55px 150px 70px", padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                <span>#</span><span></span><span>Name</span><span>Dept</span><span>Team</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+              <div style={{ display: "grid", gridTemplateColumns: "36px 32px 1fr 140px 55px 160px 70px", padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                <span>#</span><span></span><span>Name</span><span>Department</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
               </div>
               {allMembers.map((m, i) => (
-                <div key={m.id} style={{ display: "grid", gridTemplateColumns: "36px 32px 1fr 100px 90px 55px 150px 70px", padding: "10px 16px", gap: 8, alignItems: "center", background: i === 0 ? T.okDim : m.status === "red" ? T.badDim : i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, borderLeft: i === 0 ? `3px solid ${T.ok}` : m.status === "red" ? `3px solid ${T.bad}` : "3px solid transparent", fontSize: 12 }}>
+                <div key={m.id} style={{ display: "grid", gridTemplateColumns: "36px 32px 1fr 140px 55px 160px 70px", padding: "10px 16px", gap: 8, alignItems: "center", background: i === 0 ? T.okDim : m.status === "red" ? T.badDim : i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, borderLeft: i === 0 ? `3px solid ${T.ok}` : m.status === "red" ? `3px solid ${T.bad}` : "3px solid transparent", fontSize: 12 }}>
                   <span style={{ fontFamily: F.mono, fontWeight: 900, color: i === 0 ? T.ok : m.status === "red" ? T.bad : T.textMuted }}>#{i + 1}</span>
                   <Avatar letters={m.av} size={24} />
                   <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 10 }}>{m.title}</span></div>
-                  <span style={{ fontSize: 10, color: T.textMuted }}>{m.dept}</span>
-                  <span style={{ fontSize: 10, color: T.textMuted }}>{m.team}</span>
+                  <span style={{ fontSize: 10, color: T.textMuted }}>{m.deptName}</span>
                   <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
                   <Bar value={m.rate} status={m.status} h={5} />
                   <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
@@ -982,30 +1436,97 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
    ───────────────────────────────────────────────────────────── */
 function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("dashboard");
-  const [newSprint, setNewSprint] = useState({ week: currentWeekLabel(), summary: "" });
   const [newProj, setNewProj] = useState({ name: "", due: "" });
+  const [editProjId, setEditProjId] = useState(null);
+  const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
 
-  const { depts, memberData, weeklySubs, mgrSprints, projects, monthlyReports, users } = state;
+  const { depts, memberData, weeklySubs, projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
-  const myTeamMemberIds = dept?.teams.filter(t => user.teamIds?.includes(t.id)).flatMap(t => t.members) || [];
-  const myMembers = users.filter(u => myTeamMemberIds.includes(u.id));
+  const myMembers = users.filter(u => u.role === "member" && u.deptId === user.deptId);
+  const myTeamMemberIds = myMembers.map(u => u.id);
   const pendingSubs = weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId) && s.approval === "pending");
-  const mySprints = mgrSprints.filter(s => s.mgrId === user.id);
   const myProjects = projects.filter(p => p.mgrId === user.id);
 
   const navItems = [
-    { id: "dashboard", icon: "⧉", label: "Team Dashboard"     },
-    { id: "approvals", icon: "✓", label: "Approve Submissions" },
-    { id: "sprints",   icon: "↻", label: "Weekly Sprint"       },
-    { id: "projects",  icon: "⚡", label: "Projects"           },
-    { id: "members",   icon: "✎", label: "Edit Member KPIs"   },
-    { id: "reports",   icon: "⊞", label: "Monthly Reports"    },
+    { id: "dashboard",  icon: "⧉", label: "Team Dashboard"     },
+    { id: "dept-kpis",  icon: "◎", label: "Department KPIs"    },
+    { id: "approvals",  icon: "✓", label: "Approve Submissions" },
+    { id: "projects",   icon: "⚡", label: "Projects"           },
+    { id: "members",    icon: "✎", label: "Edit Member KPIs"   },
+    { id: "reports",    icon: "⊞", label: "Monthly Reports"    },
   ];
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
+
+        {page === "dept-kpis" && (<>
+          <Header title={`${dept?.name || "Department"} KPIs`} sub="Update actual values for your department's key results" />
+          <Pane>
+            {!dept && <EmptyState text="No department assigned to your account." />}
+            {dept && (() => {
+              const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
+              const renderKrTable = (krs, deptId, teamId) => {
+                if (krs.length === 0) return <div style={{ fontSize: 11, color: T.textMuted, padding: "10px 0" }}>No key results set up yet.</div>;
+                return (
+                  <Card style={{ overflow: "hidden", marginBottom: 14 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                    </div>
+                    {krs.map((kr, i) => {
+                      const pct = kr.target > 0 ? Math.min((kr.actual / kr.target) * 100, 100) : 0;
+                      const st = getStatus(pct);
+                      return (
+                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
+                          <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textDim }}>{kr.id}</span>
+                          <div>
+                            <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                            {kr.unit && <span style={{ fontSize: 9, color: T.textMuted }}>{kr.unit}</span>}
+                          </div>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                          <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 12, fontFamily: F.mono }} />
+                          <span style={{ fontSize: 10, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
+                          <Bar value={pct} status={st} h={5} />
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={st} small /></div>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                );
+              };
+              const deptRate = calcRate(dept.krs); const deptStatus = getStatus(deptRate);
+              const myTeams = dept.teams.filter(t => user.teamIds?.includes(t.id));
+              return (<>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
+                  <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
+                  <Metric label="Dept KRs" value={dept.krs.length} />
+                  <Metric label="My Teams" value={myTeams.length} />
+                </div>
+                <SectionLabel>Department Key Results</SectionLabel>
+                {renderKrTable(dept.krs, dept.id, null)}
+                {myTeams.length > 0 && (<>
+                  <SectionLabel>My Team Key Results</SectionLabel>
+                  {myTeams.map(t => {
+                    const tr = calcRate(t.krs); const ts = getStatus(tr);
+                    return (
+                      <div key={t.id} style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</span>
+                          {t.lead && <span style={{ fontSize: 10, color: T.textMuted }}>Lead: {t.lead}</span>}
+                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color, marginLeft: "auto" }}>{tr.toFixed(1)}%</span>
+                          <Tag type={ts} small />
+                        </div>
+                        {renderKrTable(t.krs, dept.id, t.id)}
+                      </div>
+                    );
+                  })}
+                </>)}
+              </>);
+            })()}
+          </Pane>
+        </>)}
 
         {page === "dashboard" && (<>
           <Header title={`${dept?.name || "Team"} Dashboard`} sub={`${dept?.college} · Manager view`} />
@@ -1014,7 +1535,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
               <Metric label="Dept Completion"   value={`${calcRate(dept?.krs || []).toFixed(1)}%`} status={getStatus(calcRate(dept?.krs || []))} sub={`Time: ${TP}%`} />
               <Metric label="My Members"        value={myMembers.length} />
               <Metric label="Pending Approvals" value={pendingSubs.length} status={pendingSubs.length > 0 ? "yellow" : undefined} />
-              <Metric label="Sprints Submitted" value={mySprints.length} />
             </div>
             <SectionLabel>My Team Members</SectionLabel>
             {myMembers.map(m => {
@@ -1050,7 +1570,10 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                       <Avatar letters={mem?.av || "?"} size={28} />
                       <div><div style={{ fontSize: 13, fontWeight: 700 }}>{mem?.name}</div><div style={{ fontSize: 10, color: T.textMuted }}>{mem?.title}</div></div>
                     </div>
-                    <div style={{ textAlign: "right" }}><div style={{ fontSize: 12, fontWeight: 600 }}>{sub.week}</div><div style={{ fontSize: 10, color: T.textMuted }}>{sub.date}</div></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ textAlign: "right" }}><div style={{ fontSize: 12, fontWeight: 600 }}>{sub.week}</div><div style={{ fontSize: 10, color: T.textMuted }}>{sub.date}</div></div>
+                      <button onClick={() => { if (window.confirm(`Delete submission by ${mem?.name || "member"} for ${sub.week}?`)) dispatch({ type: "REMOVE_WEEKLY_SUB", subId: sub.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete submission">✕</button>
+                    </div>
                   </div>
                   <p style={{ margin: "0 0 12px", fontSize: 12, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{sub.items}</p>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1069,33 +1592,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {page === "sprints" && (<>
-          <Header title="Weekly Sprint Report" sub="Submitted to company admin" />
-          <Pane>
-            <Card style={{ padding: 20 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>New Sprint Report → Admin</div>
-              <Input value={newSprint.week} onChange={e => setNewSprint(p => ({ ...p, week: e.target.value }))} style={{ width: 220, marginBottom: 10 }} />
-              <TextArea value={newSprint.summary} onChange={e => setNewSprint(p => ({ ...p, summary: e.target.value }))} placeholder="Week summary: accomplishments, blockers, team performance notes, escalations..." rows={5} />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-                <Btn primary disabled={!newSprint.summary} onClick={() => {
-                  dispatch({ type: "ADD_MGR_SPRINT", sprint: { id: `ms${Date.now()}`, mgrId: user.id, week: newSprint.week, summary: newSprint.summary, date: new Date().toISOString().slice(0, 10), status: "submitted" } });
-                  setNewSprint({ week: currentWeekLabel(), summary: "" });
-                }}>Submit to Admin</Btn>
-              </div>
-            </Card>
-            <SectionLabel>Previous Sprints</SectionLabel>
-            {mySprints.map(s => (
-              <Card key={s.id} style={{ padding: "14px 18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>{s.week}</span>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: 10, color: T.textMuted }}>{s.date}</span><Tag type="green" label="Submitted" small /></div>
-                </div>
-                <p style={{ margin: 0, fontSize: 12, color: T.textSoft, lineHeight: 1.6 }}>{s.summary}</p>
-              </Card>
-            ))}
-          </Pane>
-        </>)}
-
         {page === "projects" && (<>
           <Header title="Projects" sub="Create and track team projects" />
           <Pane>
@@ -1107,18 +1603,73 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0 } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
               </div>
             </Card>
-            {myProjects.map(p => (
-              <Card key={p.id} style={{ padding: "16px 18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                  <div><div style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</div><div style={{ fontSize: 10, color: T.textMuted }}>Due: {p.due}</div></div>
-                  <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status.toUpperCase()} small />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Bar value={p.progress} status={p.progress >= 60 ? "green" : p.progress >= 30 ? "yellow" : "red"} h={6} />
-                  <span style={{ fontFamily: F.mono, fontSize: 12, fontWeight: 700, color: T.textSoft }}>{p.progress}%</span>
-                </div>
-              </Card>
-            ))}
+            {myProjects.map(p => {
+              const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
+              const isEditing = editProjId === p.id;
+              return (
+                <Card key={p.id} style={{ overflow: "hidden" }}>
+                  <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</div>
+                      <div style={{ fontSize: 10, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
+                      <Btn small onClick={() => {
+                        if (isEditing) { setEditProjId(null); return; }
+                        setEditProjId(p.id);
+                        setEditProjForm({ progress: p.progress, status: p.status, log: p.log || "", due: p.due || "" });
+                      }}>{isEditing ? "Cancel" : "Edit"}</Btn>
+                    </div>
+                  </div>
+                  {!isEditing && (
+                    <div style={{ padding: "12px 18px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: p.log ? 10 : 0 }}>
+                        <Bar value={p.progress} status={ps} h={6} />
+                        <span style={{ fontFamily: F.mono, fontSize: 13, fontWeight: 800, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
+                      </div>
+                      {p.log && <p style={{ margin: 0, fontSize: 12, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{p.log}</p>}
+                    </div>
+                  )}
+                  {isEditing && (
+                    <div style={{ padding: "14px 18px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Completion %</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input type="range" min={0} max={100} value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Number(e.target.value) }))} style={{ flex: 1 }} />
+                            <Input value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 55, textAlign: "right", padding: "5px 8px", fontSize: 12, fontFamily: F.mono }} />
+                            <span style={{ fontSize: 11, color: T.textMuted }}>%</span>
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
+                          <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 12, fontFamily: F.body }}>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
+                          <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 12 }} />
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
+                        <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Update on progress, blockers, milestones reached..." rows={3} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
+                        <Btn primary small onClick={() => {
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          setEditProjId(null);
+                        }}>Save</Btn>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
           </Pane>
         </>)}
 
@@ -1345,10 +1896,15 @@ function appReducer(state, action) {
     })};
     case "UPDATE_MEMBER_KR": return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...state.memberData[action.memberId], krs: state.memberData[action.memberId].krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
     case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
-    case "APPROVE_SUB":     return { ...state, weeklySubs:  state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
-    case "ADD_MGR_SPRINT":  return { ...state, mgrSprints:  [action.sprint, ...state.mgrSprints]  };
-    case "ADD_PROJECT":     return { ...state, projects:    [...state.projects, action.project]    };
+    case "APPROVE_SUB":     return { ...state, weeklySubs: state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
+    case "REMOVE_WEEKLY_SUB": return { ...state, weeklySubs: state.weeklySubs.filter(s => s.id !== action.subId) };
+    case "ADD_MGR_SPRINT":    return { ...state, mgrSprints: [action.sprint, ...state.mgrSprints] };
+    case "REMOVE_MGR_SPRINT": return { ...state, mgrSprints: state.mgrSprints.filter(s => s.id !== action.sprintId) };
+    case "ADD_PROJECT":     return { ...state, projects: [...state.projects, action.project] };
+    case "UPDATE_PROJECT":  return { ...state, projects: state.projects.map(p => p.id === action.projectId ? { ...p, ...action.updates } : p) };
+    case "REMOVE_PROJECT":  return { ...state, projects: state.projects.filter(p => p.id !== action.projectId) };
     case "PUBLISH_REPORT":  return { ...state, monthlyReports: [action.report, ...state.monthlyReports] };
+    case "REMOVE_REPORT":   return { ...state, monthlyReports: state.monthlyReports.filter(r => r.id !== action.reportId) };
 
     case "ADD_USER": {
       const u = action.user;
@@ -1362,12 +1918,60 @@ function appReducer(state, action) {
     }
 
     case "UPDATE_USER": {
-      const updated = { ...state.users.find(u => u.id === action.userId), ...action.updates };
-      return { ...state, users: state.users.map(u => u.id === action.userId ? updated : u) };
+      const prev = state.users.find(u => u.id === action.userId);
+      const updated = { ...prev, ...action.updates };
+      const uid = action.userId;
+      const oldTeam = prev?.role === "member" ? prev.teamId : null;
+      const oldDept = prev?.role === "member" ? prev.deptId : null;
+      const newTeam = updated.role === "member" ? updated.teamId : null;
+      const newDept = updated.role === "member" ? updated.deptId : null;
+      const teamChanged = oldTeam !== newTeam || oldDept !== newDept;
+
+      let newDepts = state.depts;
+      let newMemberData = state.memberData;
+
+      if (teamChanged) {
+        // Remove from old team
+        if (oldTeam && oldDept) {
+          newDepts = newDepts.map(d => d.id !== oldDept ? d : {
+            ...d, teams: d.teams.map(t => t.id !== oldTeam ? t : { ...t, members: t.members.filter(id => id !== uid) })
+          });
+        }
+        // Add to new team
+        if (newTeam && newDept) {
+          newDepts = newDepts.map(d => d.id !== newDept ? d : {
+            ...d, teams: d.teams.map(t => t.id !== newTeam ? t : { ...t, members: t.members.includes(uid) ? t.members : [...t.members, uid] })
+          });
+          if (!newMemberData[uid]) newMemberData = { ...newMemberData, [uid]: { krs: [] } };
+        }
+      }
+
+      return { ...state, users: state.users.map(u => u.id === uid ? updated : u), depts: newDepts, memberData: newMemberData };
     }
 
     case "REMOVE_USER":
       return { ...state, users: state.users.filter(u => u.id !== action.userId) };
+
+    case "RENAME_DEPT":
+      return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, name: action.name } : d) };
+
+    case "ADD_DEPT":
+      return { ...state, depts: [...state.depts, action.dept] };
+
+    case "UPDATE_DEPT":
+      return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, ...action.updates } : d) };
+
+    case "REMOVE_DEPT":
+      return { ...state, depts: state.depts.filter(d => d.id !== action.deptId) };
+
+    case "ADD_TEAM":
+      return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, teams: [...d.teams, action.team] } : d) };
+
+    case "UPDATE_TEAM":
+      return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, teams: d.teams.map(t => t.id === action.teamId ? { ...t, ...action.updates } : t) } : d) };
+
+    case "REMOVE_TEAM":
+      return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, teams: d.teams.filter(t => t.id !== action.teamId) } : d) };
 
     default: return state;
   }
@@ -1376,10 +1980,12 @@ function appReducer(state, action) {
 /* ─────────────────────────────────────────────────────────────
    ROOT APP
    ───────────────────────────────────────────────────────────── */
-export default function App() {
+export default function App({ redirectAccount = null }) {
   const [user, setUser] = useState(null);
   const [msalErr, setMsalErr] = useState("");
-  const { instance, accounts, inProgress } = useMsal();
+  const [dbReady, setDbReady] = useState(false);
+  const [dbError, setDbError] = useState("");
+  const { instance, accounts } = useMsal();
   const [state, rawDispatch] = useState({
     users: INIT_USERS,
     depts: INIT_DEPTS,
@@ -1389,61 +1995,107 @@ export default function App() {
     projects: INIT_PROJECTS,
     monthlyReports: INIT_MONTHLY_REPORTS,
   });
-  const dispatch = useCallback((action) => rawDispatch(prev => appReducer(prev, action)), []);
+
+  // Dispatch updates local state immediately (optimistic), then syncs to Cosmos DB in background.
+  const dispatch = useCallback((action) => {
+    rawDispatch(prev => {
+      const next = appReducer(prev, action);
+      syncChanges(prev, next).catch(err => console.error("[DB sync error]", err.message));
+      return next;
+    });
+  }, []);
+
+  // On mount: load all data from Supabase. Seed the DB with initial data if it is empty.
+  useEffect(() => {
+    dbGet()
+      .then(data => {
+        if (data.users?.length) {
+          rawDispatch(() => ({
+            users: data.users,
+            depts: data.depts,
+            memberData: Object.fromEntries((data.memberData || []).map(m => [m.id, { krs: m.krs || [] }])),
+            weeklySubs: data.weeklySubs || [],
+            mgrSprints: data.mgrSprints || [],
+            projects: data.projects || [],
+            monthlyReports: data.monthlyReports || [],
+          }));
+        } else {
+          // First run — seed the database with the built-in initial data.
+          dbSeed({
+            users: INIT_USERS,
+            depts: INIT_DEPTS,
+            memberData: Object.entries(INIT_MEMBER_DATA).map(([id, d]) => ({ id, ...d })),
+            weeklySubs: INIT_WEEKLY_SUBS,
+            mgrSprints: INIT_MGR_SPRINTS,
+            projects: INIT_PROJECTS,
+            monthlyReports: INIT_MONTHLY_REPORTS,
+          }).catch(console.error);
+        }
+        setDbReady(true);
+      })
+      .catch(err => {
+        console.error("DB load failed, falling back to in-memory data:", err);
+        setDbError("Could not connect to database. Running in offline mode — changes will not be saved.");
+        setDbReady(true);
+      });
+  }, []); // eslint-disable-line
 
   const usersRef = useRef(state.users);
   useEffect(() => { usersRef.current = state.users; }, [state.users]);
 
+  const pendingEmailRef = useRef(null);
+
   const routeByEmail = useCallback((email) => {
     if (!email) return;
+    pendingEmailRef.current = email;
     const lc = email.toLowerCase();
     const matched = usersRef.current.find(u => u.email.toLowerCase() === lc);
     if (matched) {
       setMsalErr("");
       setUser(matched);
+      pendingEmailRef.current = null;
     } else {
-      setMsalErr(`No account found for ${lc}. Contact your administrator.`);
+      setMsalErr(lc);
     }
   }, []);
 
-  // Event-callback routing: fires immediately when MsalProvider processes the redirect
+  // Route from the redirect result resolved in main.jsx before render.
+  // This is the primary path after loginRedirect completes.
   useEffect(() => {
-    const id = instance.addEventCallback((event) => {
-      // LOGIN_SUCCESS payload IS the AccountInfo object (not a wrapper around it)
-      if (event.eventType === EventType.LOGIN_SUCCESS && event.payload?.username) {
-        routeByEmail(event.payload.username);
-      } else if (event.eventType === EventType.ACQUIRE_TOKEN_SUCCESS && event.payload?.account?.username) {
-        // ACQUIRE_TOKEN_SUCCESS payload is the full AuthenticationResult (.account exists)
-        routeByEmail(event.payload.account.username);
-      } else if (event.eventType === EventType.HANDLE_REDIRECT_END) {
-        const all = instance.getAllAccounts();
-        if (all.length > 0) routeByEmail(all[0].username);
-      }
-    });
-    return () => { if (id) instance.removeEventCallback(id); };
-  }, [instance, routeByEmail]);
+    if (redirectAccount?.username) routeByEmail(redirectAccount.username);
+  }, []); // eslint-disable-line
 
-  // Reactive accounts watch: fires whenever MsalProvider's accounts state updates
+  // Route from cached accounts — covers page refresh while already signed in.
   useEffect(() => {
-    if (user || inProgress !== InteractionStatus.None || accounts.length === 0) return;
+    if (user || accounts.length === 0) return;
     routeByEmail(accounts[0].username);
-  }, [accounts, inProgress, user]); // eslint-disable-line
+  }, [accounts]); // eslint-disable-line
 
-  // Mount / inProgress-settled check: routes user if account already in cache
+  // Retry routing once Supabase data is loaded — handles users added via admin portal
+  // who aren't in the hardcoded INIT_USERS seed used before DB is ready.
   useEffect(() => {
-    if (user || inProgress !== InteractionStatus.None) return;
-    const all = instance.getAllAccounts();
-    if (all.length > 0) routeByEmail(all[0].username);
-  }, [inProgress]); // eslint-disable-line
+    if (dbReady && pendingEmailRef.current && !user) routeByEmail(pendingEmailRef.current);
+  }, [dbReady]); // eslint-disable-line
 
-  if (!user) return <LoginPage onLogin={setUser} users={state.users} inProgress={inProgress} msalErr={msalErr} />;
+  if (!dbReady) return <LoadingScreen error={dbError || null} />;
+
+  if (!user) return <LoginPage onLogin={setUser} users={state.users} msalErr={msalErr} onDismissErr={() => { setMsalErr(""); try { instance.clearCache(); } catch (_) {} }} />;
   const logout = () => {
     setUser(null);
     setMsalErr("");
     try { instance.clearCache(); } catch (_) {}
   };
 
-  if (user.role === "admin")   return <AdminPortal   user={user} onLogout={logout} state={state} dispatch={dispatch} />;
-  if (user.role === "manager") return <ManagerPortal user={user} onLogout={logout} state={state} dispatch={dispatch} />;
-  return <MemberPortal user={user} onLogout={logout} state={state} dispatch={dispatch} />;
+  // Always derive the active user from state.users so admin edits (role, title, dept, etc.) are reflected immediately.
+  const activeUser = state.users.find(u => u.id === user.id) ?? user;
+
+  const offlineBanner = dbError ? (
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: T.badDim, borderTop: `1px solid ${T.badBorder}`, color: T.bad, fontSize: 11, padding: "8px 20px", textAlign: "center", zIndex: 9999 }}>
+      ⚠ {dbError}
+    </div>
+  ) : null;
+
+  if (activeUser.role === "admin")   return <>{offlineBanner}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
+  if (activeUser.role === "manager") return <>{offlineBanner}<ManagerPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
+  return <>{offlineBanner}<MemberPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
 }
