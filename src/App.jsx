@@ -365,7 +365,7 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts }) {
     }}>
       <div style={{ padding: "22px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(145deg, ${T.brand}, #0052A3)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", boxShadow: "0 2px 8px rgba(0,113,227,0.28)" }}>O</div>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(145deg, ${T.brand}, #0052A3)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", boxShadow: "0 2px 8px rgba(0,113,227,0.28)" }}>NIET</div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>OKR Tracker</div>
             <div style={{ fontSize: 9, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase" }}>NIET GROUP</div>
@@ -501,9 +501,9 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
       {/* Hero */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 72px", position: "relative", zIndex: 2, opacity: show ? 1 : 0, transform: show ? "none" : "translateX(-20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
-          <div style={{ width: 46, height: 46, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #7c5bf5)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: "#fff" }}>O</div>
+          <div style={{ width: 60, height: 60, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: "#fff" }}>NIET</div>
           <div>
-            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>NIET OKR Performance Tracker</div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>OKR Performance Tracker</div>
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", letterSpacing: "0.14em" }}>NIET · CHARLTON BROWN · RHODES · EDUCARE</div>
           </div>
         </div>
