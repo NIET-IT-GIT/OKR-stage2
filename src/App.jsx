@@ -613,6 +613,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
   const [formErr, setFormErr] = useState("");
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState(BLANK_FORM);
+  const [search, setSearch] = useState("");
 
   const teamsForDept = (deptId) => depts.find(d => d.id === deptId)?.teams || [];
 
@@ -650,6 +651,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
   const roleColor = { admin: T.brand, manager: T.orange, member: T.ok };
 
   const roleCounts = users.reduce((a, u) => { a[u.role] = (a[u.role] || 0) + 1; return a; }, {});
+  const filteredUsers = search.trim()
+    ? users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()))
+    : users;
 
   return (<>
     <Header title="User Management" sub="Add users, set roles, and control portal access"
@@ -706,12 +710,30 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
         </Card>
       )}
 
-      {/* User table */}
+      {/* Search + User table */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
+          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 15, pointerEvents: "none" }}>⌕</span>
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or email…"
+            style={{ width: "100%", paddingLeft: 34 }}
+          />
+        </div>
+        {search && (
+          <span style={{ fontSize: 13, color: T.textMuted }}>
+            {filteredUsers.length} of {users.length} users
+          </span>
+        )}
+      </div>
+
       <Card style={{ overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 160px 90px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
           <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span style={{ textAlign: "right" }}>Actions</span>
         </div>
-        {users.map((u, i) => {
+        {filteredUsers.length === 0 && <EmptyState text={`No users match "${search}".`} />}
+        {filteredUsers.map((u, i) => {
           const dept = depts.find(d => d.id === u.deptId);
           const team = dept?.teams.find(t => t.id === u.teamId || u.teamIds?.includes(t.id));
           const isSystem = u.id === "sysadmin";
