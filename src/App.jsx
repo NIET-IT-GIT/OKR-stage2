@@ -921,7 +921,7 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
               {isSelected && (() => {
                 const r2 = calcRate(d.krs); const s2 = getStatus(r2);
                 const deptMembers = users
-                  .filter(u => u.role === "member" && u.deptId === d.id)
+                  .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
                   .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = calcRate(kd.krs); return { ...u, rate: mr, status: getStatus(mr) }; })
                   .sort((a, b) => b.rate - a.rate);
                 return (
