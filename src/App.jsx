@@ -1331,7 +1331,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "projects" && (<>
-          <Header title="Manager Projects" sub="All projects submitted by department managers" />
+          <Header title="Manager Projects" sub="Projects grouped by department" />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="Total Projects" value={projects.length} />
@@ -1340,22 +1340,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             </div>
             {projects.length === 0 && <EmptyState text="No projects submitted by managers yet." />}
             {projects.length > 0 && (() => {
-              const managers = users.filter(u => u.role === "manager");
-              return managers.map(mgr => {
-                const mgrProjects = projects.filter(p => p.mgrId === mgr.id);
-                if (mgrProjects.length === 0) return null;
-                const dept = depts.find(d => d.id === mgr.deptId);
+              return depts.map(dept => {
+                const deptManagers = users.filter(u => u.role === "manager" && u.deptId === dept.id);
+                const deptProjects = projects.filter(p => deptManagers.some(m => m.id === p.mgrId));
+                if (deptProjects.length === 0) return null;
                 return (
-                  <div key={mgr.id} style={{ marginBottom: 20 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                      <Avatar letters={mgr.av} size={28} />
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>{mgr.name}</div>
-                        <div style={{ fontSize: 12, color: T.textMuted }}>{mgr.title}{dept ? ` · ${dept.name}` : ""}</div>
-                      </div>
-                      <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>{mgrProjects.length} project{mgrProjects.length !== 1 ? "s" : ""}</span>
+                  <div key={dept.id} style={{ marginBottom: 24 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, paddingBottom: 8, borderBottom: `2px solid ${T.border}` }}>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{dept.name}</div>
+                      <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>{deptProjects.length} project{deptProjects.length !== 1 ? "s" : ""}</span>
                     </div>
-                    {mgrProjects.map(p => {
+                    {deptProjects.map(p => {
+                      const mgr = deptManagers.find(m => m.id === p.mgrId);
                       const isActive = p.status === "active";
                       const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
                       const isEditing = editProjId === p.id;
@@ -1364,7 +1360,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           <div style={{ padding: "12px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                             <div>
                               <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                              <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
+                              <div style={{ fontSize: 12, color: T.textMuted }}>{mgr ? `${mgr.name} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <Tag type={isActive ? "pending" : "approved"} label={isActive ? "ACTIVE" : "COMPLETED"} small />
