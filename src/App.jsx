@@ -758,7 +758,26 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                       {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </Select>
                   )}
+                  {editForm.role === "member" && editTeams.length > 0 && (
+                    <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px" }}>
+                      <option value="">— Team —</option>
+                      {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </Select>
+                  )}
                 </div>
+                {editForm.role === "manager" && editTeams.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>Teams</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                      {editTeams.map(t => (
+                        <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, cursor: "pointer", color: T.text }}>
+                          <input type="checkbox" checked={editForm.teamIds.includes(t.id)} onChange={e => setEditForm(p => ({ ...p, teamIds: e.target.checked ? [...p.teamIds, t.id] : p.teamIds.filter(id => id !== t.id) }))} />
+                          {t.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <Btn small onClick={() => setEditId(null)}>Cancel</Btn>
                   <Btn primary small onClick={saveEdit}>Save</Btn>
