@@ -1085,8 +1085,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [subFilter, setSubFilter] = useState("all");
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
   const colWidthsRef = useRef({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
-  const [customCols, setCustomCols] = useState([]);
   const [hiddenCols, setHiddenCols] = useState(new Set());
+  const [customColWidthOverride, setCustomColWidthOverride] = useState(null);
   const [addingCol, setAddingCol] = useState(false);
   const [newColName, setNewColName] = useState("");
 
@@ -1133,21 +1133,29 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   }
-  function startResizeCustom(colId, e) {
+  function startResizeCustom(colId, deptId, e) {
     e.preventDefault();
     const startX = e.clientX;
-    const startW = customCols.find(c => c.id === colId)?.width ?? 150;
+    const dept = depts.find(d => d.id === deptId);
+    const startW = (dept?.customCols || []).find(c => c.id === colId)?.width ?? 150;
     function onMove(me) {
-      const w = Math.max(60, startW + me.clientX - startX);
-      setCustomCols(prev => prev.map(c => c.id === colId ? { ...c, width: w } : c));
+      setCustomColWidthOverride({ colId, width: Math.max(60, startW + me.clientX - startX) });
     }
-    function onUp() { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); }
+    function onUp(me) {
+      const finalW = Math.max(60, startW + me.clientX - startX);
+      setCustomColWidthOverride(null);
+      const current = depts.find(d => d.id === deptId)?.customCols || [];
+      dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId, customCols: current.map(c => c.id === colId ? { ...c, width: finalW } : c) });
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   }
   function addCustomCol() {
-    if (!newColName.trim()) return;
-    setCustomCols(prev => [...prev, { id: `col_${Date.now()}`, name: newColName.trim(), width: 150 }]);
+    if (!newColName.trim() || !selDept) return;
+    const current = depts.find(d => d.id === selDept)?.customCols || [];
+    dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: selDept, customCols: [...current, { id: `col_${Date.now()}`, name: newColName.trim(), width: 150 }] });
     setNewColName(""); setAddingCol(false);
   }
 
@@ -1201,10 +1209,12 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 { key: "unit",       label: "Unit" },
                 { key: "dataSource", label: "Data Source" },
               ];
+              const customCols = dept.customCols || [];
+              const getCustomColWidth = (col) => customColWidthOverride?.colId === col.id ? customColWidthOverride.width : (col.width ?? 150);
               const visibleBuiltIn = COLS_DEF.filter(c => !hiddenCols.has(c.key));
               const COL = [
                 ...visibleBuiltIn.map(c => `${colWidths[c.key]}px`),
-                ...customCols.map(c => `${c.width}px`), "34px",
+                ...customCols.map(c => `${getCustomColWidth(c)}px`), "34px",
               ].join(" ");
               const rszHandle = (onMd) => (
                 <div onMouseDown={onMd} title="Drag to resize" style={{ width: 6, flexShrink: 0, alignSelf: "stretch", cursor: "col-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1224,10 +1234,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       ))}
                       {customCols.map(col => (
                         <div key={col.id} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 3 }}>
-                          <input value={col.name} onChange={e => setCustomCols(prev => prev.map(c => c.id === col.id ? { ...c, name: e.target.value } : c))}
+                          <input value={col.name} onChange={e => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.map(c => c.id === col.id ? { ...c, name: e.target.value } : c) })}
                             style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", padding: 0, cursor: "text" }} />
-                          <button onClick={() => setCustomCols(prev => prev.filter(c => c.id !== col.id))} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, flexShrink: 0, lineHeight: 1 }} title="Remove column">✕</button>
-                          {rszHandle(e => startResizeCustom(col.id, e))}
+                          <button onClick={() => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.filter(c => c.id !== col.id) })} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, flexShrink: 0, lineHeight: 1 }} title="Remove column">✕</button>
+                          {rszHandle(e => startResizeCustom(col.id, dept.id, e))}
                         </div>
                       ))}
                       <span />
@@ -2099,6 +2109,7 @@ function appReducer(state, action) {
       if (!action.teamId) return { ...d, krs: d.krs.filter(kr => kr.id !== action.krId) };
       return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
     })};
+    case "SET_DEPT_CUSTOM_COLS": return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, customCols: action.customCols } : d) };
     case "UPDATE_MEMBER_KR": return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...state.memberData[action.memberId], krs: state.memberData[action.memberId].krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
     case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
     case "APPROVE_SUB":     return { ...state, weeklySubs: state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
