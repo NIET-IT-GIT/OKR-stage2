@@ -1086,6 +1086,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
   const colWidthsRef = useRef({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
   const [customCols, setCustomCols] = useState([]);
+  const [hiddenCols, setHiddenCols] = useState(new Set());
   const [addingCol, setAddingCol] = useState(false);
   const [newColName, setNewColName] = useState("");
 
@@ -1192,9 +1193,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{depts.map(d => <Btn key={d.id} primary={selDept === d.id} small onClick={() => { setSelDept(d.id); setSelTeam(null); setAddTarget(null); }}>{d.name}</Btn>)}</div>
             {selDept && (() => {
               const dept = depts.find(d => d.id === selDept); if (!dept) return null;
+              const COLS_DEF = [
+                { key: "id",         label: "ID" },
+                { key: "label",      label: "Key Result" },
+                { key: "target",     label: "Target" },
+                { key: "actual",     label: "Actual" },
+                { key: "unit",       label: "Unit" },
+                { key: "dataSource", label: "Data Source" },
+              ];
+              const visibleBuiltIn = COLS_DEF.filter(c => !hiddenCols.has(c.key));
               const COL = [
-                `${colWidths.id}px`, `${colWidths.label}px`, `${colWidths.target}px`,
-                `${colWidths.actual}px`, `${colWidths.unit}px`, `${colWidths.dataSource}px`,
+                ...visibleBuiltIn.map(c => `${colWidths[c.key]}px`),
                 ...customCols.map(c => `${c.width}px`), "34px",
               ].join(" ");
               const rszHandle = (onMd) => (
@@ -1202,22 +1211,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   <div style={{ width: 2, height: "40%", background: T.border, borderRadius: 1 }} />
                 </div>
               );
-              const hCell = (label, key) => (
-                <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                  {rszHandle(e => startResize(key, e))}
-                </div>
-              );
               const renderEditor = (krs, deptId, teamId) => (
                 <Card style={{ overflow: "auto" }}>
                   <div style={{ minWidth: "max-content" }}>
                     <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", alignItems: "center" }}>
-                      {hCell("ID", "id")}
-                      {hCell("Key Result", "label")}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", minWidth: 0 }}><span>Target</span>{rszHandle(e => startResize("target", e))}</div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", minWidth: 0 }}><span>Actual</span>{rszHandle(e => startResize("actual", e))}</div>
-                      {hCell("Unit", "unit")}
-                      {hCell("Data Source", "dataSource")}
+                      {visibleBuiltIn.map(({ key, label }) => (
+                        <div key={key} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 2 }}>
+                          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                          <button onClick={() => setHiddenCols(prev => new Set([...prev, key]))} title="Hide column" style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, flexShrink: 0, lineHeight: 1, opacity: 0.6 }}>✕</button>
+                          {rszHandle(e => startResize(key, e))}
+                        </div>
+                      ))}
                       {customCols.map(col => (
                         <div key={col.id} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 3 }}>
                           <input value={col.name} onChange={e => setCustomCols(prev => prev.map(c => c.id === col.id ? { ...c, name: e.target.value } : c))}
@@ -1230,12 +1234,12 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     </div>
                     {krs.map((kr, i) => (
                       <div key={kr.id} style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
-                        <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
-                        <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
-                        <Input value={kr.target} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                        <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
-                        <Input value={kr.unit || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "unit", value: e.target.value })} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />
-                        <Input value={kr.dataSource || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "dataSource", value: e.target.value })} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />
+                        {!hiddenCols.has("id") && <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>}
+                        {!hiddenCols.has("label") && <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>}
+                        {!hiddenCols.has("target") && <Input value={kr.target} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
+                        {!hiddenCols.has("actual") && <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>}
+                        {!hiddenCols.has("unit") && <Input value={kr.unit || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "unit", value: e.target.value })} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />}
+                        {!hiddenCols.has("dataSource") && <Input value={kr.dataSource || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "dataSource", value: e.target.value })} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />}
                         {customCols.map(col => (
                           <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "extras", value: { ...(kr.extras || {}), [col.id]: e.target.value } })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />
                         ))}
@@ -1244,18 +1248,32 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     ))}
                     {addTarget === (teamId || `dept-${deptId}`) ? (
                       <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
-                        <span style={{ fontSize: 12, color: T.brand }}>NEW</span>
-                        <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />
-                        <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                        <span />
-                        <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />
-                        <Input value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />
+                        {!hiddenCols.has("id") && <span style={{ fontSize: 12, color: T.brand }}>NEW</span>}
+                        {!hiddenCols.has("label") && <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />}
+                        {!hiddenCols.has("target") && <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
+                        {!hiddenCols.has("actual") && <span />}
+                        {!hiddenCols.has("unit") && <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />}
+                        {!hiddenCols.has("dataSource") && <Input value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />}
                         {customCols.map(col => <span key={col.id} />)}
                         <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                       </div>
                     ) : (
                       <div style={{ padding: "10px 16px" }}>
                         <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                      </div>
+                    )}
+                    {hiddenCols.size > 0 && (
+                      <div style={{ padding: "6px 16px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Hidden:</span>
+                        {[...hiddenCols].map(key => {
+                          const col = COLS_DEF.find(c => c.key === key);
+                          return (
+                            <button key={key} onClick={() => setHiddenCols(prev => { const n = new Set(prev); n.delete(key); return n; })}
+                              style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 12, padding: "2px 8px", cursor: "pointer", color: T.textSoft, fontSize: 11, fontFamily: F.body }}>
+                              {col?.label} ↩
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1573,8 +1591,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
   const { depts, memberData, weeklySubs, projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
-  const myMembers = users.filter(u => u.role === "member" && u.deptId === user.deptId);
-  const myTeamMemberIds = myMembers.map(u => u.id);
+  const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId);
+  const myTeamMemberIds = users.filter(u => u.role === "member" && u.deptId === user.deptId).map(u => u.id);
   const pendingSubs = weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId) && s.approval === "pending");
   const myProjects = projects.filter(p => p.mgrId === user.id);
 
@@ -1628,17 +1646,17 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 );
               };
               const deptRate = calcRate(dept.krs); const deptStatus = getStatus(deptRate);
-              const myTeams = dept.teams.filter(t => user.teamIds?.includes(t.id));
+              const myTeams = dept.teams;
               return (<>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
                   <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
                   <Metric label="Dept KRs" value={dept.krs.length} />
-                  <Metric label="My Teams" value={myTeams.length} />
+                  <Metric label="Dept Teams" value={myTeams.length} />
                 </div>
                 <SectionLabel>Department Key Results</SectionLabel>
                 {renderKrTable(dept.krs, dept.id, null)}
                 {myTeams.length > 0 && (<>
-                  <SectionLabel>My Team Key Results</SectionLabel>
+                  <SectionLabel>Team Key Results</SectionLabel>
                   {myTeams.map(t => {
                     const tr = calcRate(t.krs); const ts = getStatus(tr);
                     return (
@@ -1871,18 +1889,21 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("mykpis");
   const [newOut, setNewOut] = useState({ week: currentWeekLabel(), items: "" });
 
-  const { memberData, weeklySubs, monthlyReports } = state;
+  const { memberData, weeklySubs, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
+  const myDept = depts.find(d => d.id === user.deptId);
+  const myTeam = myDept?.teams.find(t => t.id === user.teamId);
   const mySubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
   const rate = calcRate(kd.krs); const st = getStatus(rate);
   const pendingCount = mySubs.filter(s => s.approval === "pending").length;
   const thisWeekSub = mySubs.find(s => s.week === currentWeekLabel());
 
   const navItems = [
-    { id: "mykpis",  icon: "◎", label: "My KPIs"          },
-    { id: "submit",  icon: "✎", label: "Weekly Submission" },
-    { id: "history", icon: "⊞", label: "My History"        },
-    { id: "reports", icon: "⊠", label: "Monthly Reports"  },
+    { id: "mykpis",    icon: "◎", label: "My KPIs"          },
+    { id: "dept-kpis", icon: "⬛", label: "Dept & Team KPIs" },
+    { id: "submit",    icon: "✎", label: "Weekly Submission" },
+    { id: "history",   icon: "⊞", label: "My History"        },
+    { id: "reports",   icon: "⊠", label: "Monthly Reports"  },
   ];
 
   return (
@@ -1915,6 +1936,59 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 </Card>
               );
             })}
+          </Pane>
+        </>)}
+
+        {page === "dept-kpis" && (<>
+          <Header title={`${myDept?.name || "Department"} KPIs`} sub="Read-only view of your department and team key results" />
+          <Pane>
+            {!myDept && <EmptyState text="No department assigned to your account." />}
+            {myDept && (() => {
+              const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
+              const renderKrTable = (krs) => {
+                if (krs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No key results set up yet.</div>;
+                return (
+                  <Card style={{ overflow: "hidden", marginBottom: 14 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                    </div>
+                    {krs.map((kr, i) => {
+                      const pct = kr.target > 0 ? Math.min((kr.actual / kr.target) * 100, 100) : 0;
+                      const s = getStatus(pct);
+                      return (
+                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                          <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                          <div>
+                            <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                            {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                          </div>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span>
+                          <Bar value={pct} status={s} h={5} />
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={s} small /></div>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                );
+              };
+              const deptRate = calcRate(myDept.krs); const deptStatus = getStatus(deptRate);
+              return (<>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
+                  <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
+                  <Metric label="Dept KRs" value={myDept.krs.length} />
+                  {myTeam && <Metric label="My Team" value={myTeam.name} />}
+                </div>
+                <SectionLabel>Department Key Results</SectionLabel>
+                {renderKrTable(myDept.krs)}
+                {myTeam && (<>
+                  <SectionLabel>My Team — {myTeam.name}</SectionLabel>
+                  {myTeam.obj && <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>Objective: {myTeam.obj}{myTeam.lead ? ` · Lead: ${myTeam.lead}` : ""}</div>}
+                  {renderKrTable(myTeam.krs)}
+                </>)}
+              </>);
+            })()}
           </Pane>
         </>)}
 
