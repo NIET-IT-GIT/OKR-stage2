@@ -126,9 +126,22 @@ const INIT_MONTHLY_REPORTS = [
 ];
 
 /* ─── HELPERS ─── */
+function krCompletion(kr) {
+  const actual = Number(kr.actual) || 0;
+  const target = Number(kr.target) || 0;
+  const op = kr.operator || ">=";
+  if (target === 0) return 100;
+  switch (op) {
+    case ">=": return Math.min((actual / target) * 100, 100);
+    case ">":  return actual > target ? 100 : Math.min((actual / target) * 100, 100);
+    case "<=": return actual <= target ? 100 : Math.min((target / actual) * 100, 100);
+    case "<":  return actual < target ? 100 : Math.min((target / actual) * 100, 100);
+    default:   return Math.min((actual / target) * 100, 100);
+  }
+}
 function calcRate(krs) {
   if (!krs?.length) return 0;
-  return krs.reduce((sum, kr) => sum + Math.min((kr.actual / kr.target) * 100, 100), 0) / krs.length;
+  return krs.reduce((sum, kr) => sum + krCompletion(kr), 0) / krs.length;
 }
 function getStatus(r) { return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
 function fmt(v) { return typeof v === "number" ? (v % 1 ? v.toFixed(1) : v.toLocaleString()) : v; }
@@ -954,10 +967,10 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
                     {d.krs.length > 0 && (
                       <Card style={{ overflow: "hidden", marginBottom: 14 }}>
                         <div style={{ padding: "9px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 12, fontWeight: 700, color: T.textMuted, letterSpacing: "0.05em" }}>DEPARTMENT KEY RESULTS</div>
-                        {d.krs.map((kr, ki) => { const cr = Math.min((kr.actual / kr.target) * 100, 100); const cs = getStatus(cr);
+                        {d.krs.map((kr, ki) => { const cr = krCompletion(kr); const cs = getStatus(cr);
                           return (<div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 70px 70px 55px 130px 65px", padding: "9px 16px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                             <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span><span>{kr.label}</span>
-                            <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}</span>
+                            <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}</span>
                             <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700 }}>{fmt(kr.actual)}</span>
                             <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
                             <Bar value={cr} status={cs} h={5} />
@@ -1076,15 +1089,15 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("overview");
   const [selDept, setSelDept] = useState(null);
   const [selTeam, setSelTeam] = useState(null);
-  const [newKr, setNewKr] = useState({ label: "", target: "", unit: "", dataSource: "" });
+  const [newKr, setNewKr] = useState({ label: "", target: "", unit: "", dataSource: "", operator: ">=" });
   const [addTarget, setAddTarget] = useState(null);
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ name: "", progress: 0, status: "active", log: "", due: "" });
   const [subFilter, setSubFilter] = useState("all");
-  const [colWidths, setColWidths] = useState({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
-  const colWidthsRef = useRef({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
+  const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, target: 90, actual: 80, unit: 100, dataSource: 260 });
+  const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, target: 90, actual: 80, unit: 100, dataSource: 260 });
   const [hiddenCols, setHiddenCols] = useState(new Set());
   const [customColWidthOverride, setCustomColWidthOverride] = useState(null);
   const [addingCol, setAddingCol] = useState(false);
@@ -1116,9 +1129,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
   function addKr(deptId, teamId) {
     if (!newKr.label || !newKr.target) return;
-    const kr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, target: Number(newKr.target), actual: 0, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim() };
+    const kr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, target: Number(newKr.target), actual: 0, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=" };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
-    setNewKr({ label: "", target: "", unit: "", dataSource: "" }); setAddTarget(null);
+    setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=" }); setAddTarget(null);
   }
   function startResize(key, e) {
     e.preventDefault();
@@ -1204,11 +1217,20 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               const COLS_DEF = [
                 { key: "id",         label: "ID" },
                 { key: "label",      label: "Key Result" },
+                { key: "operator",   label: "Op" },
                 { key: "target",     label: "Target" },
                 { key: "actual",     label: "Actual" },
                 { key: "unit",       label: "Unit" },
                 { key: "dataSource", label: "Data Source" },
               ];
+              const opSelect = (val, onChange) => (
+                <select value={val} onChange={onChange} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.mono }}>
+                  <option value=">=">&gt;=</option>
+                  <option value=">">&gt;</option>
+                  <option value="<=">&lt;=</option>
+                  <option value="<">&lt;</option>
+                </select>
+              );
               const customCols = dept.customCols || [];
               const getCustomColWidth = (col) => customColWidthOverride?.colId === col.id ? customColWidthOverride.width : (col.width ?? 150);
               const visibleBuiltIn = COLS_DEF.filter(c => !hiddenCols.has(c.key));
@@ -1246,6 +1268,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       <div key={kr.id} style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                         {!hiddenCols.has("id") && <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>}
                         {!hiddenCols.has("label") && <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>}
+                        {!hiddenCols.has("operator") && opSelect(kr.operator || ">=", e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "operator", value: e.target.value }))}
                         {!hiddenCols.has("target") && <Input value={kr.target} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                         {!hiddenCols.has("actual") && <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>}
                         {!hiddenCols.has("unit") && <Input value={kr.unit || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "unit", value: e.target.value })} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />}
@@ -1260,6 +1283,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
                         {!hiddenCols.has("id") && <span style={{ fontSize: 12, color: T.brand }}>NEW</span>}
                         {!hiddenCols.has("label") && <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />}
+                        {!hiddenCols.has("operator") && opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}
                         {!hiddenCols.has("target") && <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                         {!hiddenCols.has("actual") && <span />}
                         {!hiddenCols.has("unit") && <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />}
@@ -1269,7 +1293,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       </div>
                     ) : (
                       <div style={{ padding: "10px 16px" }}>
-                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
                       </div>
                     )}
                     {hiddenCols.size > 0 && (
@@ -1634,7 +1658,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                       <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                     </div>
                     {krs.map((kr, i) => {
-                      const pct = kr.target > 0 ? Math.min((kr.actual / kr.target) * 100, 100) : 0;
+                      const pct = krCompletion(kr);
                       const st = getStatus(pct);
                       return (
                         <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -1643,7 +1667,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                             <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
                             {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                           </div>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                           <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                           <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
                           <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
@@ -1845,12 +1869,12 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</span><Tag type={s} /></div>
                   </div>
                   {kd.krs.map((kr, ki) => {
-                    const cr = Math.min((kr.actual / kr.target) * 100, 100); const cs = getStatus(cr);
+                    const cr = krCompletion(kr); const cs = getStatus(cr);
                     return (
                       <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 80px 100px 55px 130px", padding: "9px 18px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: ki < kd.krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
                         <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
                         <span>{kr.label}</span>
-                        <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}</span>
+                        <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}</span>
                         <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                         <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
                         <Bar value={cr} status={cs} h={5} />
@@ -1931,7 +1955,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
             </div>
             {kd.krs.map(kr => {
-              const r = Math.min((kr.actual / kr.target) * 100, 100); const s = getStatus(r);
+              const r = krCompletion(kr); const s = getStatus(r);
               return (
                 <Card key={kr.id} style={{ padding: "18px 20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
@@ -1939,7 +1963,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                     <Tag type={s} />
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
-                    <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>of {fmt(kr.target)} target</div></div>
+                    <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)} target</div></div>
                     <div style={{ flex: 1 }}><Bar value={r} status={s} h={10} /></div>
                     <div style={{ fontSize: 26, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</div>
                   </div>
@@ -1963,7 +1987,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                       <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                     </div>
                     {krs.map((kr, i) => {
-                      const pct = kr.target > 0 ? Math.min((kr.actual / kr.target) * 100, 100) : 0;
+                      const pct = krCompletion(kr);
                       const s = getStatus(pct);
                       return (
                         <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -1972,7 +1996,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                             <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
                             {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                           </div>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                           <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
                           <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span>
                           <Bar value={pct} status={s} h={5} />
@@ -2009,10 +2033,10 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             <Card style={{ padding: 20 }}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Update KPI Actuals</div>
               {kd.krs.map((kr, i) => {
-                const r = Math.min((kr.actual / kr.target) * 100, 100); const s = getStatus(r);
+                const r = krCompletion(kr); const s = getStatus(r);
                 return (
                   <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 70px 100px 50px 130px", padding: "9px 0", gap: 10, alignItems: "center", borderBottom: i < kd.krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
-                    <div><div style={{ fontWeight: 600 }}>{kr.label}</div><div style={{ fontSize: 12, color: T.textMuted }}>Target: {fmt(kr.target)}</div></div>
+                    <div><div style={{ fontWeight: 600 }}>{kr.label}</div><div style={{ fontSize: 12, color: T.textMuted }}>Target: {kr.operator || ">="} {fmt(kr.target)}</div></div>
                     <span style={{ fontSize: 12, color: T.textMuted, textAlign: "right" }}>Actual:</span>
                     <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: user.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "7px 10px", fontSize: 15, fontFamily: F.mono }} />
                     <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{r.toFixed(0)}%</span>
