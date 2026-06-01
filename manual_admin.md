@@ -88,9 +88,17 @@ Use this page to configure key results for departments and their teams.
 6. To **delete a KR**: click the delete button on the KR row.
 7. To **update actuals**: edit the actual value field directly.
 
-### Column Widths
+### Adding Custom Columns
 
-Each column in the KR table has a fixed display width. If a key result description or data source is long, it will wrap within its column. The column order is fixed: ID → Key Result → Target → Actual → Unit → Data Source.
+Click **+ Add Column** (top-right of the department section) to add an extra column to all KR tables on this page. Enter a column name and press **Add** or hit Enter. The new column appears in both the Department KR table and the Team KR table.
+
+- To **rename** a custom column, click its header label and type the new name.
+- To **remove** a custom column, click the small ✕ next to its header label.
+- Custom column values are saved per KR — type directly into the cell for each row.
+
+### Adjusting Column Widths
+
+Every column header has a drag handle on its right edge (shown as a faint vertical bar). Drag it left or right to resize that column. This applies to all built-in columns (ID, Key Result, Target, Actual, Unit, Data Source) and any custom columns you have added. If the total table width exceeds the page width, the table scrolls horizontally.
 
 ---
 

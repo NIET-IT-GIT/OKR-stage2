@@ -1083,6 +1083,11 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ name: "", progress: 0, status: "active", log: "", due: "" });
   const [subFilter, setSubFilter] = useState("all");
+  const [colWidths, setColWidths] = useState({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
+  const colWidthsRef = useRef({ id: 50, label: 220, target: 90, actual: 80, unit: 100, dataSource: 260 });
+  const [customCols, setCustomCols] = useState([]);
+  const [addingCol, setAddingCol] = useState(false);
+  const [newColName, setNewColName] = useState("");
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users } = state;
   const navItems = [
@@ -1113,6 +1118,36 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     const kr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, target: Number(newKr.target), actual: 0, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim() };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
     setNewKr({ label: "", target: "", unit: "", dataSource: "" }); setAddTarget(null);
+  }
+  function startResize(key, e) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = colWidthsRef.current[key] ?? 100;
+    function onMove(me) {
+      const w = Math.max(50, startW + me.clientX - startX);
+      colWidthsRef.current = { ...colWidthsRef.current, [key]: w };
+      setColWidths(prev => ({ ...prev, [key]: w }));
+    }
+    function onUp() { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+  function startResizeCustom(colId, e) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = customCols.find(c => c.id === colId)?.width ?? 150;
+    function onMove(me) {
+      const w = Math.max(60, startW + me.clientX - startX);
+      setCustomCols(prev => prev.map(c => c.id === colId ? { ...c, width: w } : c));
+    }
+    function onUp() { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+  function addCustomCol() {
+    if (!newColName.trim()) return;
+    setCustomCols(prev => [...prev, { id: `col_${Date.now()}`, name: newColName.trim(), width: 150 }]);
+    setNewColName(""); setAddingCol(false);
   }
 
   return (
@@ -1157,41 +1192,87 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{depts.map(d => <Btn key={d.id} primary={selDept === d.id} small onClick={() => { setSelDept(d.id); setSelTeam(null); setAddTarget(null); }}>{d.name}</Btn>)}</div>
             {selDept && (() => {
               const dept = depts.find(d => d.id === selDept); if (!dept) return null;
-              const COL = "50px 160px 90px 80px 90px 500px 50px";
+              const COL = [
+                `${colWidths.id}px`, `${colWidths.label}px`, `${colWidths.target}px`,
+                `${colWidths.actual}px`, `${colWidths.unit}px`, `${colWidths.dataSource}px`,
+                ...customCols.map(c => `${c.width}px`), "34px",
+              ].join(" ");
+              const rszHandle = (onMd) => (
+                <div onMouseDown={onMd} title="Drag to resize" style={{ width: 6, flexShrink: 0, alignSelf: "stretch", cursor: "col-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 2, height: "40%", background: T.border, borderRadius: 1 }} />
+                </div>
+              );
+              const hCell = (label, key) => (
+                <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                  {rszHandle(e => startResize(key, e))}
+                </div>
+              );
               const renderEditor = (krs, deptId, teamId) => (
-                <Card style={{ overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                    <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span>Data Source</span><span></span>
-                  </div>
-                  {krs.map((kr, i) => (
-                    <div key={kr.id} style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
-                      <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
-                      <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
-                      <Input value={kr.target} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                      <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
-                      <Input value={kr.unit || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "unit", value: e.target.value })} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />
-                      <Input value={kr.dataSource || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "dataSource", value: e.target.value })} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />
-                      <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
-                    </div>
-                  ))}
-                  {addTarget === (teamId || `dept-${deptId}`) ? (
-                    <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
-                      <span style={{ fontSize: 12, color: T.brand }}>NEW</span>
-                      <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description" style={{ padding: "5px 8px", fontSize: 14 }} />
-                      <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                <Card style={{ overflow: "auto" }}>
+                  <div style={{ minWidth: "max-content" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", alignItems: "center" }}>
+                      {hCell("ID", "id")}
+                      {hCell("Key Result", "label")}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", minWidth: 0 }}><span>Target</span>{rszHandle(e => startResize("target", e))}</div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", minWidth: 0 }}><span>Actual</span>{rszHandle(e => startResize("actual", e))}</div>
+                      {hCell("Unit", "unit")}
+                      {hCell("Data Source", "dataSource")}
+                      {customCols.map(col => (
+                        <div key={col.id} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 3 }}>
+                          <input value={col.name} onChange={e => setCustomCols(prev => prev.map(c => c.id === col.id ? { ...c, name: e.target.value } : c))}
+                            style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", padding: 0, cursor: "text" }} />
+                          <button onClick={() => setCustomCols(prev => prev.filter(c => c.id !== col.id))} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, flexShrink: 0, lineHeight: 1 }} title="Remove column">✕</button>
+                          {rszHandle(e => startResizeCustom(col.id, e))}
+                        </div>
+                      ))}
                       <span />
-                      <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />
-                      <Input value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />
-                      <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                     </div>
-                  ) : (
-                    <div style={{ padding: "10px 16px" }}>
-                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
-                    </div>
-                  )}
+                    {krs.map((kr, i) => (
+                      <div key={kr.id} style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                        <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                        <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                        <Input value={kr.target} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                        <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
+                        <Input value={kr.unit || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "unit", value: e.target.value })} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />
+                        <Input value={kr.dataSource || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "dataSource", value: e.target.value })} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />
+                        {customCols.map(col => (
+                          <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "extras", value: { ...(kr.extras || {}), [col.id]: e.target.value } })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />
+                        ))}
+                        <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
+                      </div>
+                    ))}
+                    {addTarget === (teamId || `dept-${deptId}`) ? (
+                      <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
+                        <span style={{ fontSize: 12, color: T.brand }}>NEW</span>
+                        <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />
+                        <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                        <span />
+                        <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />
+                        <Input value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />
+                        {customCols.map(col => <span key={col.id} />)}
+                        <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
+                      </div>
+                    ) : (
+                      <div style={{ padding: "10px 16px" }}>
+                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                      </div>
+                    )}
+                  </div>
                 </Card>
               );
               return (<>
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  {addingCol ? (<>
+                    <input autoFocus value={newColName} onChange={e => setNewColName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") addCustomCol(); if (e.key === "Escape") { setAddingCol(false); setNewColName(""); } }}
+                      placeholder="Column name" style={{ padding: "5px 10px", fontSize: 13, border: `1px solid ${T.borderFocus}`, borderRadius: 6, background: T.surface, fontFamily: F.body, color: T.text, outline: "none" }} />
+                    <Btn primary small onClick={addCustomCol}>Add</Btn>
+                    <Btn small onClick={() => { setAddingCol(false); setNewColName(""); }}>Cancel</Btn>
+                  </>) : (
+                    <Btn small onClick={() => setAddingCol(true)}>+ Add Column</Btn>
+                  )}
+                </div>
                 <div><div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{dept.name} — Department KRs</div><div style={{ fontSize: 13, color: T.textMuted, marginBottom: 12 }}>Objective: {dept.obj}</div>{renderEditor(dept.krs, dept.id, null)}</div>
                 {dept.teams.length > 0 && (<div>
                   <SectionLabel>Team KRs</SectionLabel>
