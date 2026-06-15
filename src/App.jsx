@@ -380,7 +380,7 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
           <div style={{ width: 40, height: 40, borderRadius: 8, background: `linear-gradient(145deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", boxShadow: "0 2px 8px rgba(0,113,227,0.28)" }}>NIET</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>OKR Tracker</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>NIET Group OKR's</div>
             <div style={{ fontSize: 11, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase" }}>NIET GROUP</div>
           </div>
         </div>
@@ -516,7 +516,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
           <div style={{ width: 60, height: 60, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: "#fff" }}>NIET</div>
           <div>
-            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>OKR Performance Tracker</div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>NIET Group OKR's</div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", letterSpacing: "0.14em" }}>NIET · CHARLTON BROWN · RHODES · EDUCARE</div>
           </div>
         </div>
@@ -2118,21 +2118,72 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
    ───────────────────────────────────────────────────────────── */
 function appReducer(state, action) {
   switch (action.type) {
-    case "UPDATE_KR": return { ...state, depts: state.depts.map(d => {
-      if (d.id !== action.deptId) return d;
-      if (!action.teamId) return { ...d, krs: d.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) };
-      return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) }) };
-    })};
-    case "ADD_KR": return { ...state, depts: state.depts.map(d => {
-      if (d.id !== action.deptId) return d;
-      if (!action.teamId) return { ...d, krs: [...d.krs, action.kr] };
-      return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: [...t.krs, action.kr] }) };
-    })};
-    case "REMOVE_KR": return { ...state, depts: state.depts.map(d => {
-      if (d.id !== action.deptId) return d;
-      if (!action.teamId) return { ...d, krs: d.krs.filter(kr => kr.id !== action.krId) };
-      return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
-    })};
+    case "UPDATE_KR": {
+      const newDepts = state.depts.map(d => {
+        if (d.id !== action.deptId) return d;
+        if (!action.teamId) return { ...d, krs: d.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) };
+        return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) }) };
+      });
+      if (action.teamId) {
+        const dept = state.depts.find(d => d.id === action.deptId);
+        const team = dept?.teams.find(t => t.id === action.teamId);
+        const memberIds = team?.members || [];
+        const newMemberData = { ...state.memberData };
+        for (const memberId of memberIds) {
+          const md = newMemberData[memberId];
+          if (!md) continue;
+          const krs = md.krs || [];
+          if (krs.some(kr => kr.id === action.krId)) {
+            newMemberData[memberId] = { ...md, krs: krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) };
+          }
+        }
+        return { ...state, depts: newDepts, memberData: newMemberData };
+      }
+      return { ...state, depts: newDepts };
+    }
+    case "ADD_KR": {
+      const newDepts = state.depts.map(d => {
+        if (d.id !== action.deptId) return d;
+        if (!action.teamId) return { ...d, krs: [...d.krs, action.kr] };
+        return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: [...t.krs, action.kr] }) };
+      });
+      if (action.teamId) {
+        const dept = state.depts.find(d => d.id === action.deptId);
+        const team = dept?.teams.find(t => t.id === action.teamId);
+        const memberIds = team?.members || [];
+        const newMemberData = { ...state.memberData };
+        for (const memberId of memberIds) {
+          const md = newMemberData[memberId];
+          if (!md) continue;
+          const krs = md.krs || [];
+          if (!krs.some(kr => kr.id === action.kr.id)) {
+            newMemberData[memberId] = { ...md, krs: [...krs, action.kr] };
+          }
+        }
+        return { ...state, depts: newDepts, memberData: newMemberData };
+      }
+      return { ...state, depts: newDepts };
+    }
+    case "REMOVE_KR": {
+      const newDepts = state.depts.map(d => {
+        if (d.id !== action.deptId) return d;
+        if (!action.teamId) return { ...d, krs: d.krs.filter(kr => kr.id !== action.krId) };
+        return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
+      });
+      if (action.teamId) {
+        const dept = state.depts.find(d => d.id === action.deptId);
+        const team = dept?.teams.find(t => t.id === action.teamId);
+        const memberIds = team?.members || [];
+        const newMemberData = { ...state.memberData };
+        for (const memberId of memberIds) {
+          const md = newMemberData[memberId];
+          if (!md) continue;
+          newMemberData[memberId] = { ...md, krs: (md.krs || []).filter(kr => kr.id !== action.krId) };
+        }
+        return { ...state, depts: newDepts, memberData: newMemberData };
+      }
+      return { ...state, depts: newDepts };
+    }
     case "SET_DEPT_CUSTOM_COLS": return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, customCols: action.customCols } : d) };
     case "UPDATE_MEMBER_KR": return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...state.memberData[action.memberId], krs: state.memberData[action.memberId].krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
     case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
