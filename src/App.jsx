@@ -1089,19 +1089,25 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("overview");
   const [selDept, setSelDept] = useState(null);
   const [selTeam, setSelTeam] = useState(null);
-  const [newKr, setNewKr] = useState({ label: "", target: "", unit: "", dataSource: "", operator: ">=" });
+  const [newKr, setNewKr] = useState({ label: "", target: "", unit: "", dataSource: "", operator: ">=", period: "monthly" });
   const [addTarget, setAddTarget] = useState(null);
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ name: "", progress: 0, status: "active", log: "", due: "" });
   const [subFilter, setSubFilter] = useState("all");
-  const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, target: 90, actual: 80, unit: 100, dataSource: 260 });
-  const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, target: 90, actual: 80, unit: 100, dataSource: 260 });
+  const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
+  const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const [hiddenCols, setHiddenCols] = useState(new Set());
   const [customColWidthOverride, setCustomColWidthOverride] = useState(null);
   const [addingCol, setAddingCol] = useState(false);
   const [newColName, setNewColName] = useState("");
+  const [overviewPeriod, setOverviewPeriod] = useState("all");
+  const [syncPrompt, setSyncPrompt] = useState(null);
+  const syncTimerRef = useRef(null);
+  const [editReportId, setEditReportId] = useState(null);
+  const [editReportForm, setEditReportForm] = useState({ month: "", notes: "" });
+  const [reportPeriodView, setReportPeriodView] = useState("all");
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users } = state;
   const navItems = [
@@ -1115,7 +1121,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     { id: "users",        icon: "⊹", label: "User Management"     },
   ];
 
-  const deptRanks = depts.map(d => ({ ...d, rate: calcRate(d.krs), status: getStatus(calcRate(d.krs)) })).sort((a, b) => b.rate - a.rate);
+  const filtKrs = (krs) => overviewPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === overviewPeriod);
+  const deptRanks = depts.map(d => ({ ...d, rate: calcRate(filtKrs(d.krs)), status: getStatus(calcRate(filtKrs(d.krs))) })).sort((a, b) => b.rate - a.rate);
   const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
   const allMembers = users
     .filter(u => u.role === "member")
@@ -1127,11 +1134,20 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     })
     .sort((a, b) => b.rate - a.rate);
 
+  function triggerSyncPrompt(deptId, teamId) {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    const dept = depts.find(d => d.id === deptId);
+    const team = dept?.teams.find(t => t.id === teamId);
+    if (!team) return;
+    syncTimerRef.current = setTimeout(() => setSyncPrompt({ deptId, teamId, teamName: team.name }), 1500);
+  }
+
   function addKr(deptId, teamId) {
     if (!newKr.label || !newKr.target) return;
-    const kr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, target: Number(newKr.target), actual: 0, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=" };
+    const kr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, target: Number(newKr.target), actual: 0, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
-    setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=" }); setAddTarget(null);
+    if (teamId) triggerSyncPrompt(deptId, teamId);
+    setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=", period: "monthly" }); setAddTarget(null);
   }
   function startResize(key, e) {
     e.preventDefault();
@@ -1183,6 +1199,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           <Header title="Company Overview" sub="FY26 Q1 · All colleges · All departments"
             right={<div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted, fontFamily: F.mono }}>Time: {TP}%</span><Tag type={getStatus(compRate)} /></div>} />
           <Pane>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {["all", "weekly", "monthly", "annual"].map(p => (
+                <Btn key={p} small primary={overviewPeriod === p} onClick={() => setOverviewPeriod(p)}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </Btn>
+              ))}
+            </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="Company Completion" value={`${compRate.toFixed(1)}%`} status={getStatus(compRate)} sub={`Target pace: ${TP}%`} />
               <Metric label="Departments" value={depts.length} />
@@ -1218,6 +1241,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 { key: "id",         label: "ID" },
                 { key: "label",      label: "Key Result" },
                 { key: "operator",   label: "Op" },
+                { key: "period",     label: "Period" },
                 { key: "target",     label: "Target" },
                 { key: "actual",     label: "Actual" },
                 { key: "unit",       label: "Unit" },
@@ -1243,7 +1267,12 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   <div style={{ width: 2, height: "40%", background: T.border, borderRadius: 1 }} />
                 </div>
               );
-              const renderEditor = (krs, deptId, teamId) => (
+              const renderEditor = (krs, deptId, teamId) => {
+                const onTeamChange = (krId, field, value) => {
+                  dispatch({ type: "UPDATE_KR", deptId, teamId, krId, field, value });
+                  if (teamId) triggerSyncPrompt(deptId, teamId);
+                };
+                return (
                 <Card style={{ overflow: "auto" }}>
                   <div style={{ minWidth: "max-content" }}>
                     <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", alignItems: "center" }}>
@@ -1268,15 +1297,23 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       <div key={kr.id} style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                         {!hiddenCols.has("id") && <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>}
                         {!hiddenCols.has("label") && <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>}
-                        {!hiddenCols.has("operator") && opSelect(kr.operator || ">=", e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "operator", value: e.target.value }))}
-                        {!hiddenCols.has("target") && <Input value={kr.target} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
+                        {!hiddenCols.has("operator") && opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}
+                        {!hiddenCols.has("period") && (
+                          <select value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)}
+                            style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="annual">Annual</option>
+                          </select>
+                        )}
+                        {!hiddenCols.has("target") && <Input value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                         {!hiddenCols.has("actual") && <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>}
-                        {!hiddenCols.has("unit") && <Input value={kr.unit || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "unit", value: e.target.value })} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />}
-                        {!hiddenCols.has("dataSource") && <Input value={kr.dataSource || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "dataSource", value: e.target.value })} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />}
+                        {!hiddenCols.has("unit") && <Input value={kr.unit || ""} onChange={e => onTeamChange(kr.id, "unit", e.target.value)} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />}
+                        {!hiddenCols.has("dataSource") && <Input value={kr.dataSource || ""} onChange={e => onTeamChange(kr.id, "dataSource", e.target.value)} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />}
                         {customCols.map(col => (
-                          <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "extras", value: { ...(kr.extras || {}), [col.id]: e.target.value } })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />
+                          <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => onTeamChange(kr.id, "extras", { ...(kr.extras || {}), [col.id]: e.target.value })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />
                         ))}
-                        <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
+                        <button onClick={() => { dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
                       </div>
                     ))}
                     {addTarget === (teamId || `dept-${deptId}`) ? (
@@ -1284,6 +1321,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         {!hiddenCols.has("id") && <span style={{ fontSize: 12, color: T.brand }}>NEW</span>}
                         {!hiddenCols.has("label") && <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />}
                         {!hiddenCols.has("operator") && opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}
+                        {!hiddenCols.has("period") && (
+                          <select value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))}
+                            style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="annual">Annual</option>
+                          </select>
+                        )}
                         {!hiddenCols.has("target") && <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                         {!hiddenCols.has("actual") && <span />}
                         {!hiddenCols.has("unit") && <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />}
@@ -1293,7 +1338,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       </div>
                     ) : (
                       <div style={{ padding: "10px 16px" }}>
-                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=", period: "monthly" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
                       </div>
                     )}
                     {hiddenCols.size > 0 && (
@@ -1312,7 +1357,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     )}
                   </div>
                 </Card>
-              );
+                );
+              };
               return (<>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, marginBottom: 8 }}>
                   {addingCol ? (<>
@@ -1394,7 +1440,11 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             right={<div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => { setShowGenReport(v => !v); setGenPeriod({ label: "", from: "", to: "" }); }}>{showGenReport ? "Cancel" : "Generate for Period"}</Btn>
               <Btn primary onClick={() => {
+                const filteredByPeriod = (krs, p) => krs.filter(kr => (kr.period || "monthly") === p);
+                const periodRate = (p) => { const rates = depts.map(d => calcRate(filteredByPeriod(d.krs, p))); return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0; };
                 const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
+                  notes: "",
+                  periodRates: { weekly: periodRate("weekly"), monthly: periodRate("monthly"), annual: periodRate("annual") },
                   data: { companyRate: Math.round(compRate * 10) / 10, deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
                     topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
                     redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
@@ -1404,6 +1454,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               }}>Publish {currentMonth()} Report</Btn>
             </div>} />
           <Pane>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {["all", "weekly", "monthly", "annual"].map(p => (
+                <Btn key={p} small primary={reportPeriodView === p} onClick={() => setReportPeriodView(p)}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </Btn>
+              ))}
+            </div>
             {showGenReport && (
               <Card style={{ padding: 20, borderLeft: `3px solid ${T.brand}` }}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Generate Report for Specific Period</div>
@@ -1422,7 +1479,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </div>
                   <Btn primary disabled={!genPeriod.label} onClick={() => {
                     const label = genPeriod.label.trim();
-                    const range = genPeriod.from && genPeriod.to ? ` (${genPeriod.from} → ${genPeriod.to})` : "";
+                    const filteredByPeriod = (krs, p) => krs.filter(kr => (kr.period || "monthly") === p);
+                    const periodRate = (p) => { const rates = depts.map(d => calcRate(filteredByPeriod(d.krs, p))); return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0; };
                     const report = {
                       id: `mr${Date.now()}`,
                       month: label,
@@ -1430,6 +1488,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       publishedBy: user.id,
                       periodFrom: genPeriod.from || null,
                       periodTo: genPeriod.to || null,
+                      notes: "",
+                      periodRates: { weekly: periodRate("weekly"), monthly: periodRate("monthly"), annual: periodRate("annual") },
                       data: {
                         companyRate: Math.round(compRate * 10) / 10,
                         deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
@@ -1456,27 +1516,54 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                    <Btn small onClick={() => { setEditReportId(r.id); setEditReportForm({ month: r.month, notes: r.notes || "" }); }}>Edit</Btn>
                     <button onClick={() => { if (window.confirm(`Delete report "${r.month}"? This cannot be undone.`)) dispatch({ type: "REMOVE_REPORT", reportId: r.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete report">✕</button>
                   </div>
                 </div>
-                <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                  <div>
-                    <SectionLabel>Department Rankings</SectionLabel>
-                    {r.data.deptRanks.map((d, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14 }}>
-                        <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
-                        <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                        <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
-                        <Tag type={d.status} small />
-                      </div>
-                    ))}
+                {editReportId === r.id ? (
+                  <div style={{ padding: "16px 20px" }}>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Period Label</div>
+                      <Input value={editReportForm.month} onChange={e => setEditReportForm(f => ({ ...f, month: e.target.value }))} style={{ width: "100%", marginBottom: 10 }} />
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Notes</div>
+                      <TextArea value={editReportForm.notes} onChange={e => setEditReportForm(f => ({ ...f, notes: e.target.value }))} placeholder="Add notes about this report period..." rows={3} />
+                    </div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <Btn small onClick={() => setEditReportId(null)}>Cancel</Btn>
+                      <Btn primary small onClick={() => { dispatch({ type: "EDIT_REPORT", reportId: r.id, updates: { month: editReportForm.month, notes: editReportForm.notes } }); setEditReportId(null); }}>Save</Btn>
+                    </div>
                   </div>
-                  <div>
-                    <SectionLabel>Top Performers</SectionLabel>
-                    {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
-                    {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
+                ) : (
+                  <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                    <div>
+                      <SectionLabel>Department Rankings</SectionLabel>
+                      {r.data.deptRanks.map((d, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14 }}>
+                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
+                          <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
+                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+                          <Tag type={d.status} small />
+                        </div>
+                      ))}
+                      {r.periodRates && (
+                        <div style={{ marginTop: 12 }}>
+                          <SectionLabel>Period Breakdown</SectionLabel>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {reportPeriodView === "all" || reportPeriodView === "weekly" ? (r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Weekly: {r.periodRates.weekly}%</span>) : null}
+                            {reportPeriodView === "all" || reportPeriodView === "monthly" ? (r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly: {r.periodRates.monthly}%</span>) : null}
+                            {reportPeriodView === "all" || reportPeriodView === "annual" ? (r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual: {r.periodRates.annual}%</span>) : null}
+                          </div>
+                        </div>
+                      )}
+                      {r.notes && <div style={{ marginTop: 12, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                    </div>
+                    <div>
+                      <SectionLabel>Top Performers</SectionLabel>
+                      {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
+                      {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
+                    </div>
                   </div>
-                </div>
+                )}
               </Card>
             ))}
           </Pane>
@@ -1609,6 +1696,20 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             </Card>
           </Pane>
         </>)}
+        {syncPrompt && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>Sync KPIs to Team Members?</div>
+              <p style={{ fontSize: 14, color: T.textSoft, marginBottom: 24, lineHeight: 1.6, margin: "0 0 24px" }}>
+                You updated KPIs for <strong>{syncPrompt.teamName}</strong>. Sync these changes to all team members' personal KPI lists?
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn onClick={() => setSyncPrompt(null)}>Skip</Btn>
+                <Btn primary onClick={() => { dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId: syncPrompt.deptId, teamId: syncPrompt.teamId }); setSyncPrompt(null); }}>Yes, Sync</Btn>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1622,6 +1723,9 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [newProj, setNewProj] = useState({ name: "", due: "" });
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
+  const [kpiPeriod, setKpiPeriod] = useState("all");
+  const [syncPrompt, setSyncPrompt] = useState(null);
+  const syncTimerRef = useRef(null);
 
   const { depts, memberData, weeklySubs, projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
@@ -1649,26 +1753,37 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           <Pane>
             {!dept && <EmptyState text="No department assigned to your account." />}
             {dept && (() => {
+              function triggerSyncPrompt(deptId, teamId) {
+                if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+                const d = depts.find(x => x.id === deptId);
+                const t = d?.teams.find(x => x.id === teamId);
+                if (!t) return;
+                syncTimerRef.current = setTimeout(() => setSyncPrompt({ deptId, teamId, teamName: t.name }), 1500);
+              }
               const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
               const renderKrTable = (krs, deptId, teamId) => {
-                if (krs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No key results set up yet.</div>;
+                const filtered = kpiPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === kpiPeriod);
+                if (filtered.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No key results {kpiPeriod !== "all" ? `for ${kpiPeriod} period` : "set up yet"}.</div>;
                 return (
                   <Card style={{ overflow: "hidden", marginBottom: 14 }}>
                     <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                       <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                     </div>
-                    {krs.map((kr, i) => {
+                    {filtered.map((kr, i) => {
                       const pct = krCompletion(kr);
                       const st = getStatus(pct);
                       return (
                         <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                           <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
                           <div>
-                            <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                              <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap", flexShrink: 0 }}>{kr.period || "monthly"}</span>
+                            </div>
                             {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                           </div>
                           <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
-                          <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                          <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                           <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
                           <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
                           <Bar value={pct} status={st} h={5} />
@@ -1682,6 +1797,13 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
               const deptRate = calcRate(dept.krs); const deptStatus = getStatus(deptRate);
               const myTeams = dept.teams;
               return (<>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  {["all", "weekly", "monthly", "annual"].map(p => (
+                    <Btn key={p} small primary={kpiPeriod === p} onClick={() => setKpiPeriod(p)}>
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </Btn>
+                  ))}
+                </div>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
                   <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
                   <Metric label="Dept KRs" value={dept.krs.length} />
@@ -1906,11 +2028,33 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                       <Tag type={d.status} small />
                     </div>
                   ))}
+                  {r.periodRates && (
+                    <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Weekly: {r.periodRates.weekly}%</span>}
+                      {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly: {r.periodRates.monthly}%</span>}
+                      {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual: {r.periodRates.annual}%</span>}
+                    </div>
+                  )}
+                  {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
                 </div>
               </Card>
             ))}
           </Pane>
         </>)}
+        {syncPrompt && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>Sync KPIs to Team Members?</div>
+              <p style={{ fontSize: 14, color: T.textSoft, marginBottom: 24, lineHeight: 1.6, margin: "0 0 24px" }}>
+                You updated KPIs for <strong>{syncPrompt.teamName}</strong>. Sync these changes to all team members' personal KPI lists?
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn onClick={() => setSyncPrompt(null)}>Skip</Btn>
+                <Btn primary onClick={() => { dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId: syncPrompt.deptId, teamId: syncPrompt.teamId }); setSyncPrompt(null); }}>Yes, Sync</Btn>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1922,6 +2066,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 function MemberPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("mykpis");
   const [newOut, setNewOut] = useState({ week: currentWeekLabel(), items: "" });
+  const [myKpiPeriod, setMyKpiPeriod] = useState("all");
+  const [deptKpiPeriod, setDeptKpiPeriod] = useState("all");
 
   const { memberData, weeklySubs, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -1948,19 +2094,29 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
         {page === "mykpis" && (<>
           <Header title="My KPIs" sub={`${user.title} · FY26 Q1`} right={<Tag type={st} />} />
           <Pane>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {["all", "weekly", "monthly", "annual"].map(p => (
+                <Btn key={p} small primary={myKpiPeriod === p} onClick={() => setMyKpiPeriod(p)}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </Btn>
+              ))}
+            </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="My Completion"  value={`${rate.toFixed(1)}%`} status={st} sub={`Time: ${TP}%`} />
               <Metric label="KRs Tracked"    value={kd.krs.length} />
               <Metric label="This Week"      value={thisWeekSub ? "Submitted" : "Due"} status={thisWeekSub ? "green" : "red"} />
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
             </div>
-            {kd.krs.map(kr => {
+            {(myKpiPeriod === "all" ? kd.krs : kd.krs.filter(kr => (kr.period || "monthly") === myKpiPeriod)).map(kr => {
               const r = krCompletion(kr); const s = getStatus(r);
               return (
                 <Card key={kr.id} style={{ padding: "18px 20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
                     <div><div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, fontFamily: F.mono, marginBottom: 3 }}>{kr.id}</div><div style={{ fontSize: 16, fontWeight: 700 }}>{kr.label}</div></div>
-                    <Tag type={s} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{kr.period || "monthly"}</span>
+                      <Tag type={s} />
+                    </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
                     <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)} target</div></div>
@@ -1980,20 +2136,24 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             {myDept && (() => {
               const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
               const renderKrTable = (krs) => {
-                if (krs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No key results set up yet.</div>;
+                const visibleKrs = deptKpiPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === deptKpiPeriod);
+                if (visibleKrs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No key results {deptKpiPeriod !== "all" ? `for ${deptKpiPeriod} period` : "set up yet"}.</div>;
                 return (
                   <Card style={{ overflow: "hidden", marginBottom: 14 }}>
                     <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                       <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                     </div>
-                    {krs.map((kr, i) => {
+                    {visibleKrs.map((kr, i) => {
                       const pct = krCompletion(kr);
                       const s = getStatus(pct);
                       return (
                         <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                           <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
                           <div>
-                            <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                              <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap", flexShrink: 0 }}>{kr.period || "monthly"}</span>
+                            </div>
                             {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                           </div>
                           <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
@@ -2009,6 +2169,13 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
               };
               const deptRate = calcRate(myDept.krs); const deptStatus = getStatus(deptRate);
               return (<>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  {["all", "weekly", "monthly", "annual"].map(p => (
+                    <Btn key={p} small primary={deptKpiPeriod === p} onClick={() => setDeptKpiPeriod(p)}>
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </Btn>
+                  ))}
+                </div>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
                   <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
                   <Metric label="Dept KRs" value={myDept.krs.length} />
@@ -2097,6 +2264,14 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                         <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
                       </div>
                     ))}
+                    {r.periodRates && (
+                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Weekly: {r.periodRates.weekly}%</span>}
+                        {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly: {r.periodRates.monthly}%</span>}
+                        {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual: {r.periodRates.annual}%</span>}
+                      </div>
+                    )}
+                    {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
                   </div>
                   <div>
                     <SectionLabel>Top Performers</SectionLabel>
@@ -2118,72 +2293,39 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
    ───────────────────────────────────────────────────────────── */
 function appReducer(state, action) {
   switch (action.type) {
-    case "UPDATE_KR": {
-      const newDepts = state.depts.map(d => {
-        if (d.id !== action.deptId) return d;
-        if (!action.teamId) return { ...d, krs: d.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) };
-        return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) }) };
-      });
-      if (action.teamId) {
-        const dept = state.depts.find(d => d.id === action.deptId);
-        const team = dept?.teams.find(t => t.id === action.teamId);
-        const memberIds = team?.members || [];
-        const newMemberData = { ...state.memberData };
-        for (const memberId of memberIds) {
-          const md = newMemberData[memberId];
-          if (!md) continue;
-          const krs = md.krs || [];
-          if (krs.some(kr => kr.id === action.krId)) {
-            newMemberData[memberId] = { ...md, krs: krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) };
-          }
-        }
-        return { ...state, depts: newDepts, memberData: newMemberData };
+    case "UPDATE_KR": return { ...state, depts: state.depts.map(d => {
+      if (d.id !== action.deptId) return d;
+      if (!action.teamId) return { ...d, krs: d.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) };
+      return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) }) };
+    })};
+    case "ADD_KR": return { ...state, depts: state.depts.map(d => {
+      if (d.id !== action.deptId) return d;
+      if (!action.teamId) return { ...d, krs: [...d.krs, action.kr] };
+      return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: [...t.krs, action.kr] }) };
+    })};
+    case "REMOVE_KR": return { ...state, depts: state.depts.map(d => {
+      if (d.id !== action.deptId) return d;
+      if (!action.teamId) return { ...d, krs: d.krs.filter(kr => kr.id !== action.krId) };
+      return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
+    })};
+    case "SYNC_TEAM_KRS_TO_MEMBERS": {
+      const dept = state.depts.find(d => d.id === action.deptId);
+      const team = dept?.teams.find(t => t.id === action.teamId);
+      if (!team) return state;
+      const memberIds = team.members || [];
+      const newMemberData = { ...state.memberData };
+      for (const memberId of memberIds) {
+        const md = newMemberData[memberId];
+        if (!md) continue;
+        const existing = md.krs || [];
+        const updated = existing.map(kr => { const tk = team.krs.find(t => t.id === kr.id); return tk ? { ...kr, ...tk } : kr; });
+        const added = team.krs.filter(kr => !existing.some(e => e.id === kr.id));
+        newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
       }
-      return { ...state, depts: newDepts };
+      return { ...state, memberData: newMemberData };
     }
-    case "ADD_KR": {
-      const newDepts = state.depts.map(d => {
-        if (d.id !== action.deptId) return d;
-        if (!action.teamId) return { ...d, krs: [...d.krs, action.kr] };
-        return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: [...t.krs, action.kr] }) };
-      });
-      if (action.teamId) {
-        const dept = state.depts.find(d => d.id === action.deptId);
-        const team = dept?.teams.find(t => t.id === action.teamId);
-        const memberIds = team?.members || [];
-        const newMemberData = { ...state.memberData };
-        for (const memberId of memberIds) {
-          const md = newMemberData[memberId];
-          if (!md) continue;
-          const krs = md.krs || [];
-          if (!krs.some(kr => kr.id === action.kr.id)) {
-            newMemberData[memberId] = { ...md, krs: [...krs, action.kr] };
-          }
-        }
-        return { ...state, depts: newDepts, memberData: newMemberData };
-      }
-      return { ...state, depts: newDepts };
-    }
-    case "REMOVE_KR": {
-      const newDepts = state.depts.map(d => {
-        if (d.id !== action.deptId) return d;
-        if (!action.teamId) return { ...d, krs: d.krs.filter(kr => kr.id !== action.krId) };
-        return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
-      });
-      if (action.teamId) {
-        const dept = state.depts.find(d => d.id === action.deptId);
-        const team = dept?.teams.find(t => t.id === action.teamId);
-        const memberIds = team?.members || [];
-        const newMemberData = { ...state.memberData };
-        for (const memberId of memberIds) {
-          const md = newMemberData[memberId];
-          if (!md) continue;
-          newMemberData[memberId] = { ...md, krs: (md.krs || []).filter(kr => kr.id !== action.krId) };
-        }
-        return { ...state, depts: newDepts, memberData: newMemberData };
-      }
-      return { ...state, depts: newDepts };
-    }
+    case "EDIT_REPORT":
+      return { ...state, monthlyReports: state.monthlyReports.map(r => r.id === action.reportId ? { ...r, ...action.updates } : r) };
     case "SET_DEPT_CUSTOM_COLS": return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, customCols: action.customCols } : d) };
     case "UPDATE_MEMBER_KR": return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...state.memberData[action.memberId], krs: state.memberData[action.memberId].krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
     case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
