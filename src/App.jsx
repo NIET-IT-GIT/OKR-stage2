@@ -1147,6 +1147,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [lbSearch, setLbSearch] = useState("");
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
   const [lbExpandedMember, setLbExpandedMember] = useState(null);
+  const [syncNote, setSyncNote] = useState(null);
+  const syncNoteTimer = useRef(null);
   const [subSearch, setSubSearch] = useState("");
   const [subDeptFilter, setSubDeptFilter] = useState("all");
 
@@ -1182,6 +1184,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     const team = dept?.teams.find(t => t.id === teamId);
     if (!team) return;
     syncTimerRef.current = setTimeout(() => setSyncPrompt({ deptId, teamId, teamName: team.name }), 1500);
+  }
+
+  function doSync(deptId, teamId) {
+    const dept = depts.find(d => d.id === deptId);
+    const team = dept?.teams.find(t => t.id === teamId);
+    if (!team) return;
+    const count = new Set([...(team.members || []), ...users.filter(u => u.teamId === teamId).map(u => u.id)]).size;
+    dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId, teamId });
+    if (syncNoteTimer.current) clearTimeout(syncNoteTimer.current);
+    setSyncNote({ teamName: team.name, count });
+    syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
   }
 
   function addKr(deptId, teamId) {
@@ -1419,7 +1432,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   {selTeam && (() => { const team = dept.teams.find(t => t.id === selTeam); return team ? (<>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
                       <div style={{ fontSize: 13, color: T.textMuted, flex: 1 }}>Objective: {team.obj} · Lead: {team.lead}</div>
-                      <Btn primary small onClick={() => dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId: dept.id, teamId: team.id })}>⟳ Sync to Team Members</Btn>
+                      <Btn primary small onClick={() => doSync(dept.id, team.id)}>⟳ Sync to Team Members</Btn>
                     </div>
                     {renderEditor(team.krs, dept.id, team.id)}
                   </>) : null; })()}
@@ -1853,8 +1866,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               </p>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <Btn onClick={() => setSyncPrompt(null)}>Skip</Btn>
-                <Btn primary onClick={() => { dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId: syncPrompt.deptId, teamId: syncPrompt.teamId }); setSyncPrompt(null); }}>Yes, Sync</Btn>
+                <Btn primary onClick={() => { doSync(syncPrompt.deptId, syncPrompt.teamId); setSyncPrompt(null); }}>Yes, Sync</Btn>
               </div>
+            </div>
+          </div>
+        )}
+        {syncNote && (
+          <div style={{ position: "fixed", bottom: 28, right: 28, zIndex: 1100, background: T.ok, color: "#fff", borderRadius: 12, padding: "14px 22px", boxShadow: "0 6px 28px rgba(0,0,0,0.22)", display: "flex", alignItems: "center", gap: 12, fontSize: 14, fontWeight: 600, minWidth: 280 }}>
+            <span style={{ fontSize: 20 }}>✓</span>
+            <div>
+              <div>KPIs synced to {syncNote.count} member{syncNote.count !== 1 ? "s" : ""}</div>
+              <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>{syncNote.teamName}</div>
             </div>
           </div>
         )}
@@ -2510,11 +2532,14 @@ function appReducer(state, action) {
       const dept = state.depts.find(d => d.id === action.deptId);
       const team = dept?.teams.find(t => t.id === action.teamId);
       if (!team) return state;
-      const memberIds = team.members || [];
+      // Merge members from team.members array AND users with matching teamId so both assignment paths are covered
+      const memberIds = [...new Set([
+        ...(team.members || []),
+        ...state.users.filter(u => u.teamId === action.teamId).map(u => u.id),
+      ])];
       const newMemberData = { ...state.memberData };
       for (const memberId of memberIds) {
-        const md = newMemberData[memberId];
-        if (!md) continue;
+        const md = newMemberData[memberId] || { krs: [] };
         const existing = md.krs || [];
         const updated = existing.map(kr => { const tk = team.krs.find(t => t.id === kr.id); return tk ? { ...kr, ...tk } : kr; });
         const added = team.krs.filter(kr => !existing.some(e => e.id === kr.id));
