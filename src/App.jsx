@@ -1113,6 +1113,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [editReportForm, setEditReportForm] = useState({ month: "", notes: "" });
   const [reportPeriodView, setReportPeriodView] = useState("all");
   const [reportSubTab, setReportSubTab] = useState("monthly");
+  const [lbSearch, setLbSearch] = useState("");
+  const [lbDeptFilter, setLbDeptFilter] = useState("all");
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
@@ -1694,22 +1696,53 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               <Metric label="At Risk"  value={allMembers.filter(m => m.status === "yellow").length} status="yellow" />
               <Metric label="Behind"   value={allMembers.filter(m => m.status === "red").length}    status="red"    />
             </div>
-            <Card style={{ overflow: "hidden" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "36px 32px 1fr 140px 55px 160px 70px", padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                <span>#</span><span></span><span>Name</span><span>Department</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ position: "relative", flex: "0 0 220px" }}>
+                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 14, pointerEvents: "none" }}>⌕</span>
+                <input
+                  value={lbSearch}
+                  onChange={e => setLbSearch(e.target.value)}
+                  placeholder="Search name..."
+                  style={{ width: "100%", boxSizing: "border-box", paddingLeft: 28, paddingRight: 10, paddingTop: 7, paddingBottom: 7, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontFamily: F.body, outline: "none" }}
+                />
               </div>
-              {allMembers.map((m, i) => (
-                <div key={m.id} style={{ display: "grid", gridTemplateColumns: "36px 32px 1fr 140px 55px 160px 70px", padding: "10px 16px", gap: 8, alignItems: "center", background: i === 0 ? T.okDim : m.status === "red" ? T.badDim : i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, borderLeft: i === 0 ? `3px solid ${T.ok}` : m.status === "red" ? `3px solid ${T.bad}` : "3px solid transparent", fontSize: 14 }}>
-                  <span style={{ fontFamily: F.mono, fontWeight: 900, color: i === 0 ? T.ok : m.status === "red" ? T.bad : T.textMuted }}>#{i + 1}</span>
-                  <Avatar letters={m.av} size={24} />
-                  <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 12 }}>{m.title}</span></div>
-                  <span style={{ fontSize: 12, color: T.textMuted }}>{m.deptName}</span>
-                  <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
-                  <Bar value={m.rate} status={m.status} h={5} />
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
-                </div>
-              ))}
-            </Card>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                <Btn small primary={lbDeptFilter === "all"} onClick={() => setLbDeptFilter("all")}>All Depts</Btn>
+                {depts.map(d => (
+                  <Btn key={d.id} small primary={lbDeptFilter === d.id} onClick={() => setLbDeptFilter(d.id)}>{d.name}</Btn>
+                ))}
+              </div>
+            </div>
+            {(() => {
+              const q = lbSearch.trim().toLowerCase();
+              const filtered = allMembers.filter(m =>
+                (lbDeptFilter === "all" || m.deptId === lbDeptFilter) &&
+                (!q || m.name.toLowerCase().includes(q) || m.title?.toLowerCase().includes(q))
+              );
+              if (filtered.length === 0) return <EmptyState text="No members match your search." />;
+              return (
+                <Card style={{ overflow: "hidden" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "50px 32px 1fr 140px 55px 160px 70px", padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                    <span>Rank</span><span></span><span>Name</span><span>Department</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                  </div>
+                  {filtered.map(m => {
+                    const globalRank = allMembers.indexOf(m) + 1;
+                    const isTop = globalRank === 1;
+                    return (
+                      <div key={m.id} style={{ display: "grid", gridTemplateColumns: "50px 32px 1fr 140px 55px 160px 70px", padding: "10px 16px", gap: 8, alignItems: "center", background: isTop ? T.okDim : m.status === "red" ? T.badDim : globalRank % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, borderLeft: isTop ? `3px solid ${T.ok}` : m.status === "red" ? `3px solid ${T.bad}` : "3px solid transparent", fontSize: 14 }}>
+                        <span style={{ fontFamily: F.mono, fontWeight: 900, color: isTop ? T.ok : m.status === "red" ? T.bad : T.textMuted }}>#{globalRank}</span>
+                        <Avatar letters={m.av} size={24} />
+                        <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 12 }}>{m.title}</span></div>
+                        <span style={{ fontSize: 12, color: T.textMuted }}>{m.deptName}</span>
+                        <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
+                        <Bar value={m.rate} status={m.status} h={5} />
+                        <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
+                      </div>
+                    );
+                  })}
+                </Card>
+              );
+            })()}
           </Pane>
         </>)}
         {syncPrompt && (
