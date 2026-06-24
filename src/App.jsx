@@ -1115,6 +1115,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [lbSearch, setLbSearch] = useState("");
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
+  const [lbExpandedMember, setLbExpandedMember] = useState(null);
   const [subSearch, setSubSearch] = useState("");
   const [subDeptFilter, setSubDeptFilter] = useState("all");
 
@@ -1742,23 +1743,68 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 (!q || m.name.toLowerCase().includes(q) || m.title?.toLowerCase().includes(q))
               );
               if (filtered.length === 0) return <EmptyState text="No members match your search." />;
+              const COL = "50px 32px 1fr 140px 55px 160px 70px 56px";
               return (
                 <Card style={{ overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "50px 32px 1fr 140px 55px 160px 70px", padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                    <span>Rank</span><span></span><span>Name</span><span>Department</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                  <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                    <span>Rank</span><span></span><span>Name</span><span>Department</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span><span></span>
                   </div>
                   {filtered.map(m => {
                     const globalRank = allMembers.indexOf(m) + 1;
                     const isTop = globalRank === 1;
+                    const isExpanded = lbExpandedMember === m.id;
+                    const kd = memberData[m.id];
+                    const krs = kd?.krs || [];
                     return (
-                      <div key={m.id} style={{ display: "grid", gridTemplateColumns: "50px 32px 1fr 140px 55px 160px 70px", padding: "10px 16px", gap: 8, alignItems: "center", background: isTop ? T.okDim : m.status === "red" ? T.badDim : globalRank % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, borderLeft: isTop ? `3px solid ${T.ok}` : m.status === "red" ? `3px solid ${T.bad}` : "3px solid transparent", fontSize: 14 }}>
-                        <span style={{ fontFamily: F.mono, fontWeight: 900, color: isTop ? T.ok : m.status === "red" ? T.bad : T.textMuted }}>#{globalRank}</span>
-                        <Avatar letters={m.av} size={24} />
-                        <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 12 }}>{m.title}</span></div>
-                        <span style={{ fontSize: 12, color: T.textMuted }}>{m.deptName}</span>
-                        <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
-                        <Bar value={m.rate} status={m.status} h={5} />
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
+                      <div key={m.id}>
+                        <div style={{ display: "grid", gridTemplateColumns: COL, padding: "10px 16px", gap: 8, alignItems: "center", background: isExpanded ? T.brandDim : isTop ? T.okDim : m.status === "red" ? T.badDim : globalRank % 2 ? T.raised : "transparent", borderBottom: isExpanded ? "none" : `1px solid ${T.border}`, borderLeft: isTop ? `3px solid ${T.ok}` : m.status === "red" ? `3px solid ${T.bad}` : isExpanded ? `3px solid ${T.brand}` : "3px solid transparent", fontSize: 14 }}>
+                          <span style={{ fontFamily: F.mono, fontWeight: 900, color: isTop ? T.ok : m.status === "red" ? T.bad : T.textMuted }}>#{globalRank}</span>
+                          <Avatar letters={m.av} size={24} />
+                          <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 12 }}>{m.title}</span></div>
+                          <span style={{ fontSize: 12, color: T.textMuted }}>{m.deptName}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
+                          <Bar value={m.rate} status={m.status} h={5} />
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                            <button onClick={() => setLbExpandedMember(isExpanded ? null : m.id)}
+                              style={{ fontSize: 11, fontWeight: 700, fontFamily: F.body, padding: "3px 8px", borderRadius: 6, cursor: "pointer", border: `1px solid ${isExpanded ? T.brand : T.border}`, background: isExpanded ? T.brandDim : T.surface, color: isExpanded ? T.brand : T.textSoft }}>
+                              {isExpanded ? "Close" : "Edit"}
+                            </button>
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div style={{ borderBottom: `1px solid ${T.border}`, borderLeft: `3px solid ${T.brand}`, background: T.bg, padding: "14px 20px" }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 12 }}>Editing KPIs — {m.name}</div>
+                            {krs.length === 0
+                              ? <div style={{ fontSize: 13, color: T.textMuted }}>No KPI data for this member yet. Sync team KPIs first.</div>
+                              : [{ key: "weekly", label: "Weekly KRs" }, { key: "monthly", label: "Monthly KRs" }, { key: "annual", label: "Annual KRs" }].map(({ key, label }) => {
+                                const group = krs.filter(kr => (kr.period || "monthly") === key);
+                                if (group.length === 0) return null;
+                                return (
+                                  <div key={key} style={{ marginBottom: 14 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>{label} ({group.length})</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px", gap: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
+                                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span>
+                                    </div>
+                                    {group.map((kr, ki) => {
+                                      const pct = krCompletion(kr); const st = getStatus(pct);
+                                      return (
+                                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
+                                          <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
+                                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={kr.label}>{kr.label}</span>
+                                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                                          <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
+                                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
+                                          <Bar value={pct} status={st} h={5} />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })
+                            }
+                          </div>
+                        )}
                       </div>
                     );
                   })}
