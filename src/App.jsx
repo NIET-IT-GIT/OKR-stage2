@@ -199,6 +199,9 @@ async function dbSeed(data) {
 // Diffs prev vs next state and syncs only changed items to Supabase.
 async function syncChanges(prev, next) {
   const tasks = [];
+  if (JSON.stringify(prev.settings) !== JSON.stringify(next.settings)) {
+    tasks.push(dbUpsert("settings", next.settings));
+  }
   for (const col of ["users", "depts", "weeklySubs", "mgrSprints", "projects", "monthlyReports"]) {
     const prevArr = prev[col] || [];
     const nextArr = next[col] || [];
@@ -1098,7 +1101,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [subFilter, setSubFilter] = useState("all");
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
-  const [colOrder, setColOrder] = useState(["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"]);
   const dragColRef = useRef(null);
   const [hiddenCols, setHiddenCols] = useState(new Set());
   const [customColWidthOverride, setCustomColWidthOverride] = useState(null);
@@ -1112,7 +1114,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [reportPeriodView, setReportPeriodView] = useState("all");
   const [reportSubTab, setReportSubTab] = useState("monthly");
 
-  const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users } = state;
+  const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users, settings } = state;
+  const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
     { id: "overview",     icon: "◎", label: "Company Overview"    },
     { id: "departments",  icon: "⬛", label: "Departments"         },
@@ -1284,7 +1287,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         <div key={key} draggable
                           onDragStart={e => { dragColRef.current = key; e.dataTransfer.effectAllowed = "move"; }}
                           onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                          onDrop={e => { e.preventDefault(); const from = dragColRef.current; if (!from || from === key) return; setColOrder(prev => { const next = [...prev]; const fi = next.indexOf(from); const ti = next.indexOf(key); if (fi < 0 || ti < 0) return prev; next.splice(fi, 1); next.splice(ti, 0, from); return next; }); dragColRef.current = null; }}
+                          onDrop={e => { e.preventDefault(); const from = dragColRef.current; if (!from || from === key) return; const next = [...colOrder]; const fi = next.indexOf(from); const ti = next.indexOf(key); if (fi >= 0 && ti >= 0) { next.splice(fi, 1); next.splice(ti, 0, from); dispatch({ type: "SET_SETTINGS", updates: { colOrder: next } }); } dragColRef.current = null; }}
                           onDragEnd={() => { dragColRef.current = null; }}
                           style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 2, cursor: "grab", userSelect: "none" }}
                           title="Drag to reorder column">
@@ -2452,6 +2455,9 @@ function appReducer(state, action) {
     case "REMOVE_USER":
       return { ...state, users: state.users.filter(u => u.id !== action.userId) };
 
+    case "SET_SETTINGS":
+      return { ...state, settings: { ...state.settings, ...action.updates } };
+
     case "RENAME_DEPT":
       return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, name: action.name } : d) };
 
@@ -2494,6 +2500,7 @@ export default function App({ redirectAccount = null }) {
     mgrSprints: INIT_MGR_SPRINTS,
     projects: INIT_PROJECTS,
     monthlyReports: INIT_MONTHLY_REPORTS,
+    settings: { id: "settings", colOrder: ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"] },
   });
 
   // Dispatch updates local state immediately (optimistic), then syncs to Cosmos DB in background.
@@ -2518,6 +2525,7 @@ export default function App({ redirectAccount = null }) {
             mgrSprints: data.mgrSprints || [],
             projects: data.projects || [],
             monthlyReports: data.monthlyReports || [],
+            settings: data.settings?.[0] || { id: "settings", colOrder: ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"] },
           }));
         } else {
           // First run — seed the database with the built-in initial data.
