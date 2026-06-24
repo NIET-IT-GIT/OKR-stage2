@@ -168,7 +168,7 @@ const supabase = createClient(
 async function dbGet() {
   const { data, error } = await supabase.from("app_data").select("collection, id, doc");
   if (error) throw new Error(error.message);
-  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [] };
+  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], settings: [] };
   for (const row of data) {
     if (result[row.collection]) result[row.collection].push(row.doc);
   }
