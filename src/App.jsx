@@ -1098,6 +1098,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [subFilter, setSubFilter] = useState("all");
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
+  const [colOrder, setColOrder] = useState(["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"]);
+  const dragColRef = useRef(null);
   const [hiddenCols, setHiddenCols] = useState(new Set());
   const [customColWidthOverride, setCustomColWidthOverride] = useState(null);
   const [addingCol, setAddingCol] = useState(false);
@@ -1108,6 +1110,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [editReportId, setEditReportId] = useState(null);
   const [editReportForm, setEditReportForm] = useState({ month: "", notes: "" });
   const [reportPeriodView, setReportPeriodView] = useState("all");
+  const [reportSubTab, setReportSubTab] = useState("monthly");
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users } = state;
   const navItems = [
@@ -1115,7 +1118,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     { id: "departments",  icon: "⬛", label: "Departments"         },
     { id: "setup",        icon: "⚙", label: "OKR / KPI Setup"     },
     { id: "submissions",  icon: "✉", label: "Weekly Submissions"  },
-    { id: "reports",      icon: "⊞", label: "Monthly Reports"     },
+    { id: "reports",      icon: "⊞", label: "KPI Reports"         },
     { id: "projects",     icon: "⚡", label: "Projects"            },
     { id: "leaderboard",  icon: "▲", label: "Leaderboard"         },
     { id: "users",        icon: "⊹", label: "User Management"     },
@@ -1257,7 +1260,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               );
               const customCols = dept.customCols || [];
               const getCustomColWidth = (col) => customColWidthOverride?.colId === col.id ? customColWidthOverride.width : (col.width ?? 150);
-              const visibleBuiltIn = COLS_DEF.filter(c => !hiddenCols.has(c.key));
+              const orderedDef = colOrder.map(k => COLS_DEF.find(c => c.key === k)).filter(Boolean);
+              const visibleBuiltIn = orderedDef.filter(c => !hiddenCols.has(c.key));
               const COL = [
                 ...visibleBuiltIn.map(c => `${colWidths[c.key]}px`),
                 ...customCols.map(c => `${getCustomColWidth(c)}px`), "34px",
@@ -1277,7 +1281,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   <div style={{ minWidth: "max-content" }}>
                     <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", alignItems: "center" }}>
                       {visibleBuiltIn.map(({ key, label }) => (
-                        <div key={key} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 2 }}>
+                        <div key={key} draggable
+                          onDragStart={e => { dragColRef.current = key; e.dataTransfer.effectAllowed = "move"; }}
+                          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                          onDrop={e => { e.preventDefault(); const from = dragColRef.current; if (!from || from === key) return; setColOrder(prev => { const next = [...prev]; const fi = next.indexOf(from); const ti = next.indexOf(key); if (fi < 0 || ti < 0) return prev; next.splice(fi, 1); next.splice(ti, 0, from); return next; }); dragColRef.current = null; }}
+                          onDragEnd={() => { dragColRef.current = null; }}
+                          style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 2, cursor: "grab", userSelect: "none" }}
+                          title="Drag to reorder column">
                           <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                           <button onClick={() => setHiddenCols(prev => new Set([...prev, key]))} title="Hide column" style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, flexShrink: 0, lineHeight: 1, opacity: 0.6 }}>✕</button>
                           {rszHandle(e => startResize(key, e))}
@@ -1295,21 +1305,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     </div>
                     {krs.map((kr, i) => (
                       <div key={kr.id} style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
-                        {!hiddenCols.has("id") && <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>}
-                        {!hiddenCols.has("label") && <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>}
-                        {!hiddenCols.has("operator") && opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}
-                        {!hiddenCols.has("period") && (
-                          <select value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)}
-                            style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}>
-                            <option value="weekly">Weekly</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="annual">Annual</option>
-                          </select>
-                        )}
-                        {!hiddenCols.has("target") && <Input value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
-                        {!hiddenCols.has("actual") && <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>}
-                        {!hiddenCols.has("unit") && <Input value={kr.unit || ""} onChange={e => onTeamChange(kr.id, "unit", e.target.value)} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />}
-                        {!hiddenCols.has("dataSource") && <Input value={kr.dataSource || ""} onChange={e => onTeamChange(kr.id, "dataSource", e.target.value)} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />}
+                        {visibleBuiltIn.map(({ key }) => {
+                          if (key === "id") return <span key="id" style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>;
+                          if (key === "label") return <span key="label" title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>;
+                          if (key === "operator") return <span key="operator">{opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}</span>;
+                          if (key === "period") return <select key="period" value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="annual">Annual</option></select>;
+                          if (key === "target") return <Input key="target" value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
+                          if (key === "actual") return <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>;
+                          if (key === "unit") return <Input key="unit" value={kr.unit || ""} onChange={e => onTeamChange(kr.id, "unit", e.target.value)} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          if (key === "dataSource") return <Input key="dataSource" value={kr.dataSource || ""} onChange={e => onTeamChange(kr.id, "dataSource", e.target.value)} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          return null;
+                        })}
                         {customCols.map(col => (
                           <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => onTeamChange(kr.id, "extras", { ...(kr.extras || {}), [col.id]: e.target.value })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />
                         ))}
@@ -1318,21 +1324,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     ))}
                     {addTarget === (teamId || `dept-${deptId}`) ? (
                       <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
-                        {!hiddenCols.has("id") && <span style={{ fontSize: 12, color: T.brand }}>NEW</span>}
-                        {!hiddenCols.has("label") && <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />}
-                        {!hiddenCols.has("operator") && opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}
-                        {!hiddenCols.has("period") && (
-                          <select value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))}
-                            style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}>
-                            <option value="weekly">Weekly</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="annual">Annual</option>
-                          </select>
-                        )}
-                        {!hiddenCols.has("target") && <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
-                        {!hiddenCols.has("actual") && <span />}
-                        {!hiddenCols.has("unit") && <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />}
-                        {!hiddenCols.has("dataSource") && <Input value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />}
+                        {visibleBuiltIn.map(({ key }) => {
+                          if (key === "id") return <span key="id" style={{ fontSize: 12, color: T.brand }}>NEW</span>;
+                          if (key === "label") return <Input key="label" value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />;
+                          if (key === "operator") return <span key="operator">{opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}</span>;
+                          if (key === "period") return <select key="period" value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="annual">Annual</option></select>;
+                          if (key === "target") return <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
+                          if (key === "actual") return <span key="actual" />;
+                          if (key === "unit") return <Input key="unit" value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          if (key === "dataSource") return <Input key="dataSource" value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          return null;
+                        })}
                         {customCols.map(col => <span key={col.id} />)}
                         <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                       </div>
@@ -1375,7 +1377,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 {dept.teams.length > 0 && (<div>
                   <SectionLabel>Team KRs</SectionLabel>
                   <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{dept.teams.map(t => <Btn key={t.id} primary={selTeam === t.id} small onClick={() => { setSelTeam(t.id); setAddTarget(null); }}>{t.name}</Btn>)}</div>
-                  {selTeam && (() => { const team = dept.teams.find(t => t.id === selTeam); return team ? (<><div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>Objective: {team.obj} · Lead: {team.lead}</div>{renderEditor(team.krs, dept.id, team.id)}</>) : null; })()}
+                  {selTeam && (() => { const team = dept.teams.find(t => t.id === selTeam); return team ? (<>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: 13, color: T.textMuted, flex: 1 }}>Objective: {team.obj} · Lead: {team.lead}</div>
+                      <Btn primary small onClick={() => dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId: dept.id, teamId: team.id })}>⟳ Sync to Team Members</Btn>
+                    </div>
+                    {renderEditor(team.krs, dept.id, team.id)}
+                  </>) : null; })()}
                 </div>)}
               </>);
             })()}
@@ -1436,13 +1444,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "reports" && (<>
-          <Header title="Monthly KPI Reports" sub="Published reports visible to ALL teams across the company"
+          <Header title="KPI Reports" sub="Published reports visible to ALL teams across the company"
             right={<div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => { setShowGenReport(v => !v); setGenPeriod({ label: "", from: "", to: "" }); }}>{showGenReport ? "Cancel" : "Generate for Period"}</Btn>
               <Btn primary onClick={() => {
                 const filteredByPeriod = (krs, p) => krs.filter(kr => (kr.period || "monthly") === p);
                 const periodRate = (p) => { const rates = depts.map(d => calcRate(filteredByPeriod(d.krs, p))); return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0; };
                 const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
+                  reportType: reportSubTab,
                   notes: "",
                   periodRates: { weekly: periodRate("weekly"), monthly: periodRate("monthly"), annual: periodRate("annual") },
                   data: { companyRate: Math.round(compRate * 10) / 10, deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
@@ -1454,20 +1463,22 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               }}>Publish {currentMonth()} Report</Btn>
             </div>} />
           <Pane>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {["all", "weekly", "monthly", "annual"].map(p => (
-                <Btn key={p} small primary={reportPeriodView === p} onClick={() => setReportPeriodView(p)}>
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
-                </Btn>
+            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `2px solid ${T.border}` }}>
+              {[{ key: "weekly", label: "Weekly Report" }, { key: "monthly", label: "Monthly Report" }].map(({ key, label }) => (
+                <button key={key} onClick={() => setReportSubTab(key)} style={{
+                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer",
+                  background: "none", border: "none", borderBottom: reportSubTab === key ? `2px solid ${T.brand}` : "2px solid transparent",
+                  color: reportSubTab === key ? T.brand : T.textMuted, marginBottom: -2, transition: "all 0.12s",
+                }}>{label}</button>
               ))}
             </div>
             {showGenReport && (
               <Card style={{ padding: 20, borderLeft: `3px solid ${T.brand}` }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Generate Report for Specific Period</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Generate {reportSubTab.charAt(0).toUpperCase() + reportSubTab.slice(1)} Report for Specific Period</div>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                   <div>
                     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4 }}>Period Label</div>
-                    <Input value={genPeriod.label} onChange={e => setGenPeriod(p => ({ ...p, label: e.target.value }))} placeholder="e.g. Q1 FY2026, March 2026" style={{ width: 200 }} />
+                    <Input value={genPeriod.label} onChange={e => setGenPeriod(p => ({ ...p, label: e.target.value }))} placeholder="e.g. Q1 FY2026, Week 22" style={{ width: 200 }} />
                   </div>
                   <div>
                     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4 }}>From</div>
@@ -1484,6 +1495,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     const report = {
                       id: `mr${Date.now()}`,
                       month: label,
+                      reportType: reportSubTab,
                       publishedDate: new Date().toISOString().slice(0, 10),
                       publishedBy: user.id,
                       periodFrom: genPeriod.from || null,
@@ -1504,68 +1516,69 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 </div>
               </Card>
             )}
-            {state.monthlyReports.length === 0 && <EmptyState text="No monthly reports published yet." />}
-            {state.monthlyReports.map(r => (
-              <Card key={r.id} style={{ overflow: "hidden" }}>
-                <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
-                    <div style={{ fontSize: 12, color: T.textMuted }}>
-                      Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · Period: ${r.periodFrom} → ${r.periodTo}` : ""} · Visible to all teams
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
-                    <Btn small onClick={() => { setEditReportId(r.id); setEditReportForm({ month: r.month, notes: r.notes || "" }); }}>Edit</Btn>
-                    <button onClick={() => { if (window.confirm(`Delete report "${r.month}"? This cannot be undone.`)) dispatch({ type: "REMOVE_REPORT", reportId: r.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete report">✕</button>
-                  </div>
-                </div>
-                {editReportId === r.id ? (
-                  <div style={{ padding: "16px 20px" }}>
-                    <div style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Period Label</div>
-                      <Input value={editReportForm.month} onChange={e => setEditReportForm(f => ({ ...f, month: e.target.value }))} style={{ width: "100%", marginBottom: 10 }} />
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Notes</div>
-                      <TextArea value={editReportForm.notes} onChange={e => setEditReportForm(f => ({ ...f, notes: e.target.value }))} placeholder="Add notes about this report period..." rows={3} />
-                    </div>
-                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                      <Btn small onClick={() => setEditReportId(null)}>Cancel</Btn>
-                      <Btn primary small onClick={() => { dispatch({ type: "EDIT_REPORT", reportId: r.id, updates: { month: editReportForm.month, notes: editReportForm.notes } }); setEditReportId(null); }}>Save</Btn>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            {(() => {
+              const visibleReports = state.monthlyReports.filter(r => (r.reportType || "monthly") === reportSubTab);
+              if (visibleReports.length === 0) return <EmptyState text={`No ${reportSubTab} reports published yet.`} />;
+              return visibleReports.map(r => (
+                <Card key={r.id} style={{ overflow: "hidden" }}>
+                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
-                      <SectionLabel>Department Rankings</SectionLabel>
-                      {r.data.deptRanks.map((d, i) => (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14 }}>
-                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
-                          <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
-                          <Tag type={d.status} small />
-                        </div>
-                      ))}
-                      {r.periodRates && (
-                        <div style={{ marginTop: 12 }}>
-                          <SectionLabel>Period Breakdown</SectionLabel>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            {reportPeriodView === "all" || reportPeriodView === "weekly" ? (r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Weekly: {r.periodRates.weekly}%</span>) : null}
-                            {reportPeriodView === "all" || reportPeriodView === "monthly" ? (r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly: {r.periodRates.monthly}%</span>) : null}
-                            {reportPeriodView === "all" || reportPeriodView === "annual" ? (r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual: {r.periodRates.annual}%</span>) : null}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
+                        <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""} · Visible to all teams</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                      <Btn small onClick={() => { setEditReportId(r.id); setEditReportForm({ month: r.month, notes: r.notes || "" }); }}>Edit</Btn>
+                      <button onClick={() => { if (window.confirm(`Delete report "${r.month}"? This cannot be undone.`)) dispatch({ type: "REMOVE_REPORT", reportId: r.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete report">✕</button>
+                    </div>
+                  </div>
+                  {editReportId === r.id ? (
+                    <div style={{ padding: "16px 20px" }}>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Period Label</div>
+                        <Input value={editReportForm.month} onChange={e => setEditReportForm(f => ({ ...f, month: e.target.value }))} style={{ width: "100%", marginBottom: 10 }} />
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Notes</div>
+                        <TextArea value={editReportForm.notes} onChange={e => setEditReportForm(f => ({ ...f, notes: e.target.value }))} placeholder="Add notes about this report period..." rows={3} />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <Btn small onClick={() => setEditReportId(null)}>Cancel</Btn>
+                        <Btn primary small onClick={() => { dispatch({ type: "EDIT_REPORT", reportId: r.id, updates: { month: editReportForm.month, notes: editReportForm.notes } }); setEditReportId(null); }}>Save</Btn>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                      <div>
+                        <SectionLabel>Department Rankings</SectionLabel>
+                        {r.data.deptRanks.map((d, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14 }}>
+                            <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
+                            <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
+                            <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+                            <Tag type={d.status} small />
                           </div>
-                        </div>
-                      )}
-                      {r.notes && <div style={{ marginTop: 12, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                        ))}
+                        {r.periodRates && (
+                          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Weekly avg: {r.periodRates.weekly}%</span>}
+                            {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly avg: {r.periodRates.monthly}%</span>}
+                            {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual avg: {r.periodRates.annual}%</span>}
+                          </div>
+                        )}
+                        {r.notes && <div style={{ marginTop: 12, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                      </div>
+                      <div>
+                        <SectionLabel>Top Performers</SectionLabel>
+                        {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
+                        {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
+                      </div>
                     </div>
-                    <div>
-                      <SectionLabel>Top Performers</SectionLabel>
-                      {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
-                      {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
-                    </div>
-                  </div>
-                )}
-              </Card>
-            ))}
+                  )}
+                </Card>
+              ));
+            })()}
           </Pane>
         </>)}
 
@@ -1726,6 +1739,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [kpiPeriod, setKpiPeriod] = useState("all");
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
+  const [reportSubTab, setReportSubTab] = useState("monthly");
 
   const { depts, memberData, weeklySubs, projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
@@ -1740,7 +1754,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
     { id: "approvals",  icon: "✓", label: "Approve Submissions" },
     { id: "projects",   icon: "⚡", label: "Projects"           },
     { id: "members",    icon: "✎", label: "Edit Member KPIs"   },
-    { id: "reports",    icon: "⊞", label: "Monthly Reports"    },
+    { id: "reports",    icon: "⊞", label: "KPI Reports"        },
   ];
 
   return (
@@ -1761,69 +1775,68 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 syncTimerRef.current = setTimeout(() => setSyncPrompt({ deptId, teamId, teamName: t.name }), 1500);
               }
               const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
-              const renderKrTable = (krs, deptId, teamId) => {
-                const filtered = kpiPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === kpiPeriod);
-                if (filtered.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No key results {kpiPeriod !== "all" ? `for ${kpiPeriod} period` : "set up yet"}.</div>;
+              const renderKrRows = (krs, deptId, teamId) => krs.map((kr, i) => {
+                const pct = krCompletion(kr); const st = getStatus(pct);
                 return (
-                  <Card style={{ overflow: "hidden", marginBottom: 14 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                  <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                    <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                    <div>
+                      <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                      {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                     </div>
-                    {filtered.map((kr, i) => {
-                      const pct = krCompletion(kr);
-                      const st = getStatus(pct);
-                      return (
-                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
-                          <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
-                              <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap", flexShrink: 0 }}>{kr.period || "monthly"}</span>
-                            </div>
-                            {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
-                          </div>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
-                          <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                          <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
-                          <Bar value={pct} status={st} h={5} />
-                          <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={st} small /></div>
-                        </div>
-                      );
-                    })}
-                  </Card>
+                    <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                    <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                    <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
+                    <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
+                    <Bar value={pct} status={st} h={5} />
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={st} small /></div>
+                  </div>
                 );
+              });
+              const renderKrGroup = (krs, deptId, teamId) => {
+                const groups = [{ key: "weekly", label: "Weekly KRs" }, { key: "monthly", label: "Monthly KRs" }, { key: "annual", label: "Annual KRs" }];
+                return groups.map(({ key, label }) => {
+                  const grouped = krs.filter(kr => (kr.period || "monthly") === key);
+                  if (grouped.length === 0) return null;
+                  return (
+                    <div key={key} style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                        {label}
+                        <span style={{ fontWeight: 400, fontSize: 11, color: T.textMuted }}>({grouped.length})</span>
+                      </div>
+                      <Card style={{ overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                          <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                        </div>
+                        {renderKrRows(grouped, deptId, teamId)}
+                      </Card>
+                    </div>
+                  );
+                });
               };
               const deptRate = calcRate(dept.krs); const deptStatus = getStatus(deptRate);
               const myTeams = dept.teams;
               return (<>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                  {["all", "weekly", "monthly", "annual"].map(p => (
-                    <Btn key={p} small primary={kpiPeriod === p} onClick={() => setKpiPeriod(p)}>
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </Btn>
-                  ))}
-                </div>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
                   <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
                   <Metric label="Dept KRs" value={dept.krs.length} />
                   <Metric label="Dept Teams" value={myTeams.length} />
                 </div>
                 <SectionLabel>Department Key Results</SectionLabel>
-                {renderKrTable(dept.krs, dept.id, null)}
+                {dept.krs.length === 0 ? <div style={{ fontSize: 13, color: T.textMuted, padding: "8px 0" }}>No department key results set up yet.</div> : renderKrGroup(dept.krs, dept.id, null)}
                 {myTeams.length > 0 && (<>
                   <SectionLabel>Team Key Results</SectionLabel>
                   {myTeams.map(t => {
                     const tr = calcRate(t.krs); const ts = getStatus(tr);
                     return (
-                      <div key={t.id} style={{ marginBottom: 16 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <div key={t.id} style={{ marginBottom: 20 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                           <span style={{ fontSize: 15, fontWeight: 700 }}>{t.name}</span>
                           {t.lead && <span style={{ fontSize: 12, color: T.textMuted }}>Lead: {t.lead}</span>}
                           <span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color, marginLeft: "auto" }}>{tr.toFixed(1)}%</span>
                           <Tag type={ts} small />
                         </div>
-                        {renderKrTable(t.krs, dept.id, t.id)}
+                        {t.krs.length === 0 ? <div style={{ fontSize: 13, color: T.textMuted, padding: "6px 0" }}>No team key results set up yet.</div> : renderKrGroup(t.krs, dept.id, t.id)}
                       </div>
                     );
                   })}
@@ -1981,28 +1994,32 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
         {page === "members" && (<>
           <Header title="Edit Member KPIs" sub="Review and adjust KPI actuals submitted by your team" />
           <Pane>
-            {myMembers.map(m => {
-              const kd = memberData[m.id]; if (!kd) return null;
-              const r = calcRate(kd.krs); const s = getStatus(r);
+            {myMembers.filter(m => m.role === "member").map(m => {
+              const kd = memberData[m.id];
+              const krs = kd?.krs || [];
+              const r = calcRate(krs); const s = getStatus(r);
               return (
                 <Card key={m.id} style={{ overflow: "hidden" }}>
                   <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar letters={m.av} size={30} /><div><div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{m.title}</div></div></div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</span><Tag type={s} /></div>
                   </div>
-                  {kd.krs.map((kr, ki) => {
-                    const cr = krCompletion(kr); const cs = getStatus(cr);
-                    return (
-                      <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 80px 100px 55px 130px", padding: "9px 18px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: ki < kd.krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
-                        <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
-                        <span>{kr.label}</span>
-                        <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}</span>
-                        <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                        <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
-                        <Bar value={cr} status={cs} h={5} />
-                      </div>
-                    );
-                  })}
+                  {krs.length === 0
+                    ? <div style={{ padding: "14px 18px", fontSize: 13, color: T.textMuted }}>No KPI data for this member yet. Sync team KPIs to populate.</div>
+                    : krs.map((kr, ki) => {
+                      const cr = krCompletion(kr); const cs = getStatus(cr);
+                      return (
+                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 80px 100px 55px 130px", padding: "9px 18px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: ki < krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
+                          <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                          <span>{kr.label}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}</span>
+                          <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
+                          <Bar value={cr} status={cs} h={5} />
+                        </div>
+                      );
+                    })
+                  }
                 </Card>
               );
             })}
@@ -2010,35 +2027,61 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "reports" && (<>
-          <Header title="Monthly KPI Reports" sub="Published company-wide reports — visible to all teams" />
+          <Header title="KPI Reports" sub="Published company-wide reports — visible to all teams" />
           <Pane>
-            {monthlyReports.length === 0 && <EmptyState text="No monthly reports published yet." />}
-            {monthlyReports.map(r => (
-              <Card key={r.id} style={{ overflow: "hidden" }}>
-                <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
-                  <div><div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div><div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}</div></div>
-                  <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
-                </div>
-                <div style={{ padding: "14px 20px" }}>
-                  {r.data.deptRanks.map((d, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
-                      <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
-                      <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                      <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
-                      <Tag type={d.status} small />
+            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `2px solid ${T.border}` }}>
+              {[{ key: "weekly", label: "Weekly Report" }, { key: "monthly", label: "Monthly Report" }].map(({ key, label }) => (
+                <button key={key} onClick={() => setReportSubTab(key)} style={{
+                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer",
+                  background: "none", border: "none", borderBottom: reportSubTab === key ? `2px solid ${T.brand}` : "2px solid transparent",
+                  color: reportSubTab === key ? T.brand : T.textMuted, marginBottom: -2, transition: "all 0.12s",
+                }}>{label}</button>
+              ))}
+            </div>
+            {(() => {
+              const visibleReports = monthlyReports.filter(r => (r.reportType || "monthly") === reportSubTab);
+              if (visibleReports.length === 0) return <EmptyState text={`No ${reportSubTab} reports published yet.`} />;
+              return visibleReports.map(r => (
+                <Card key={r.id} style={{ overflow: "hidden" }}>
+                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
+                        <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""}</div>
                     </div>
-                  ))}
-                  {r.periodRates && (
-                    <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Weekly: {r.periodRates.weekly}%</span>}
-                      {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly: {r.periodRates.monthly}%</span>}
-                      {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual: {r.periodRates.annual}%</span>}
+                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                  </div>
+                  <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div>
+                      <SectionLabel>Department Rankings</SectionLabel>
+                      {r.data.deptRanks.map((d, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
+                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
+                          <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
+                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+                          <Tag type={d.status} small />
+                        </div>
+                      ))}
+                      {r.periodRates && (
+                        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Weekly avg: {r.periodRates.weekly}%</span>}
+                          {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly avg: {r.periodRates.monthly}%</span>}
+                          {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual avg: {r.periodRates.annual}%</span>}
+                        </div>
+                      )}
+                      {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
                     </div>
-                  )}
-                  {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
-                </div>
-              </Card>
-            ))}
+                    <div>
+                      <SectionLabel>Top Performers</SectionLabel>
+                      {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
+                      {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
+                    </div>
+                  </div>
+                </Card>
+              ));
+            })()}
           </Pane>
         </>)}
         {syncPrompt && (
@@ -2068,6 +2111,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const [newOut, setNewOut] = useState({ week: currentWeekLabel(), items: "" });
   const [myKpiPeriod, setMyKpiPeriod] = useState("all");
   const [deptKpiPeriod, setDeptKpiPeriod] = useState("all");
+  const [reportSubTab, setReportSubTab] = useState("monthly");
 
   const { memberData, weeklySubs, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -2083,7 +2127,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
     { id: "dept-kpis", icon: "⬛", label: "Dept & Team KPIs" },
     { id: "submit",    icon: "✎", label: "Weekly Submission" },
     { id: "history",   icon: "⊞", label: "My History"        },
-    { id: "reports",   icon: "⊠", label: "Monthly Reports"  },
+    { id: "reports",   icon: "⊠", label: "KPI Reports"      },
   ];
 
   return (
@@ -2135,58 +2179,59 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             {!myDept && <EmptyState text="No department assigned to your account." />}
             {myDept && (() => {
               const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
-              const renderKrTable = (krs) => {
-                const visibleKrs = deptKpiPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === deptKpiPeriod);
-                if (visibleKrs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No key results {deptKpiPeriod !== "all" ? `for ${deptKpiPeriod} period` : "set up yet"}.</div>;
+              const renderKrRows = (krs) => krs.map((kr, i) => {
+                const pct = krCompletion(kr); const s = getStatus(pct);
                 return (
-                  <Card style={{ overflow: "hidden", marginBottom: 14 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                  <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                    <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                    <div>
+                      <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                      {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                     </div>
-                    {visibleKrs.map((kr, i) => {
-                      const pct = krCompletion(kr);
-                      const s = getStatus(pct);
-                      return (
-                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
-                          <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
-                              <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap", flexShrink: 0 }}>{kr.period || "monthly"}</span>
-                            </div>
-                            {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
-                          </div>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span>
-                          <Bar value={pct} status={s} h={5} />
-                          <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={s} small /></div>
-                        </div>
-                      );
-                    })}
-                  </Card>
+                    <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                    <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
+                    <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span>
+                    <Bar value={pct} status={s} h={5} />
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={s} small /></div>
+                  </div>
                 );
+              });
+              const renderKrGroup = (krs) => {
+                const groups = [{ key: "weekly", label: "Weekly KRs" }, { key: "monthly", label: "Monthly KRs" }, { key: "annual", label: "Annual KRs" }];
+                const rendered = groups.map(({ key, label }) => {
+                  const grouped = krs.filter(kr => (kr.period || "monthly") === key);
+                  if (grouped.length === 0) return null;
+                  return (
+                    <div key={key} style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                        {label}
+                        <span style={{ fontWeight: 400, fontSize: 11, color: T.textMuted }}>({grouped.length})</span>
+                      </div>
+                      <Card style={{ overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                          <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                        </div>
+                        {renderKrRows(grouped)}
+                      </Card>
+                    </div>
+                  );
+                });
+                if (rendered.every(r => r === null)) return <div style={{ fontSize: 13, color: T.textMuted, padding: "8px 0" }}>No key results set up yet.</div>;
+                return rendered;
               };
               const deptRate = calcRate(myDept.krs); const deptStatus = getStatus(deptRate);
               return (<>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                  {["all", "weekly", "monthly", "annual"].map(p => (
-                    <Btn key={p} small primary={deptKpiPeriod === p} onClick={() => setDeptKpiPeriod(p)}>
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </Btn>
-                  ))}
-                </div>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
                   <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
                   <Metric label="Dept KRs" value={myDept.krs.length} />
                   {myTeam && <Metric label="My Team" value={myTeam.name} />}
                 </div>
                 <SectionLabel>Department Key Results</SectionLabel>
-                {renderKrTable(myDept.krs)}
+                {renderKrGroup(myDept.krs)}
                 {myTeam && (<>
                   <SectionLabel>My Team — {myTeam.name}</SectionLabel>
                   {myTeam.obj && <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>Objective: {myTeam.obj}{myTeam.lead ? ` · Lead: ${myTeam.lead}` : ""}</div>}
-                  {renderKrTable(myTeam.krs)}
+                  {renderKrGroup(myTeam.krs)}
                 </>)}
               </>);
             })()}
@@ -2245,42 +2290,60 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "reports" && (<>
-          <Header title="Monthly KPI Reports" sub="Company-wide reports — published at end of each month" />
+          <Header title="KPI Reports" sub="Company-wide reports — published at end of each period" />
           <Pane>
-            {monthlyReports.length === 0 && <EmptyState text="No monthly reports published yet." />}
-            {monthlyReports.map(r => (
-              <Card key={r.id} style={{ overflow: "hidden" }}>
-                <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
-                  <div><div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div><div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate} · Visible to everyone</div></div>
-                  <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
-                </div>
-                <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                  <div>
-                    <SectionLabel>Department Rankings</SectionLabel>
-                    {r.data.deptRanks.map((d, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
-                        <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
-                        <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                        <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `2px solid ${T.border}` }}>
+              {[{ key: "weekly", label: "Weekly Report" }, { key: "monthly", label: "Monthly Report" }].map(({ key, label }) => (
+                <button key={key} onClick={() => setReportSubTab(key)} style={{
+                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer",
+                  background: "none", border: "none", borderBottom: reportSubTab === key ? `2px solid ${T.brand}` : "2px solid transparent",
+                  color: reportSubTab === key ? T.brand : T.textMuted, marginBottom: -2, transition: "all 0.12s",
+                }}>{label}</button>
+              ))}
+            </div>
+            {(() => {
+              const visibleReports = monthlyReports.filter(r => (r.reportType || "monthly") === reportSubTab);
+              if (visibleReports.length === 0) return <EmptyState text={`No ${reportSubTab} reports published yet.`} />;
+              return visibleReports.map(r => (
+                <Card key={r.id} style={{ overflow: "hidden" }}>
+                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
+                        <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
                       </div>
-                    ))}
-                    {r.periodRates && (
-                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Weekly: {r.periodRates.weekly}%</span>}
-                        {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly: {r.periodRates.monthly}%</span>}
-                        {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual: {r.periodRates.annual}%</span>}
-                      </div>
-                    )}
-                    {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                      <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate} · Visible to everyone</div>
+                    </div>
+                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
                   </div>
-                  <div>
-                    <SectionLabel>Top Performers</SectionLabel>
-                    {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.ok }}>★ {p}</div>)}
-                    {r.data.redFlags?.length > 0 && (<><div style={{ marginTop: 10 }} /><SectionLabel>Needs Improvement</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.bad }}>⚠ {f}</div>)}</>)}
+                  <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div>
+                      <SectionLabel>Department Rankings</SectionLabel>
+                      {r.data.deptRanks.map((d, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
+                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
+                          <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
+                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+                        </div>
+                      ))}
+                      {r.periodRates && (
+                        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Weekly avg: {r.periodRates.weekly}%</span>}
+                          {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly avg: {r.periodRates.monthly}%</span>}
+                          {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual avg: {r.periodRates.annual}%</span>}
+                        </div>
+                      )}
+                      {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                    </div>
+                    <div>
+                      <SectionLabel>Top Performers</SectionLabel>
+                      {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.ok }}>★ {p}</div>)}
+                      {r.data.redFlags?.length > 0 && (<><div style={{ marginTop: 10 }} /><SectionLabel>Needs Improvement</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.bad }}>⚠ {f}</div>)}</>)}
+                    </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ));
+            })()}
           </Pane>
         </>)}
       </div>
@@ -2327,7 +2390,11 @@ function appReducer(state, action) {
     case "EDIT_REPORT":
       return { ...state, monthlyReports: state.monthlyReports.map(r => r.id === action.reportId ? { ...r, ...action.updates } : r) };
     case "SET_DEPT_CUSTOM_COLS": return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, customCols: action.customCols } : d) };
-    case "UPDATE_MEMBER_KR": return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...state.memberData[action.memberId], krs: state.memberData[action.memberId].krs.map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
+    case "UPDATE_MEMBER_KR": {
+      const md = state.memberData[action.memberId];
+      if (!md) return state;
+      return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
+    }
     case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
     case "APPROVE_SUB":     return { ...state, weeklySubs: state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
     case "REMOVE_WEEKLY_SUB": return { ...state, weeklySubs: state.weeklySubs.filter(s => s.id !== action.subId) };
