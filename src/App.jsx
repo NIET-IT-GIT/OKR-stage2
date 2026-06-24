@@ -745,45 +745,53 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
       </div>
 
       <Card style={{ overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 160px 90px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-          <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span style={{ textAlign: "right" }}>Actions</span>
+        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 90px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+          <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Actions</span>
         </div>
         {filteredUsers.length === 0 && <EmptyState text={`No users match "${search}".`} />}
         {filteredUsers.map((u, i) => {
           const dept = depts.find(d => d.id === u.deptId);
-          const team = dept?.teams.find(t => t.id === u.teamId || u.teamIds?.includes(t.id));
+          const team = dept?.teams.find(t => t.id === u.teamId);
+          const managerTeams = u.teamIds?.length ? dept?.teams.filter(t => u.teamIds.includes(t.id)) : [];
           const isSystem = u.id === "sysadmin";
           const isSelf = u.id === currentUserId;
 
           if (editId === u.id) {
             const editTeams = teamsForDept(editForm.deptId);
+            const lbl = { fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 };
             return (
-              <div key={u.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "12px 18px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
-                  <Input value={editForm.name}   onChange={e => setEditForm(p => ({ ...p, name:  e.target.value }))} placeholder="Name"  style={{ fontSize: 13, padding: "7px 10px" }} />
-                  <Input value={editForm.email}  onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} placeholder="Email" style={{ fontSize: 13, padding: "7px 10px" }} />
-                  <Input value={editForm.title}  onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} placeholder="Title" style={{ fontSize: 13, padding: "7px 10px" }} />
-                  <Select value={editForm.role} onChange={e => setEditForm(p => ({ ...p, role: e.target.value, deptId: "", teamId: "", teamIds: [] }))} style={{ fontSize: 13, padding: "7px 10px" }}>
-                    <option value="admin">Admin</option>
-                    <option value="manager">Manager</option>
-                    <option value="member">Member</option>
-                  </Select>
-                  {editForm.role !== "admin" && (
-                    <Select value={editForm.deptId} onChange={e => setEditForm(p => ({ ...p, deptId: e.target.value, teamId: "", teamIds: [] }))} style={{ fontSize: 13, padding: "7px 10px" }}>
-                      <option value="">— Department —</option>
-                      {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              <div key={u.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "14px 18px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                  <div><div style={lbl}>Full Name</div><Input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
+                  <div><div style={lbl}>Email</div><Input value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
+                  <div><div style={lbl}>Job Title</div><Input value={editForm.title} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
+                  <div><div style={lbl}>Role</div>
+                    <Select value={editForm.role} onChange={e => setEditForm(p => ({ ...p, role: e.target.value, deptId: "", teamId: "", teamIds: [] }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
+                      <option value="admin">Admin</option>
+                      <option value="manager">Manager</option>
+                      <option value="member">Member</option>
                     </Select>
+                  </div>
+                  {editForm.role !== "admin" && (
+                    <div><div style={lbl}>Department</div>
+                      <Select value={editForm.deptId} onChange={e => setEditForm(p => ({ ...p, deptId: e.target.value, teamId: "", teamIds: [] }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
+                        <option value="">— Select department —</option>
+                        {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </Select>
+                    </div>
                   )}
                   {editForm.role === "member" && editTeams.length > 0 && (
-                    <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px" }}>
-                      <option value="">— Team —</option>
-                      {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </Select>
+                    <div><div style={lbl}>Team</div>
+                      <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
+                        <option value="">— Select team —</option>
+                        {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </Select>
+                    </div>
                   )}
                 </div>
                 {editForm.role === "manager" && editTeams.length > 0 && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>Teams</div>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={lbl}>Teams (manager oversees)</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                       {editTeams.map(t => (
                         <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, cursor: "pointer", color: T.text }}>
@@ -803,7 +811,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
           }
 
           return (
-            <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 180px 80px 160px 90px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+            <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 90px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
               <Avatar letters={u.av} size={26} />
               <div>
                 <div style={{ fontWeight: 600, color: T.text }}>{u.name}{isSelf && <span style={{ fontSize: 11, color: T.brand, marginLeft: 6 }}>you</span>}</div>
@@ -812,6 +820,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
               <span style={{ fontSize: 13, color: T.textSoft }}>{u.title}</span>
               <RoleTag role={u.role} />
               <span style={{ fontSize: 13, color: T.textMuted }}>{dept?.name || "—"}</span>
+              <span style={{ fontSize: 12, color: T.textMuted }}>
+                {u.role === "member" && team ? team.name : u.role === "manager" && managerTeams.length ? managerTeams.map(t => t.name).join(", ") : "—"}
+              </span>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                 {!isSystem && (
                   <button onClick={() => startEdit(u)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
@@ -844,7 +855,7 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
   const [showAddTeam, setShowAddTeam] = useState(null);
   const [addTeamForm, setAddTeamForm] = useState({ name: "", lead: "", obj: "" });
   const [editTeam, setEditTeam] = useState(null);
-  const [editTeamForm, setEditTeamForm] = useState({ name: "", lead: "", obj: "" });
+  const [editTeamForm, setEditTeamForm] = useState({ name: "", lead: "", obj: "", members: [] });
   const [confirmDelTeam, setConfirmDelTeam] = useState(null);
 
   function handleAdd() {
@@ -1037,16 +1048,36 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
                       return (
                         <Card key={t.id} style={{ overflow: "hidden", marginBottom: 8 }}>
                           {isEditingTeam ? (
-                            <div style={{ padding: 14 }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                            <div style={{ padding: 16 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
                                 <div><div style={labelStyle}>Team Name *</div><Input value={editTeamForm.name} onChange={e => setEditTeamForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%" }} /></div>
                                 <div><div style={labelStyle}>Team Lead</div><Input value={editTeamForm.lead} onChange={e => setEditTeamForm(p => ({ ...p, lead: e.target.value }))} style={{ width: "100%" }} /></div>
                                 <div><div style={labelStyle}>Objective</div><Input value={editTeamForm.obj} onChange={e => setEditTeamForm(p => ({ ...p, obj: e.target.value }))} style={{ width: "100%" }} /></div>
                               </div>
+                              {(() => {
+                                const deptMembers = users.filter(u => u.role === "member" && u.deptId === d.id);
+                                return deptMembers.length > 0 && (
+                                  <div style={{ marginBottom: 14 }}>
+                                    <div style={labelStyle}>Team Members</div>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                                      {deptMembers.map(u => {
+                                        const checked = editTeamForm.members.includes(u.id);
+                                        return (
+                                          <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", padding: "5px 10px", borderRadius: 8, border: `1px solid ${checked ? T.brandBorder : T.border}`, background: checked ? T.brandDim : T.raised, color: checked ? T.brand : T.text }}>
+                                            <input type="checkbox" checked={checked} onChange={e => setEditTeamForm(p => ({ ...p, members: e.target.checked ? [...p.members, u.id] : p.members.filter(id => id !== u.id) }))} style={{ accentColor: T.brand }} />
+                                            <Avatar letters={u.av} size={18} />
+                                            <span style={{ fontWeight: checked ? 700 : 400 }}>{u.name}</span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                               <div style={{ display: "flex", gap: 8 }}>
                                 <Btn small onClick={() => setEditTeam(null)}>Cancel</Btn>
                                 <Btn primary small disabled={!editTeamForm.name.trim()} onClick={() => {
-                                  dispatch({ type: "UPDATE_TEAM", deptId: d.id, teamId: t.id, updates: { name: editTeamForm.name.trim(), lead: editTeamForm.lead.trim(), obj: editTeamForm.obj.trim() } });
+                                  dispatch({ type: "UPDATE_TEAM", deptId: d.id, teamId: t.id, updates: { name: editTeamForm.name.trim(), lead: editTeamForm.lead.trim(), obj: editTeamForm.obj.trim(), members: editTeamForm.members } });
                                   setEditTeam(null);
                                 }}>Save</Btn>
                               </div>
@@ -1061,7 +1092,7 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                 <span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color }}>{tr.toFixed(1)}%</span>
                                 <Tag type={ts} small />
-                                <button onClick={() => { setEditTeam({ deptId: d.id, teamId: t.id }); setEditTeamForm({ name: t.name, lead: t.lead || "", obj: t.obj || "" }); setShowAddTeam(null); }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
+                                <button onClick={() => { setEditTeam({ deptId: d.id, teamId: t.id }); setEditTeamForm({ name: t.name, lead: t.lead || "", obj: t.obj || "", members: t.members || [] }); setShowAddTeam(null); }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
                                 {confirmDelTeam?.deptId === d.id && confirmDelTeam?.teamId === t.id ? (<>
                                   <button onClick={() => { dispatch({ type: "REMOVE_TEAM", deptId: d.id, teamId: t.id }); setConfirmDelTeam(null); }} style={{ background: T.bad, border: "none", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Confirm</button>
                                   <button onClick={() => setConfirmDelTeam(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.textSoft, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>✕</button>
