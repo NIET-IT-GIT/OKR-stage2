@@ -1115,6 +1115,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [lbSearch, setLbSearch] = useState("");
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
+  const [subSearch, setSubSearch] = useState("");
+  const [subDeptFilter, setSubDeptFilter] = useState("all");
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
@@ -1404,19 +1406,39 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               <Metric label="Approved" value={weeklySubs.filter(s => s.approval === "approved").length} status="green"  />
               <Metric label="Rejected" value={weeklySubs.filter(s => s.approval === "rejected").length} status="red"    />
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {["all", "pending", "approved", "rejected"].map(f => (
-                <Btn key={f} small primary={subFilter === f} onClick={() => setSubFilter(f)}>
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
-                </Btn>
-              ))}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["all", "pending", "approved", "rejected"].map(f => (
+                  <Btn key={f} small primary={subFilter === f} onClick={() => setSubFilter(f)}>
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                  </Btn>
+                ))}
+              </div>
+              <div style={{ width: 1, height: 22, background: T.border, flexShrink: 0 }} />
+              <div style={{ position: "relative", flex: "0 0 200px" }}>
+                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 14, pointerEvents: "none" }}>⌕</span>
+                <input value={subSearch} onChange={e => setSubSearch(e.target.value)} placeholder="Search name..."
+                  style={{ width: "100%", boxSizing: "border-box", paddingLeft: 28, paddingRight: 10, paddingTop: 6, paddingBottom: 6, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontFamily: F.body, outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                <Btn small primary={subDeptFilter === "all"} onClick={() => setSubDeptFilter("all")}>All Depts</Btn>
+                {depts.map(d => (
+                  <Btn key={d.id} small primary={subDeptFilter === d.id} onClick={() => setSubDeptFilter(d.id)}>{d.name}</Btn>
+                ))}
+              </div>
             </div>
             {weeklySubs.length === 0 && <EmptyState text="No weekly submissions yet." />}
             {(() => {
+              const q = subSearch.trim().toLowerCase();
               const filtered = weeklySubs
-                .filter(s => subFilter === "all" || s.approval === subFilter)
+                .filter(s => {
+                  const mem = users.find(u => u.id === s.memberId);
+                  if (subDeptFilter !== "all" && mem?.deptId !== subDeptFilter) return false;
+                  if (q && !mem?.name?.toLowerCase().includes(q) && !mem?.title?.toLowerCase().includes(q)) return false;
+                  return subFilter === "all" || s.approval === subFilter;
+                })
                 .sort((a, b) => b.date.localeCompare(a.date));
-              if (filtered.length === 0) return <EmptyState text={`No ${subFilter} submissions.`} />;
+              if (filtered.length === 0) return <EmptyState text="No submissions match your search." />;
               return filtered.map(s => {
                 const mem = users.find(u => u.id === s.memberId);
                 const dept = depts.find(d => d.id === mem?.deptId);
