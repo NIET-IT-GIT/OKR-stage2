@@ -166,13 +166,20 @@ function getFYMonths() {
   const now = new Date();
   const m = now.getMonth() + 1;
   const y = now.getFullYear();
-  const fy = m >= 7 ? y : y - 1;
+  // June is treated as the transition month: show upcoming FY Jul-Jun
+  const fy = m >= 6 ? y : y - 1;
   const months = [];
   for (let i = 7; i <= 12; i++) months.push({ key: `${fy}-${String(i).padStart(2,"0")}`, label: new Date(fy, i-1).toLocaleDateString("en-AU",{month:"short",year:"numeric"}) });
   for (let i = 1; i <= 6; i++) months.push({ key: `${fy+1}-${String(i).padStart(2,"0")}`, label: new Date(fy+1, i-1).toLocaleDateString("en-AU",{month:"short",year:"numeric"}) });
   return months;
 }
-function currentFYMonthKey() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; }
+function currentFYMonthKey() {
+  const n = new Date();
+  const key = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
+  const fyKeys = getFYMonths().map(m => m.key);
+  // If current calendar month is outside the active FY (e.g. June transition), use first FY month
+  return fyKeys.includes(key) ? key : fyKeys[0];
+}
 function makeAv(name) {
   return (name || "?").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 }
