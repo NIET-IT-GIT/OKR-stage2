@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
@@ -1386,7 +1386,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
                       const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
                       return (
-                      <React.Fragment key={kr.id}>
+                      <Fragment key={kr.id}>
                       <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                         {visibleBuiltIn.map(({ key }) => {
                           if (key === "id") return <span key="id" style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>;
@@ -1430,7 +1430,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           </div>
                         </div>
                       )}
-                      </React.Fragment>
+                      </Fragment>
                       );
                     })}
                     {addTarget === (teamId || `dept-${deptId}`) ? (
@@ -2008,7 +2008,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
                 const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
                 return (
-                  <React.Fragment key={kr.id}>
+                  <Fragment key={kr.id}>
                   <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                     <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
                     <div>
@@ -2050,7 +2050,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                       </div>
                     </div>
                   )}
-                  </React.Fragment>
+                  </Fragment>
                 );
               });
               const renderKrGroup = (krs, deptId, teamId) => {
@@ -2488,7 +2488,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
                 const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
                 return (
-                  <React.Fragment key={kr.id}>
+                  <Fragment key={kr.id}>
                   <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                     <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
                     <div>
@@ -2527,7 +2527,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                       </div>
                     </div>
                   )}
-                  </React.Fragment>
+                  </Fragment>
                 );
               });
               const renderKrGroup = (krs) => {
