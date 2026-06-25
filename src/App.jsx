@@ -1392,6 +1392,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       const curKey = currentFYMonthKey();
                       const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
                       const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
+                      const fyMs = isMonthly ? getFYMonths() : [];
+                      const annSumTarget = fyMs.reduce((s, {key}) => s + (kr.monthlyTargets[key] || 0), 0);
+                      const annActual = fyMs.reduce((s, {key}) => s + ((kr.monthlyActuals || {})[key] || 0), 0);
+                      const annDream = isMonthly ? (kr.annualTarget || 0) : 0;
+                      const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
+                      const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
+                      const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
                       return (
                       <Fragment key={kr.id}>
                       <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -1416,9 +1423,36 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       </div>
                       {isMonthly && expandedMonthlyKr === kr.id && (
                         <div style={{ padding: "14px 16px 16px", background: T.brandDim, borderBottom: `1px solid ${T.border}` }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 10 }}>Monthly Targets — {kr.label}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 12 }}>KPI Breakdown — {kr.label}</div>
+                          {/* Annual Summary */}
+                          <div style={{ background: T.surface, borderRadius: 10, padding: "14px 16px", marginBottom: 14, border: `1px solid ${T.border}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Annual Summary</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 12 }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Dream Target</div>
+                                <Input value={annDream} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "annualTarget", value: Number(e.target.value) || 0 })} style={{ padding: "5px 8px", fontSize: 16, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box", fontWeight: 700 }} />
+                                {kr.unit && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{kr.unit}</div>}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Monthly Sum Target</div>
+                                <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono }}>{fmt(annSumTarget)}</div>
+                                {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Annual Actual (auto)</div>
+                                <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[annSt].color }}>{fmt(annActual)}</div>
+                                {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 5 }}>
+                              {annDream > 0 ? `${annVsDream.toFixed(1)}% of dream target · ${annVsSum.toFixed(1)}% of monthly sum` : annSumTarget > 0 ? `${annVsSum.toFixed(1)}% of monthly sum target` : "Set monthly targets to track annual progress"}
+                            </div>
+                            {(annDream > 0 || annSumTarget > 0) && <Bar value={annDream > 0 ? annVsDream : annVsSum} status={annSt} h={8} />}
+                          </div>
+                          {/* Monthly grid */}
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Monthly Targets</div>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
-                            {getFYMonths().map(({ key, label }) => {
+                            {fyMs.map(({ key, label }) => {
                               const isCur = key === curKey;
                               const t = kr.monthlyTargets[key] || 0;
                               const a = (kr.monthlyActuals || {})[key] || 0;
@@ -2014,6 +2048,13 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 const curKey = currentFYMonthKey();
                 const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
                 const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
+                const fyMs = isMonthly ? getFYMonths() : [];
+                const annSumTarget = fyMs.reduce((s, {key}) => s + (kr.monthlyTargets[key] || 0), 0);
+                const annActual = fyMs.reduce((s, {key}) => s + ((kr.monthlyActuals || {})[key] || 0), 0);
+                const annDream = isMonthly ? (kr.annualTarget || 0) : 0;
+                const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
+                const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
+                const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
                 return (
                   <Fragment key={kr.id}>
                   <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -2037,9 +2078,36 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                   </div>
                   {isMonthly && expandedMonthlyKr === kr.id && (
                     <div style={{ padding: "14px 16px 16px", background: T.brandDim, borderBottom: `1px solid ${T.border}` }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 10 }}>Monthly Targets — {kr.label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 12 }}>KPI Breakdown — {kr.label}</div>
+                      {/* Annual Summary */}
+                      <div style={{ background: T.surface, borderRadius: 10, padding: "14px 16px", marginBottom: 14, border: `1px solid ${T.border}` }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Annual Summary</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Dream Target</div>
+                            <Input value={annDream} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "annualTarget", value: Number(e.target.value) || 0 })} style={{ padding: "5px 8px", fontSize: 16, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box", fontWeight: 700 }} />
+                            {kr.unit && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{kr.unit}</div>}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Monthly Sum Target</div>
+                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono }}>{fmt(annSumTarget)}</div>
+                            {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Annual Actual (auto)</div>
+                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[annSt].color }}>{fmt(annActual)}</div>
+                            {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 5 }}>
+                          {annDream > 0 ? `${annVsDream.toFixed(1)}% of dream target · ${annVsSum.toFixed(1)}% of monthly sum` : annSumTarget > 0 ? `${annVsSum.toFixed(1)}% of monthly sum target` : "Set monthly targets to track annual progress"}
+                        </div>
+                        {(annDream > 0 || annSumTarget > 0) && <Bar value={annDream > 0 ? annVsDream : annVsSum} status={annSt} h={8} />}
+                      </div>
+                      {/* Monthly grid */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Monthly Actuals</div>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
-                        {getFYMonths().map(({ key, label }) => {
+                        {fyMs.map(({ key, label }) => {
                           const isCur = key === curKey;
                           const t = kr.monthlyTargets[key] || 0;
                           const a = (kr.monthlyActuals || {})[key] || 0;
@@ -2425,6 +2493,13 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
               const curKey = currentFYMonthKey();
               const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
               const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
+              const fyMs = isMonthly ? getFYMonths() : [];
+              const annSumTarget = fyMs.reduce((s, {key}) => s + (kr.monthlyTargets[key] || 0), 0);
+              const annActual = fyMs.reduce((s, {key}) => s + ((kr.monthlyActuals || {})[key] || 0), 0);
+              const annDream = isMonthly ? (kr.annualTarget || 0) : 0;
+              const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
+              const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
+              const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
               return (
                 <Card key={kr.id} style={{ padding: "18px 20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
@@ -2447,25 +2522,54 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                         <div style={{ fontSize: 26, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</div>
                       </div>
                       <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} style={{ background: "none", border: `1px solid ${T.brandBorder}`, borderRadius: 7, padding: "5px 12px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 600, fontFamily: F.body }}>
-                        {expandedMonthlyKr === kr.id ? "▲ Hide" : "▼ All months"}
+                        {expandedMonthlyKr === kr.id ? "▲ Hide" : "▼ Annual & Monthly Detail"}
                       </button>
                       {expandedMonthlyKr === kr.id && (
-                        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
-                          {getFYMonths().map(({ key, label }) => {
-                            const isCur = key === curKey;
-                            const t = kr.monthlyTargets[key] || 0;
-                            const a = (kr.monthlyActuals || {})[key] || 0;
-                            const mpct = t > 0 ? Math.min((a / t) * 100, 100) : 0;
-                            const mst = mpct >= 80 ? "green" : mpct >= 50 ? "yellow" : "red";
-                            return (
-                              <div key={key} style={{ background: T.raised, borderRadius: 8, padding: "8px 10px", border: `2px solid ${isCur ? T.brand : T.border}` }}>
-                                <div style={{ fontSize: 11, fontWeight: isCur ? 700 : 400, color: isCur ? T.brand : T.textMuted, marginBottom: 4 }}>{label}{isCur ? " ●" : ""}</div>
-                                <div style={{ fontSize: 13, fontFamily: F.mono, fontWeight: 700, color: t > 0 ? STATUS_THEME[mst].color : T.textDim }}>{fmt(a)}</div>
-                                <div style={{ fontSize: 11, color: T.textMuted }}>{kr.operator||">="} {fmt(t)}</div>
-                                {t > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: STATUS_THEME[mst].color, marginTop: 2 }}>{mpct.toFixed(0)}%</div>}
+                        <div style={{ marginTop: 14 }}>
+                          {/* Annual Summary */}
+                          <div style={{ background: T.raised, borderRadius: 10, padding: "14px 16px", marginBottom: 12, border: `1px solid ${T.border}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Annual Summary</div>
+                            <div style={{ display: "grid", gridTemplateColumns: annDream > 0 ? "1fr 1fr 1fr" : "1fr 1fr", gap: 16, marginBottom: 12 }}>
+                              {annDream > 0 && <div>
+                                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Dream Target</div>
+                                <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono }}>{fmt(annDream)}</div>
+                                {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                              </div>}
+                              <div>
+                                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Monthly Sum Target</div>
+                                <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono }}>{fmt(annSumTarget)}</div>
+                                {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
                               </div>
-                            );
-                          })}
+                              <div>
+                                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Annual Actual</div>
+                                <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[annSt].color }}>{fmt(annActual)}</div>
+                                {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 5 }}>
+                              {annDream > 0 ? `${annVsDream.toFixed(1)}% of dream · ${annVsSum.toFixed(1)}% of sum` : annSumTarget > 0 ? `${annVsSum.toFixed(1)}% of monthly sum target` : "No targets set yet"}
+                            </div>
+                            {(annDream > 0 || annSumTarget > 0) && <Bar value={annDream > 0 ? annVsDream : annVsSum} status={annSt} h={8} />}
+                          </div>
+                          {/* Monthly grid */}
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Monthly Breakdown</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
+                            {fyMs.map(({ key, label }) => {
+                              const isCur = key === curKey;
+                              const t = kr.monthlyTargets[key] || 0;
+                              const a = (kr.monthlyActuals || {})[key] || 0;
+                              const mpct = t > 0 ? Math.min((a / t) * 100, 100) : 0;
+                              const mst = mpct >= 80 ? "green" : mpct >= 50 ? "yellow" : "red";
+                              return (
+                                <div key={key} style={{ background: T.raised, borderRadius: 8, padding: "8px 10px", border: `2px solid ${isCur ? T.brand : T.border}` }}>
+                                  <div style={{ fontSize: 11, fontWeight: isCur ? 700 : 400, color: isCur ? T.brand : T.textMuted, marginBottom: 4 }}>{label}{isCur ? " ●" : ""}</div>
+                                  <div style={{ fontSize: 13, fontFamily: F.mono, fontWeight: 700, color: t > 0 ? STATUS_THEME[mst].color : T.textDim }}>{fmt(a)}</div>
+                                  <div style={{ fontSize: 11, color: T.textMuted }}>{kr.operator||">="} {fmt(t)}</div>
+                                  {t > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: STATUS_THEME[mst].color, marginTop: 2 }}>{mpct.toFixed(0)}%</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </>
@@ -2494,6 +2598,13 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 const curKey = currentFYMonthKey();
                 const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
                 const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
+                const fyMs = isMonthly ? getFYMonths() : [];
+                const annSumTarget = fyMs.reduce((s, {key}) => s + (kr.monthlyTargets[key] || 0), 0);
+                const annActual = fyMs.reduce((s, {key}) => s + ((kr.monthlyActuals || {})[key] || 0), 0);
+                const annDream = isMonthly ? (kr.annualTarget || 0) : 0;
+                const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
+                const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
+                const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
                 return (
                   <Fragment key={kr.id}>
                   <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -2514,9 +2625,36 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                   </div>
                   {isMonthly && expandedMonthlyKr === kr.id && (
                     <div style={{ padding: "14px 16px 16px", background: T.brandDim, borderBottom: `1px solid ${T.border}` }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 10 }}>Monthly Targets — {kr.label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 12 }}>KPI Breakdown — {kr.label}</div>
+                      {/* Annual Summary read-only */}
+                      <div style={{ background: T.surface, borderRadius: 10, padding: "14px 16px", marginBottom: 14, border: `1px solid ${T.border}` }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Annual Summary</div>
+                        <div style={{ display: "grid", gridTemplateColumns: annDream > 0 ? "1fr 1fr 1fr" : "1fr 1fr", gap: 16, marginBottom: 12 }}>
+                          {annDream > 0 && <div>
+                            <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Dream Target</div>
+                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono }}>{fmt(annDream)}</div>
+                            {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                          </div>}
+                          <div>
+                            <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Monthly Sum Target</div>
+                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono }}>{fmt(annSumTarget)}</div>
+                            {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.textDim, marginBottom: 4 }}>Annual Actual</div>
+                            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[annSt].color }}>{fmt(annActual)}</div>
+                            {kr.unit && <div style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</div>}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 5 }}>
+                          {annDream > 0 ? `${annVsDream.toFixed(1)}% of dream target · ${annVsSum.toFixed(1)}% of monthly sum` : annSumTarget > 0 ? `${annVsSum.toFixed(1)}% of monthly sum target` : "No targets set yet"}
+                        </div>
+                        {(annDream > 0 || annSumTarget > 0) && <Bar value={annDream > 0 ? annVsDream : annVsSum} status={annSt} h={8} />}
+                      </div>
+                      {/* Monthly grid */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Monthly Breakdown</div>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
-                        {getFYMonths().map(({ key, label }) => {
+                        {fyMs.map(({ key, label }) => {
                           const isCur = key === curKey;
                           const t = kr.monthlyTargets[key] || 0;
                           const a = (kr.monthlyActuals || {})[key] || 0;
