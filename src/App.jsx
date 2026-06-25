@@ -1173,8 +1173,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     .map(u => {
       const kd = memberData[u.id] || { krs: [] };
       const r = calcRate(kd.krs);
-      const deptName = depts.find(d => d.id === u.deptId)?.name || "—";
-      return { ...u, deptName, rate: r, status: getStatus(r) };
+      const dept = depts.find(d => d.id === u.deptId);
+      const deptName = dept?.name || "—";
+      const teamName = dept?.teams.find(t => t.id === u.teamId)?.name || "—";
+      return { ...u, deptName, teamName, rate: r, status: getStatus(r) };
     })
     .sort((a, b) => b.rate - a.rate);
 
@@ -1787,11 +1789,11 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 (!q || m.name.toLowerCase().includes(q) || m.title?.toLowerCase().includes(q))
               );
               if (filtered.length === 0) return <EmptyState text="No members match your search." />;
-              const COL = "50px 32px 1fr 140px 55px 160px 70px 56px";
+              const COL = "50px 32px 1fr 120px 110px 55px 150px 70px 56px";
               return (
                 <Card style={{ overflow: "hidden" }}>
                   <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                    <span>Rank</span><span></span><span>Name</span><span>Department</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span><span></span>
+                    <span>Rank</span><span></span><span>Name</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span><span></span>
                   </div>
                   {filtered.map(m => {
                     const globalRank = allMembers.indexOf(m) + 1;
@@ -1806,6 +1808,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           <Avatar letters={m.av} size={24} />
                           <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 12 }}>{m.title}</span></div>
                           <span style={{ fontSize: 12, color: T.textMuted }}>{m.deptName}</span>
+                          <span style={{ fontSize: 12, color: T.textMuted }}>{m.teamName}</span>
                           <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
                           <Bar value={m.rate} status={m.status} h={5} />
                           <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
