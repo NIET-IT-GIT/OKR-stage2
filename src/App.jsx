@@ -1181,14 +1181,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
-    { id: "overview",     icon: "◎", label: "Company Overview"    },
-    { id: "departments",  icon: "⬛", label: "Departments"         },
-    { id: "setup",        icon: "⚙", label: "OKR / KPI Setup"     },
-    { id: "submissions",  icon: "✉", label: "Weekly Submissions"  },
-    { id: "reports",      icon: "⊞", label: "KPI Reports"         },
-    { id: "projects",     icon: "⚡", label: "Projects"            },
-    { id: "leaderboard",  icon: "▲", label: "Leaderboard"         },
-    { id: "users",        icon: "⊹", label: "User Management"     },
+    { id: "overview",         icon: "◎", label: "Company Overview"    },
+    { id: "departments",      icon: "⬛", label: "Departments"         },
+    { id: "weekly-setup",     icon: "⚙", label: "Weekly KPI Setup"    },
+    { id: "weekly-overview",  icon: "◉", label: "Weekly Overview"     },
+    { id: "monthly-setup",    icon: "⚙", label: "Monthly KPI Setup"   },
+    { id: "monthly-overview", icon: "◉", label: "Monthly Overview"    },
+    { id: "submissions",      icon: "✉", label: "Weekly Submissions"  },
+    { id: "reports",          icon: "⊞", label: "KPI Reports"         },
+    { id: "projects",         icon: "⚡", label: "Projects"            },
+    { id: "leaderboard",      icon: "▲", label: "Leaderboard"         },
+    { id: "users",            icon: "⊹", label: "User Management"     },
   ];
 
   const filtKrs = (krs) => overviewPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === overviewPeriod);
@@ -1318,12 +1321,19 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
         {page === "departments" && <DeptMgmtPage depts={depts} users={users} memberData={memberData} dispatch={dispatch} />}
 
-        {page === "setup" && (<>
-          <Header title="OKR / KPI Setup" sub="Add, edit, or remove key results for each department and team" />
+        {(page === "weekly-setup" || page === "monthly-setup") && (<>
+          <Header
+            title={page === "weekly-setup" ? "Weekly KPI Setup" : "Monthly KPI Setup"}
+            sub={page === "weekly-setup" ? "Set up weekly key results for each department and team" : "Set up monthly and annual key results for each department and team"}
+          />
           <Pane>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{depts.map(d => <Btn key={d.id} primary={selDept === d.id} small onClick={() => { setSelDept(d.id); setSelTeam(null); setAddTarget(null); }}>{d.name}</Btn>)}</div>
             {selDept && (() => {
               const dept = depts.find(d => d.id === selDept); if (!dept) return null;
+              const isWeeklyPage = page === "weekly-setup";
+              const filterKrs = krs => isWeeklyPage
+                ? krs.filter(kr => (kr.period || "monthly") === "weekly")
+                : krs.filter(kr => (kr.period || "monthly") !== "weekly");
               const COLS_DEF = [
                 { key: "id",         label: "ID" },
                 { key: "label",      label: "Key Result" },
@@ -1481,7 +1491,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           if (key === "id") return <span key="id" style={{ fontSize: 12, color: T.brand }}>NEW</span>;
                           if (key === "label") return <Input key="label" value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />;
                           if (key === "operator") return <span key="operator">{opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}</span>;
-                          if (key === "period") return <select key="period" value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="annual">Annual</option></select>;
+                          if (key === "period") return isWeeklyPage
+                            ? <span key="period" style={{ fontSize: 12, color: T.brand, fontWeight: 700 }}>Weekly</span>
+                            : <select key="period" value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="monthly">Monthly</option><option value="annual">Annual</option></select>;
                           if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
                           if (key === "actual") return <span key="actual" />;
                           if (key === "unit") return <Input key="unit" value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />;
@@ -1491,16 +1503,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         {customCols.map(col => <span key={col.id} />)}
                         <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                       </div>
+                      {!isWeeklyPage && (
                       <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}` }}>
                         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: T.brand, fontWeight: 600 }}>
                           <input type="checkbox" checked={newKr.useMonthlyTargets} onChange={e => setNewKr(p => ({ ...p, useMonthlyTargets: e.target.checked, target: e.target.checked ? "" : p.target }))} style={{ accentColor: T.brand }} />
                           Monthly Breakdown — set a different target for each month (Jul–Jun)
                         </label>
                       </div>
+                      )}
                       </div>
                     ) : (
                       <div style={{ padding: "10px 16px" }}>
-                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", unit: "", dataSource: "", operator: ">=", period: isWeeklyPage ? "weekly" : "monthly", useMonthlyTargets: false }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
                       </div>
                     )}
                     {hiddenCols.size > 0 && (
@@ -1533,7 +1547,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     <Btn small onClick={() => setAddingCol(true)}>+ Add Column</Btn>
                   )}
                 </div>
-                <div><div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{dept.name} — Department KRs</div><div style={{ fontSize: 13, color: T.textMuted, marginBottom: 12 }}>Objective: {dept.obj}</div>{renderEditor(dept.krs, dept.id, null)}</div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{dept.name} — Department KRs</div>
+                  <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 12 }}>Objective: {dept.obj}</div>
+                  {filterKrs(dept.krs).length === 0 && !addTarget
+                    ? <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {isWeeklyPage ? "weekly" : "monthly / annual"} KRs for this department yet. Click below to add one.</div>
+                    : null}
+                  {renderEditor(filterKrs(dept.krs), dept.id, null)}
+                </div>
                 {dept.teams.length > 0 && (<div>
                   <SectionLabel>Team KRs</SectionLabel>
                   <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{dept.teams.map(t => <Btn key={t.id} primary={selTeam === t.id} small onClick={() => { setSelTeam(t.id); setAddTarget(null); }}>{t.name}</Btn>)}</div>
@@ -1542,13 +1563,113 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       <div style={{ fontSize: 13, color: T.textMuted, flex: 1 }}>Objective: {team.obj} · Lead: {team.lead}</div>
                       <Btn primary small onClick={() => doSync(dept.id, team.id)}>⟳ Sync to Team Members</Btn>
                     </div>
-                    {renderEditor(team.krs, dept.id, team.id)}
+                    {filterKrs(team.krs).length === 0 && !addTarget
+                      ? <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {isWeeklyPage ? "weekly" : "monthly / annual"} KRs for this team yet. Click below to add one.</div>
+                      : null}
+                    {renderEditor(filterKrs(team.krs), dept.id, team.id)}
                   </>) : null; })()}
                 </div>)}
               </>);
             })()}
           </Pane>
         </>)}
+
+        {(page === "weekly-overview" || page === "monthly-overview") && (() => {
+          const isWeekly = page === "weekly-overview";
+          const filterKrs = krs => isWeekly
+            ? krs.filter(kr => (kr.period || "monthly") === "weekly")
+            : krs.filter(kr => (kr.period || "monthly") !== "weekly");
+          const deptStats = depts.map(d => {
+            const dKrs = filterKrs(d.krs);
+            const teamStats = d.teams.map(t => {
+              const tKrs = filterKrs(t.krs);
+              return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) };
+            }).filter(t => t.krs.length > 0);
+            const rate = calcRate(dKrs);
+            return { ...d, krs: dKrs, teamStats, rate, status: getStatus(rate) };
+          }).sort((a, b) => b.rate - a.rate);
+          const totalKrs = deptStats.reduce((s, d) => s + d.krs.length + d.teamStats.reduce((ts, t) => ts + t.krs.length, 0), 0);
+          const overallRate = deptStats.filter(d => d.krs.length + d.teamStats.reduce((ts, t) => ts + t.krs.length, 0) > 0);
+          const avgRate = overallRate.length ? overallRate.reduce((s, d) => s + d.rate, 0) / overallRate.length : 0;
+          return (<>
+            <Header
+              title={isWeekly ? "Weekly KPI Overview" : "Monthly KPI Overview"}
+              sub={isWeekly ? "Dept & team completion rates for weekly key results" : "Dept & team completion rates for monthly and annual key results"}
+              right={<Tag type={getStatus(avgRate)} />}
+            />
+            <Pane>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                <Metric label="Overall Completion" value={`${avgRate.toFixed(1)}%`} status={getStatus(avgRate)} sub={`Time: ${TP}%`} />
+                <Metric label="Total KRs" value={totalKrs} />
+                <Metric label="Departments" value={depts.length} />
+                <Metric label="Teams tracked" value={deptStats.reduce((s, d) => s + d.teamStats.length, 0)} />
+              </div>
+              <SectionLabel>Department Rankings</SectionLabel>
+              {deptStats.map((d, i) => {
+                const hasKrs = d.krs.length + d.teamStats.reduce((s, t) => s + t.krs.length, 0) > 0;
+                return (
+                  <Card key={d.id} style={{ padding: "16px 20px", marginBottom: 10, opacity: hasKrs ? 1 : 0.45 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 65px 200px 80px", alignItems: "center", gap: 14, marginBottom: hasKrs ? 10 : 0 }}>
+                      <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: i === 0 && hasKrs ? T.ok : i === deptStats.length - 1 && hasKrs ? T.bad : T.textMuted }}>#{i + 1}</span>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 700 }}>{d.name}</div>
+                        <div style={{ fontSize: 12, color: T.textMuted }}>{d.krs.length} dept KR{d.krs.length !== 1 ? "s" : ""} · {d.teamStats.length} team{d.teamStats.length !== 1 ? "s" : ""}{!hasKrs ? " · No KRs set up yet" : ""}</div>
+                      </div>
+                      <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
+                      <Bar value={d.rate} status={d.status} h={7} />
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>{hasKrs && <Tag type={d.status} />}</div>
+                    </div>
+                    {/* Dept KRs */}
+                    {d.krs.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        {d.krs.map(kr => {
+                          const pct = krCompletion(kr); const st = getStatus(pct);
+                          return (
+                            <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
+                              <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
+                              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
+                              {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                              <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
+                              <div style={{ width: 80, flexShrink: 0 }}><Bar value={pct} status={st} h={4} /></div>
+                              <Tag type={st} small />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/* Team KRs */}
+                    {d.teamStats.map(t => {
+                      const ts = t.status;
+                      return (
+                        <div key={t.id} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, flex: 1 }}>{t.name}</span>
+                            <span style={{ fontSize: 13, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[ts].color }}>{t.rate.toFixed(1)}%</span>
+                            <div style={{ width: 80, flexShrink: 0 }}><Bar value={t.rate} status={ts} h={4} /></div>
+                            <Tag type={ts} small />
+                          </div>
+                          {t.krs.map(kr => {
+                            const pct = krCompletion(kr); const st = getStatus(pct);
+                            return (
+                              <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0 4px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
+                                <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
+                                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
+                                {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                                <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
+                                <div style={{ width: 80, flexShrink: 0 }}><Bar value={pct} status={st} h={4} /></div>
+                                <Tag type={st} small />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </Card>
+                );
+              })}
+            </Pane>
+          </>);
+        })()}
 
         {page === "submissions" && (<>
           <Header title="Weekly Staff Submissions" sub="All weekly work outcome submissions — managers approve in their portal" />
