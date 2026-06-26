@@ -675,7 +675,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
 
   function startEdit(u) {
     setEditId(u.id);
-    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [] });
+    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], secondTeamId: u.secondTeamId || "" });
   }
 
   function saveEdit() {
@@ -685,6 +685,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
       deptId: editForm.deptId || undefined,
       teamId: editForm.role === "member" ? (editForm.teamId || undefined) : undefined,
       teamIds: editForm.role === "manager" ? (editForm.teamIds?.length ? editForm.teamIds : undefined) : undefined,
+      secondTeamId: editForm.role === "member" ? (editForm.secondTeamId || undefined) : undefined,
     }});
     setEditId(null);
   }
@@ -807,9 +808,17 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                   )}
                   {editForm.role === "member" && editTeams.length > 0 && (
                     <div><div style={lbl}>Team</div>
-                      <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
+                      <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value, secondTeamId: p.secondTeamId === e.target.value ? "" : p.secondTeamId }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
                         <option value="">— Select team —</option>
                         {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </Select>
+                    </div>
+                  )}
+                  {editForm.role === "member" && editTeams.filter(t => t.id !== editForm.teamId).length > 0 && (
+                    <div><div style={lbl}>Second Team (optional)</div>
+                      <Select value={editForm.secondTeamId || ""} onChange={e => setEditForm(p => ({ ...p, secondTeamId: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
+                        <option value="">— None —</option>
+                        {editTeams.filter(t => t.id !== editForm.teamId).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                       </Select>
                     </div>
                   )}
@@ -846,7 +855,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
               <RoleTag role={u.role} />
               <span style={{ fontSize: 13, color: T.textMuted }}>{dept?.name || "—"}</span>
               <span style={{ fontSize: 12, color: T.textMuted }}>
-                {u.role === "member" && team ? team.name : u.role === "manager" && managerTeams.length ? managerTeams.map(t => t.name).join(", ") : "—"}
+                {u.role === "member" && team ? (() => { const st = u.secondTeamId ? dept?.teams.find(t => t.id === u.secondTeamId) : null; return st ? `${team.name} / ${st.name}` : team.name; })() : u.role === "manager" && managerTeams.length ? managerTeams.map(t => t.name).join(", ") : "—"}
               </span>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                 {!isSystem && (
@@ -1204,7 +1213,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       const r = calcRate(kd.krs);
       const dept = depts.find(d => d.id === u.deptId);
       const deptName = dept?.name || "—";
-      const teamName = dept?.teams.find(t => t.id === u.teamId)?.name || "—";
+      const primaryTeam = dept?.teams.find(t => t.id === u.teamId);
+      const secondTeam = u.secondTeamId ? dept?.teams.find(t => t.id === u.secondTeamId) : null;
+      const teamName = primaryTeam ? (secondTeam ? `${primaryTeam.name} / ${secondTeam.name}` : primaryTeam.name) : "—";
       return { ...u, deptName, teamName, rate: r, status: getStatus(r) };
     })
     .sort((a, b) => b.rate - a.rate);
@@ -2575,6 +2586,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const kd = memberData[user.id] || { krs: [] };
   const myDept = depts.find(d => d.id === user.deptId);
   const myTeam = myDept?.teams.find(t => t.id === user.teamId);
+  const mySecondTeam = user.secondTeamId ? myDept?.teams.find(t => t.id === user.secondTeamId) : null;
   const mySubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
   const rate = calcRate(kd.krs); const st = getStatus(rate);
   const pendingCount = mySubs.filter(s => s.approval === "pending").length;
@@ -2825,7 +2837,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
                   <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} />
                   <Metric label="Dept KRs" value={myDept.krs.length} />
-                  {myTeam && <Metric label="My Team" value={myTeam.name} />}
+                  {myTeam && <Metric label={mySecondTeam ? "My Teams" : "My Team"} value={mySecondTeam ? `${myTeam.name} / ${mySecondTeam.name}` : myTeam.name} />}
                 </div>
                 <SectionLabel>Department Key Results</SectionLabel>
                 {renderKrGroup(myDept.krs)}
@@ -2833,6 +2845,11 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                   <SectionLabel>My Team — {myTeam.name}</SectionLabel>
                   {myTeam.obj && <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>Objective: {myTeam.obj}{myTeam.lead ? ` · Lead: ${myTeam.lead}` : ""}</div>}
                   {renderKrGroup(myTeam.krs)}
+                </>)}
+                {mySecondTeam && (<>
+                  <SectionLabel>My Team — {mySecondTeam.name}</SectionLabel>
+                  {mySecondTeam.obj && <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>Objective: {mySecondTeam.obj}{mySecondTeam.lead ? ` · Lead: ${mySecondTeam.lead}` : ""}</div>}
+                  {renderKrGroup(mySecondTeam.krs)}
                 </>)}
               </>);
             })()}
@@ -2989,10 +3006,10 @@ function appReducer(state, action) {
       const dept = state.depts.find(d => d.id === action.deptId);
       const team = dept?.teams.find(t => t.id === action.teamId);
       if (!team) return state;
-      // Merge members from team.members array AND users with matching teamId so both assignment paths are covered
+      // Merge members from team.members array AND users with matching teamId/secondTeamId
       const memberIds = [...new Set([
         ...(team.members || []),
-        ...state.users.filter(u => u.teamId === action.teamId).map(u => u.id),
+        ...state.users.filter(u => u.teamId === action.teamId || u.secondTeamId === action.teamId).map(u => u.id),
       ])];
       // Skip monthly-breakdown KRs — they are shared team targets viewed via dept-kpis, not individual
       const krsToSync = team.krs.filter(kr => !kr.monthlyTargets);
@@ -3046,6 +3063,10 @@ function appReducer(state, action) {
       const newDept = updated.role === "member" ? updated.deptId : null;
       const teamChanged = oldTeam !== newTeam || oldDept !== newDept;
 
+      const oldSecondTeam = prev?.role === "member" ? (prev.secondTeamId || null) : null;
+      const newSecondTeam = updated.role === "member" ? (updated.secondTeamId || null) : null;
+      const secondTeamChanged = oldSecondTeam !== newSecondTeam;
+
       let newDepts = state.depts;
       let newMemberData = state.memberData;
 
@@ -3062,6 +3083,22 @@ function appReducer(state, action) {
             ...d, teams: d.teams.map(t => t.id !== newTeam ? t : { ...t, members: t.members.includes(uid) ? t.members : [...t.members, uid] })
           });
           if (!newMemberData[uid]) newMemberData = { ...newMemberData, [uid]: { krs: [] } };
+        }
+      }
+
+      if (secondTeamChanged) {
+        const deptId = newDept || oldDept;
+        // Remove from old second team
+        if (oldSecondTeam && deptId) {
+          newDepts = newDepts.map(d => d.id !== deptId ? d : {
+            ...d, teams: d.teams.map(t => t.id !== oldSecondTeam ? t : { ...t, members: t.members.filter(id => id !== uid) })
+          });
+        }
+        // Add to new second team
+        if (newSecondTeam && newDept) {
+          newDepts = newDepts.map(d => d.id !== newDept ? d : {
+            ...d, teams: d.teams.map(t => t.id !== newSecondTeam ? t : { ...t, members: t.members.includes(uid) ? t.members : [...t.members, uid] })
+          });
         }
       }
 
