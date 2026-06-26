@@ -1612,6 +1612,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           <div style={{ fontSize: 12, color: T.textMuted }}>{s.date}</div>
                         </div>
                         <Tag type={s.approval} label={APPROVAL[s.approval]?.label || s.approval} />
+                        <button onClick={() => { if (window.confirm(`Delete submission by ${mem?.name || "member"} for ${s.week}?`)) dispatch({ type: "REMOVE_WEEKLY_SUB", subId: s.id }); }} title="Delete submission" style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Delete</button>
                       </div>
                     </div>
                     <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{s.items}</p>
