@@ -1735,7 +1735,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         <Avatar letters={mem?.av || "?"} size={30} />
                         <div>
                           <div style={{ fontSize: 15, fontWeight: 700 }}>{mem?.name || "Unknown"}</div>
-                          <div style={{ fontSize: 12, color: T.textMuted }}>{mem?.title || "—"}{dept ? ` · ${dept.name}` : ""}{mgr ? ` · Manager: ${mgr.name}` : ""}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>
+                            {mem?.title || "—"}{dept ? ` · ${dept.name}` : ""}
+                            {mem?.role === "manager" ? <span style={{ marginLeft: 6, fontSize: 11, background: T.warnDim, color: T.orange, border: `1px solid ${T.warnBorder}`, borderRadius: 8, padding: "1px 6px", fontWeight: 700 }}>Manager</span> : mgr ? ` · Mgr: ${mgr.name}` : ""}
+                          </div>
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1748,7 +1751,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       </div>
                     </div>
                     <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{s.items}</p>
-                    {s.mgrNote && <div style={{ marginTop: 8, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Manager note: {s.mgrNote}</div>}
+                    {s.mgrNote && <div style={{ marginTop: 8, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Note: {s.mgrNote}</div>}
+                    {mem?.role === "manager" && s.approval === "pending" && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+                        <Btn danger small onClick={() => dispatch({ type: "APPROVE_SUB", subId: s.id, status: "rejected" })}>Reject</Btn>
+                        <Btn primary small onClick={() => dispatch({ type: "APPROVE_SUB", subId: s.id, status: "approved" })}>Approve</Btn>
+                      </div>
+                    )}
                   </Card>
                 );
               });
@@ -2136,6 +2145,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
   const [kpiPeriod, setKpiPeriod] = useState("all");
+  const [mgrNewOut, setMgrNewOut] = useState({ week: currentWeekLabel(), items: "" });
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
   const [syncNote, setSyncNote] = useState(null);
@@ -2192,15 +2202,16 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
     { id: "weekly-overview",  icon: "◉", label: "Weekly Overview"    },
     { id: "monthly-setup",    icon: "⚙", label: "Monthly KPI Setup"  },
     { id: "monthly-overview", icon: "◉", label: "Monthly Overview"   },
-    { id: "approvals",        icon: "✓", label: "Approve Submissions" },
-    { id: "projects",         icon: "⚡", label: "Projects"           },
-    { id: "members",          icon: "✎", label: "Edit Member KPIs"   },
-    { id: "reports",          icon: "⊞", label: "KPI Reports"        },
+    { id: "submit",           icon: "✉", label: "My Weekly Submission" },
+    { id: "approvals",        icon: "✓", label: "Approve Submissions"  },
+    { id: "projects",         icon: "⚡", label: "Projects"            },
+    { id: "members",          icon: "✎", label: "Edit Member KPIs"    },
+    { id: "reports",          icon: "⊞", label: "KPI Reports"         },
   ];
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length, submit: weeklySubs.some(s => s.memberId === user.id && s.week === currentWeekLabel()) ? 0 : 1 }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "dept-kpis" && (<>
@@ -2383,6 +2394,63 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
             })}
           </Pane>
         </>)}
+
+        {page === "submit" && (() => {
+          const mgrKd = memberData[user.id] || { krs: [] };
+          const mgrSubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
+          const mgrThisWeekSub = mgrSubs.find(s => s.week === mgrNewOut.week);
+          return (<>
+            <Header title="My Weekly Submission" sub="Submit your own work outcomes — reviewed by admin"
+              right={mgrThisWeekSub ? <Tag type="approved" label={`This week: ${APPROVAL[mgrThisWeekSub.approval]?.label || mgrThisWeekSub.approval}`} /> : <Tag type="rejected" label="This week: Not yet submitted" />} />
+            <Pane>
+              {mgrKd.krs.length > 0 && (
+                <Card style={{ padding: 20 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Update My KPI Actuals</div>
+                  {mgrKd.krs.map((kr, i) => {
+                    const r = krCompletion(kr); const s = getStatus(r);
+                    return (
+                      <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 70px 100px 50px 130px", padding: "9px 0", gap: 10, alignItems: "center", borderBottom: i < mgrKd.krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
+                        <div><div style={{ fontWeight: 600 }}>{kr.label}</div><div style={{ fontSize: 12, color: T.textMuted }}>Target: {kr.operator || ">="} {fmt(kr.target)}</div></div>
+                        <span style={{ fontSize: 12, color: T.textMuted, textAlign: "right" }}>Actual:</span>
+                        <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: user.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "7px 10px", fontSize: 15, fontFamily: F.mono }} />
+                        <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{r.toFixed(0)}%</span>
+                        <Bar value={r} status={s} h={5} />
+                      </div>
+                    );
+                  })}
+                </Card>
+              )}
+              <Card style={{ padding: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
+                <Input value={mgrNewOut.week} onChange={e => setMgrNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 220, marginBottom: 10 }} />
+                <TextArea value={mgrNewOut.items} onChange={e => setMgrNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+                  <span style={{ fontSize: 12, color: T.textMuted }}>Your submission will be reviewed by admin</span>
+                  <Btn primary disabled={!mgrNewOut.items} onClick={() => {
+                    dispatch({ type: "ADD_WEEKLY_SUB", sub: { id: `ws${Date.now()}`, memberId: user.id, week: mgrNewOut.week, items: mgrNewOut.items, date: new Date().toISOString().slice(0, 10), approval: "pending", mgrNote: "" } });
+                    setMgrNewOut({ week: currentWeekLabel(), items: "" });
+                  }}>Submit to Admin</Btn>
+                </div>
+              </Card>
+              {mgrSubs.length > 0 && (<>
+                <SectionLabel>My Past Submissions</SectionLabel>
+                {mgrSubs.slice(0, 5).map(s => (
+                  <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : T.warn}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontWeight: 700 }}>{s.week}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12, color: T.textMuted }}>{s.date}</span>
+                        <Tag type={s.approval} label={APPROVAL[s.approval]?.label || s.approval} />
+                      </div>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}>{s.items}</p>
+                    {s.mgrNote && <div style={{ marginTop: 6, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Admin note: {s.mgrNote}</div>}
+                  </Card>
+                ))}
+              </>)}
+            </Pane>
+          </>);
+        })()}
 
         {page === "approvals" && (<>
           <Header title="Approve Member Submissions" sub={`${pendingSubs.length} pending review`} />
