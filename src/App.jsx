@@ -666,7 +666,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
       id, name: form.name.trim(), email: form.email.trim().toLowerCase(),
       role: form.role, av: makeAv(form.name), title: form.title.trim() || form.role,
       ...(form.deptId && { deptId: form.deptId }),
-      ...(form.role === "member" && form.teamId && { teamId: form.teamId }),
+      ...((form.role === "member" || form.role === "manager") && form.teamId && { teamId: form.teamId }),
       ...(form.role === "manager" && form.teamIds?.length && { teamIds: form.teamIds }),
     };
     dispatch({ type: "ADD_USER", user: newUser });
@@ -683,7 +683,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
       name: editForm.name.trim(), email: editForm.email.trim().toLowerCase(),
       role: editForm.role, av: makeAv(editForm.name), title: editForm.title.trim() || editForm.role,
       deptId: editForm.deptId || undefined,
-      teamId: editForm.role === "member" ? (editForm.teamId || undefined) : undefined,
+      teamId: (editForm.role === "member" || editForm.role === "manager") ? (editForm.teamId || undefined) : undefined,
       teamIds: editForm.role === "manager" ? (editForm.teamIds?.length ? editForm.teamIds : undefined) : undefined,
       secondTeamId: editForm.role === "member" ? (editForm.secondTeamId || undefined) : undefined,
     }});
@@ -806,8 +806,8 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                       </Select>
                     </div>
                   )}
-                  {editForm.role === "member" && editTeams.length > 0 && (
-                    <div><div style={lbl}>Team</div>
+                  {(editForm.role === "member" || editForm.role === "manager") && editTeams.length > 0 && (
+                    <div><div style={lbl}>{editForm.role === "manager" ? "My Team (KPI tracking)" : "Team"}</div>
                       <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value, secondTeamId: p.secondTeamId === e.target.value ? "" : p.secondTeamId }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
                         <option value="">— Select team —</option>
                         {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -1207,7 +1207,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const deptRanks = depts.map(d => ({ ...d, rate: calcRate(filtKrs(d.krs)), status: getStatus(calcRate(filtKrs(d.krs))) })).sort((a, b) => b.rate - a.rate);
   const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
   const allMembers = users
-    .filter(u => u.role === "member")
+    .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
       const kd = memberData[u.id] || { krs: [] };
       const r = calcRate(kd.krs);
@@ -3044,10 +3044,10 @@ function appReducer(state, action) {
 
     case "ADD_USER": {
       const u = action.user;
-      const newDepts = u.role === "member" && u.teamId
+      const newDepts = (u.role === "member" || u.role === "manager") && u.teamId
         ? state.depts.map(d => d.id !== u.deptId ? d : { ...d, teams: d.teams.map(t => t.id !== u.teamId ? t : { ...t, members: [...t.members, u.id] }) })
         : state.depts;
-      const newMemberData = u.role === "member"
+      const newMemberData = (u.role === "member" || u.role === "manager")
         ? { ...state.memberData, [u.id]: { krs: [] } }
         : state.memberData;
       return { ...state, users: [...state.users, u], depts: newDepts, memberData: newMemberData };
@@ -3057,10 +3057,11 @@ function appReducer(state, action) {
       const prev = state.users.find(u => u.id === action.userId);
       const updated = { ...prev, ...action.updates };
       const uid = action.userId;
-      const oldTeam = prev?.role === "member" ? prev.teamId : null;
-      const oldDept = prev?.role === "member" ? prev.deptId : null;
-      const newTeam = updated.role === "member" ? updated.teamId : null;
-      const newDept = updated.role === "member" ? updated.deptId : null;
+      const isTracked = role => role === "member" || role === "manager";
+      const oldTeam = isTracked(prev?.role) ? prev.teamId : null;
+      const oldDept = isTracked(prev?.role) ? prev.deptId : null;
+      const newTeam = isTracked(updated.role) ? updated.teamId : null;
+      const newDept = isTracked(updated.role) ? updated.deptId : null;
       const teamChanged = oldTeam !== newTeam || oldDept !== newDept;
 
       const oldSecondTeam = prev?.role === "member" ? (prev.secondTeamId || null) : null;
