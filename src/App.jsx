@@ -3204,21 +3204,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             right={thisWeekSub ? <Tag type="approved" label="This week: Submitted" /> : <Tag type="rejected" label="This week: Not yet submitted" />} />
           <Pane>
             <Card style={{ padding: 20 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Update KPI Actuals</div>
-              {kd.krs.map((kr, i) => {
-                const r = krCompletion(kr); const s = getStatus(r);
-                return (
-                  <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 70px 100px 50px 130px", padding: "9px 0", gap: 10, alignItems: "center", borderBottom: i < kd.krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
-                    <div><div style={{ fontWeight: 600 }}>{kr.label}</div><div style={{ fontSize: 12, color: T.textMuted }}>Target: {kr.operator || ">="} {fmt(kr.target)}</div></div>
-                    <span style={{ fontSize: 12, color: T.textMuted, textAlign: "right" }}>Actual:</span>
-                    <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: user.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "7px 10px", fontSize: 15, fontFamily: F.mono }} />
-                    <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{r.toFixed(0)}%</span>
-                    <Bar value={r} status={s} h={5} />
-                  </div>
-                );
-              })}
-            </Card>
-            <Card style={{ padding: 20 }}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
               <Input value={newOut.week} onChange={e => setNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 220, marginBottom: 10 }} />
               <TextArea value={newOut.items} onChange={e => setNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
