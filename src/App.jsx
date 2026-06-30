@@ -1174,6 +1174,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [overviewPeriod, setOverviewPeriod] = useState("all");
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
+  const [dirtySync, setDirtySync] = useState(null);
   const [editReportId, setEditReportId] = useState(null);
   const [editReportForm, setEditReportForm] = useState({ month: "", notes: "" });
   const [reportPeriodView, setReportPeriodView] = useState("all");
@@ -1185,6 +1186,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const syncNoteTimer = useRef(null);
   const [subSearch, setSubSearch] = useState("");
   const [subDeptFilter, setSubDeptFilter] = useState("all");
+  const [confirmApproval, setConfirmApproval] = useState(null);
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users, settings } = state;
@@ -1225,6 +1227,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     const dept = depts.find(d => d.id === deptId);
     const team = dept?.teams.find(t => t.id === teamId);
     if (!team) return;
+    setDirtySync({ deptId, teamId });
     syncTimerRef.current = setTimeout(() => setSyncPrompt({ deptId, teamId, teamName: team.name }), 1500);
   }
 
@@ -1234,6 +1237,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     if (!team) return;
     const count = new Set([...(team.members || []), ...users.filter(u => u.teamId === teamId).map(u => u.id)]).size;
     dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId, teamId });
+    setDirtySync(null);
     if (syncNoteTimer.current) clearTimeout(syncNoteTimer.current);
     setSyncNote({ teamName: team.name, count });
     syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
@@ -1572,6 +1576,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   {selTeam && (() => { const team = dept.teams.find(t => t.id === selTeam); return team ? (<>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
                       <div style={{ fontSize: 13, color: T.textMuted, flex: 1 }}>Objective: {team.obj} · Lead: {team.lead}</div>
+                      {dirtySync?.deptId === dept.id && dirtySync?.teamId === team.id && (
+                        <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }}>⚠ Unsynced changes</div>
+                      )}
                       <Btn primary small onClick={() => doSync(dept.id, team.id)}>⟳ Sync to Team Members</Btn>
                     </div>
                     {filterKrs(team.krs).length === 0 && !addTarget
@@ -1754,8 +1761,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     {s.mgrNote && <div style={{ marginTop: 8, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Note: {s.mgrNote}</div>}
                     {mem?.role === "manager" && s.approval === "pending" && (
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
-                        <Btn danger small onClick={() => dispatch({ type: "APPROVE_SUB", subId: s.id, status: "rejected" })}>Reject</Btn>
-                        <Btn primary small onClick={() => dispatch({ type: "APPROVE_SUB", subId: s.id, status: "approved" })}>Approve</Btn>
+                        <Btn danger small onClick={() => setConfirmApproval({ subId: s.id, status: "rejected", memberName: mem?.name, week: s.week })}>Reject</Btn>
+                        <Btn primary small onClick={() => setConfirmApproval({ subId: s.id, status: "approved", memberName: mem?.name, week: s.week })}>Approve</Btn>
                       </div>
                     )}
                   </Card>
@@ -2131,6 +2138,22 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             </div>
           </div>
         )}
+        {confirmApproval && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{confirmApproval.status === "approved" ? "Approve Submission?" : "Reject Submission?"}</div>
+              <p style={{ fontSize: 14, color: T.textSoft, lineHeight: 1.6, margin: "0 0 24px" }}>
+                {confirmApproval.status === "approved" ? "Approve" : "Reject"} <strong>{confirmApproval.memberName}</strong>'s submission for <strong>{confirmApproval.week}</strong>? This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn onClick={() => setConfirmApproval(null)}>Cancel</Btn>
+                {confirmApproval.status === "approved"
+                  ? <Btn primary onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "approved" }); setConfirmApproval(null); }}>Yes, Approve</Btn>
+                  : <Btn danger onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "rejected" }); setConfirmApproval(null); }}>Yes, Reject</Btn>}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2150,6 +2173,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const syncTimerRef = useRef(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
+  const [mgrDirtySync, setMgrDirtySync] = useState(null);
+  const [confirmApproval, setConfirmApproval] = useState(null);
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [mgrSelTeam, setMgrSelTeam] = useState(null);
@@ -2166,6 +2191,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
     const d = depts.find(x => x.id === deptId);
     const t = d?.teams.find(x => x.id === teamId);
     if (!t) return;
+    setMgrDirtySync({ deptId, teamId });
     syncTimerRef.current = setTimeout(() => setSyncPrompt({ deptId, teamId, teamName: t.name }), 1500);
   }
 
@@ -2175,6 +2201,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
     if (!t) return;
     const count = new Set([...(t.members || []), ...users.filter(u => u.teamId === teamId || u.secondTeamId === teamId).map(u => u.id)]).size;
     dispatch({ type: "SYNC_TEAM_KRS_TO_MEMBERS", deptId, teamId });
+    setMgrDirtySync(null);
     if (syncNoteTimer.current) clearTimeout(syncNoteTimer.current);
     setSyncNote({ teamName: t.name, count });
     syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
@@ -2338,6 +2365,9 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                           <span style={{ fontSize: 15, fontWeight: 700 }}>{t.name}</span>
                           {t.lead && <span style={{ fontSize: 12, color: T.textMuted }}>Lead: {t.lead}</span>}
+                          {mgrDirtySync?.deptId === dept.id && mgrDirtySync?.teamId === t.id && (
+                            <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "2px 9px", fontWeight: 600 }}>⚠ Unsynced changes</div>
+                          )}
                           <span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color, marginLeft: "auto" }}>{tr.toFixed(1)}%</span>
                           <Tag type={ts} small />
                         </div>
@@ -2409,9 +2439,14 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
                 <Input value={mgrNewOut.week} onChange={e => setMgrNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 220, marginBottom: 10 }} />
                 <TextArea value={mgrNewOut.items} onChange={e => setMgrNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
+                {mgrSubs.some(s => s.week === mgrNewOut.week) && (
+                  <div style={{ fontSize: 13, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "8px 12px", marginTop: 10 }}>
+                    You already submitted for <strong>{mgrNewOut.week}</strong>. Change the week label to submit again.
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                   <span style={{ fontSize: 12, color: T.textMuted }}>Your submission will be reviewed by admin</span>
-                  <Btn primary disabled={!mgrNewOut.items} onClick={() => {
+                  <Btn primary disabled={!mgrNewOut.items || mgrSubs.some(s => s.week === mgrNewOut.week)} onClick={() => {
                     dispatch({ type: "ADD_WEEKLY_SUB", sub: { id: `ws${Date.now()}`, memberId: user.id, week: mgrNewOut.week, items: mgrNewOut.items, date: new Date().toISOString().slice(0, 10), approval: "pending", mgrNote: "" } });
                     setMgrNewOut({ week: currentWeekLabel(), items: "" });
                   }}>Submit to Admin</Btn>
@@ -2460,8 +2495,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                     <Tag type={sub.approval} label={APPROVAL[sub.approval].label} />
                     {sub.approval === "pending" && (
                       <div style={{ display: "flex", gap: 8 }}>
-                        <Btn danger small onClick={() => dispatch({ type: "APPROVE_SUB", subId: sub.id, status: "rejected" })}>Reject</Btn>
-                        <Btn primary small onClick={() => dispatch({ type: "APPROVE_SUB", subId: sub.id, status: "approved" })}>Approve</Btn>
+                        <Btn danger small onClick={() => setConfirmApproval({ subId: sub.id, status: "rejected", memberName: mem?.name, week: sub.week })}>Reject</Btn>
+                        <Btn primary small onClick={() => setConfirmApproval({ subId: sub.id, status: "approved", memberName: mem?.name, week: sub.week })}>Approve</Btn>
                       </div>
                     )}
                     {sub.approval !== "pending" && sub.mgrNote && <span style={{ fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Note: {sub.mgrNote}</span>}
@@ -2739,7 +2774,12 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
               </div>
               {dept.teams.length > 0 && (<>
                 <SectionLabel>Team KRs</SectionLabel>
-                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{dept.teams.map(t => <Btn key={t.id} primary={mgrSelTeam === t.id} small onClick={() => setMgrSelTeam(p => p === t.id ? null : t.id)}>{t.name}</Btn>)}</div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  {dept.teams.map(t => <Btn key={t.id} primary={mgrSelTeam === t.id} small onClick={() => setMgrSelTeam(p => p === t.id ? null : t.id)}>{t.name}</Btn>)}
+                  {mgrDirtySync?.deptId === dept.id && mgrSelTeam && mgrDirtySync?.teamId === mgrSelTeam && (
+                    <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "2px 9px", fontWeight: 600 }}>⚠ Unsynced changes</div>
+                  )}
+                </div>
                 {mgrSelTeam && (() => {
                   const team = dept.teams.find(t => t.id === mgrSelTeam);
                   return team ? (<>
@@ -2837,6 +2877,22 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           <div style={{ position: "fixed", bottom: 24, right: 24, background: T.ok, color: "#fff", borderRadius: 12, padding: "12px 20px", zIndex: 1100, fontSize: 14, fontWeight: 700, boxShadow: "0 4px 18px rgba(0,0,0,0.18)" }}>
             <div>✓ Synced</div>
             <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>{syncNote.teamName} · {syncNote.count} member{syncNote.count !== 1 ? "s" : ""}</div>
+          </div>
+        )}
+        {confirmApproval && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{confirmApproval.status === "approved" ? "Approve Submission?" : "Reject Submission?"}</div>
+              <p style={{ fontSize: 14, color: T.textSoft, lineHeight: 1.6, margin: "0 0 24px" }}>
+                {confirmApproval.status === "approved" ? "Approve" : "Reject"} <strong>{confirmApproval.memberName}</strong>'s submission for <strong>{confirmApproval.week}</strong>? This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn onClick={() => setConfirmApproval(null)}>Cancel</Btn>
+                {confirmApproval.status === "approved"
+                  ? <Btn primary onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "approved" }); setConfirmApproval(null); }}>Yes, Approve</Btn>
+                  : <Btn danger onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "rejected" }); setConfirmApproval(null); }}>Yes, Reject</Btn>}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -3207,9 +3263,14 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
               <Input value={newOut.week} onChange={e => setNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 220, marginBottom: 10 }} />
               <TextArea value={newOut.items} onChange={e => setNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
+              {mySubs.some(s => s.week === newOut.week) && (
+                <div style={{ fontSize: 13, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "8px 12px", marginTop: 10 }}>
+                  You already submitted for <strong>{newOut.week}</strong>. Change the week label to submit again.
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                 <span style={{ fontSize: 12, color: T.textMuted }}>Your submission will be sent to your manager for approval</span>
-                <Btn primary disabled={!newOut.items} onClick={() => {
+                <Btn primary disabled={!newOut.items || mySubs.some(s => s.week === newOut.week)} onClick={() => {
                   dispatch({ type: "ADD_WEEKLY_SUB", sub: { id: `ws${Date.now()}`, memberId: user.id, week: newOut.week, items: newOut.items, date: new Date().toISOString().slice(0, 10), approval: "pending", mgrNote: "" } });
                   setNewOut({ week: currentWeekLabel(), items: "" });
                 }}>Submit for Approval</Btn>
@@ -3473,6 +3534,8 @@ export default function App({ redirectAccount = null }) {
   const [msalErr, setMsalErr] = useState("");
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState("");
+  const [syncErr, setSyncErr] = useState("");
+  const syncErrTimer = useRef(null);
   const { instance, accounts } = useMsal();
   const [state, rawDispatch] = useState({
     users: INIT_USERS,
@@ -3489,10 +3552,15 @@ export default function App({ redirectAccount = null }) {
   const dispatch = useCallback((action) => {
     rawDispatch(prev => {
       const next = appReducer(prev, action);
-      syncChanges(prev, next).catch(err => console.error("[DB sync error]", err.message));
+      syncChanges(prev, next).catch(err => {
+        console.error("[DB sync error]", err.message);
+        setSyncErr("Changes could not be saved — check your connection and try again.");
+        if (syncErrTimer.current) clearTimeout(syncErrTimer.current);
+        syncErrTimer.current = setTimeout(() => setSyncErr(""), 6000);
+      });
       return next;
     });
-  }, []);
+  }, []); // eslint-disable-line
 
   // On mount: load all data from Supabase. Seed the DB with initial data if it is empty.
   useEffect(() => {
@@ -3584,8 +3652,14 @@ export default function App({ redirectAccount = null }) {
       ⚠ {dbError}
     </div>
   ) : null;
+  const syncErrToast = syncErr ? (
+    <div style={{ position: "fixed", bottom: dbError ? 40 : 24, right: 24, background: T.bad, color: "#fff", borderRadius: 12, padding: "12px 18px", zIndex: 9999, fontSize: 13, fontWeight: 600, maxWidth: 340, boxShadow: "0 4px 18px rgba(0,0,0,0.22)", display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 18 }}>⚠</span>
+      <span>{syncErr}</span>
+    </div>
+  ) : null;
 
-  if (activeUser.role === "admin")   return <>{offlineBanner}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
-  if (activeUser.role === "manager") return <>{offlineBanner}<ManagerPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
-  return <>{offlineBanner}<MemberPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
+  if (activeUser.role === "admin")   return <>{offlineBanner}{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
+  if (activeUser.role === "manager") return <>{offlineBanner}{syncErrToast}<ManagerPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
+  return <>{offlineBanner}{syncErrToast}<MemberPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
 }
