@@ -162,6 +162,34 @@ function currentWeekLabel() {
 function currentMonth() {
   return new Date().toLocaleDateString("en-AU", { month: "long", year: "numeric" });
 }
+function getFYWeeks() {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const y = now.getFullYear();
+  const fy = m >= 7 ? y : y - 1;
+  const fyStart = new Date(fy, 6, 1);
+  const day = fyStart.getDay();
+  fyStart.setDate(fyStart.getDate() + (day === 0 ? 1 : day === 1 ? 0 : 8 - day));
+  const weeks = [];
+  for (let i = 0; i < 52; i++) {
+    const mon = new Date(fyStart); mon.setDate(fyStart.getDate() + i * 7);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    weeks.push(`Wk ${i + 1} · ${mon.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}-${sun.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}`);
+  }
+  return weeks;
+}
+function currentFYWeek() {
+  const weeks = getFYWeeks();
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const y = now.getFullYear();
+  const fy = m >= 7 ? y : y - 1;
+  const fyStart = new Date(fy, 6, 1);
+  const day = fyStart.getDay();
+  fyStart.setDate(fyStart.getDate() + (day === 0 ? 1 : day === 1 ? 0 : 8 - day));
+  const idx = Math.floor((now - fyStart) / (7 * 86400000));
+  return weeks[Math.max(0, Math.min(idx, 51))];
+}
 function getFYMonths() {
   const now = new Date();
   const m = now.getMonth() + 1;
@@ -807,11 +835,13 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                     </div>
                   )}
                   {(editForm.role === "member" || editForm.role === "manager") && editTeams.length > 0 && (
-                    <div><div style={lbl}>{editForm.role === "manager" ? "My Team (KPI tracking)" : "Team"}</div>
+                    <div>
+                      <div style={lbl}>{editForm.role === "manager" ? "My Team (KPI tracking)" : "Team"}</div>
                       <Select value={editForm.teamId} onChange={e => setEditForm(p => ({ ...p, teamId: e.target.value, secondTeamId: p.secondTeamId === e.target.value ? "" : p.secondTeamId }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }}>
                         <option value="">— Select team —</option>
                         {editTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                       </Select>
+                      {editForm.role === "manager" && <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>This team's KRs are synced to this manager's own KPI list for personal tracking.</div>}
                     </div>
                   )}
                   {editForm.role === "member" && editTeams.filter(t => t.id !== editForm.teamId).length > 0 && (
@@ -834,6 +864,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                         </label>
                       ))}
                     </div>
+                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>Teams this manager can view and approve member submissions for.</div>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
@@ -1245,7 +1276,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
   function addKr(deptId, teamId) {
     if (!newKr.label) return;
-    if (!newKr.useMonthlyTargets && !newKr.target) return;
+    if (!newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
     const baseKr = { id: `N${Date.now().toString(36).slice(-4).toUpperCase()}`, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
     const kr = newKr.useMonthlyTargets
       ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {} }
@@ -1524,6 +1555,11 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           <input type="checkbox" checked={newKr.useMonthlyTargets} onChange={e => setNewKr(p => ({ ...p, useMonthlyTargets: e.target.checked, target: e.target.checked ? "" : p.target }))} style={{ accentColor: T.brand }} />
                           Monthly Breakdown — set a different target for each month (Jul–Jun)
                         </label>
+                        {newKr.useMonthlyTargets && (
+                          <div style={{ fontSize: 11, color: T.brand, marginTop: 6, lineHeight: 1.6 }}>
+                            After adding, click 📅 to enter per-month targets. You can also set an optional <strong>Dream Target</strong> — an annual ceiling; when set, overall progress is calculated against it rather than the sum of monthly targets.
+                          </div>
+                        )}
                       </div>
                       )}
                       </div>
@@ -1777,6 +1813,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             right={<div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => { setShowGenReport(v => !v); setGenPeriod({ label: "", from: "", to: "" }); }}>{showGenReport ? "Cancel" : "Generate for Period"}</Btn>
               <Btn primary onClick={() => {
+                if (state.monthlyReports.some(r => r.month === currentMonth() && (r.reportType || "monthly") === reportSubTab)) {
+                  if (!window.confirm(`A ${reportSubTab} report for ${currentMonth()} already exists. Publish another?`)) return;
+                }
                 const filteredByPeriod = (krs, p) => krs.filter(kr => (kr.period || "monthly") === p);
                 const periodRate = (p) => { const rates = depts.map(d => calcRate(filteredByPeriod(d.krs, p))); return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0; };
                 const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
@@ -1819,6 +1858,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </div>
                   <Btn primary disabled={!genPeriod.label} onClick={() => {
                     const label = genPeriod.label.trim();
+                    if (state.monthlyReports.some(r => r.month === label && (r.reportType || "monthly") === reportSubTab)) {
+                      if (!window.confirm(`A ${reportSubTab} report labelled "${label}" already exists. Publish another?`)) return;
+                    }
                     const filteredByPeriod = (krs, p) => krs.filter(kr => (kr.period || "monthly") === p);
                     const periodRate = (p) => { const rates = depts.map(d => calcRate(filteredByPeriod(d.krs, p))); return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0; };
                     const report = {
@@ -1845,6 +1887,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 </div>
               </Card>
             )}
+            <Card style={{ padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>Current Data Preview — what will be published</div>
+              <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
+                <div><span style={{ color: T.textMuted }}>Company rate: </span><strong style={{ color: STATUS_THEME[getStatus(compRate)].color }}>{Math.round(compRate * 10) / 10}%</strong></div>
+                <div><span style={{ color: T.textMuted }}>Top performers: </span>{allMembers.slice(0, 3).map(m => m.name).join(", ") || "—"}</div>
+                <div><span style={{ color: T.textMuted }}>Needs attention: </span>{allMembers.filter(m => m.status === "red").length > 0 ? allMembers.filter(m => m.status === "red").map(m => m.name).join(", ") : "None"}</div>
+              </div>
+            </Card>
             {(() => {
               const visibleReports = state.monthlyReports.filter(r => (r.reportType || "monthly") === reportSubTab);
               if (visibleReports.length === 0) return <EmptyState text={`No ${reportSubTab} reports published yet.`} />;
@@ -2168,7 +2218,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
   const [kpiPeriod, setKpiPeriod] = useState("all");
-  const [mgrNewOut, setMgrNewOut] = useState({ week: currentWeekLabel(), items: "" });
+  const [mgrNewOut, setMgrNewOut] = useState({ week: currentFYWeek(), items: "" });
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
   const [syncNote, setSyncNote] = useState(null);
@@ -2223,7 +2273,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length, submit: weeklySubs.some(s => s.memberId === user.id && s.week === currentWeekLabel()) ? 0 : 1 }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length, submit: weeklySubs.some(s => s.memberId === user.id && s.week === currentFYWeek()) ? 0 : 1 }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "dept-kpis" && (<>
@@ -2437,7 +2487,9 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
               )}
               <Card style={{ padding: 20 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
-                <Input value={mgrNewOut.week} onChange={e => setMgrNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 220, marginBottom: 10 }} />
+                <Select value={mgrNewOut.week} onChange={e => setMgrNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 260, marginBottom: 10 }}>
+                  {getFYWeeks().map(w => <option key={w} value={w}>{w}</option>)}
+                </Select>
                 <TextArea value={mgrNewOut.items} onChange={e => setMgrNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
                 {mgrSubs.some(s => s.week === mgrNewOut.week) && (
                   <div style={{ fontSize: 13, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "8px 12px", marginTop: 10 }}>
@@ -2448,7 +2500,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                   <span style={{ fontSize: 12, color: T.textMuted }}>Your submission will be reviewed by admin</span>
                   <Btn primary disabled={!mgrNewOut.items || mgrSubs.some(s => s.week === mgrNewOut.week)} onClick={() => {
                     dispatch({ type: "ADD_WEEKLY_SUB", sub: { id: `ws${Date.now()}`, memberId: user.id, week: mgrNewOut.week, items: mgrNewOut.items, date: new Date().toISOString().slice(0, 10), approval: "pending", mgrNote: "" } });
-                    setMgrNewOut({ week: currentWeekLabel(), items: "" });
+                    setMgrNewOut({ week: currentFYWeek(), items: "" });
                   }}>Submit to Admin</Btn>
                 </div>
               </Card>
@@ -2905,7 +2957,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
    ───────────────────────────────────────────────────────────── */
 function MemberPortal({ user, onLogout, state, dispatch }) {
   const [page, setPage] = useState("mykpis");
-  const [newOut, setNewOut] = useState({ week: currentWeekLabel(), items: "" });
+  const [newOut, setNewOut] = useState({ week: currentFYWeek(), items: "" });
   const [myKpiPeriod, setMyKpiPeriod] = useState("all");
   const [deptKpiPeriod, setDeptKpiPeriod] = useState("all");
   const [reportSubTab, setReportSubTab] = useState("monthly");
@@ -2919,7 +2971,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const mySubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
   const rate = calcRate(kd.krs); const st = getStatus(rate);
   const pendingCount = mySubs.filter(s => s.approval === "pending").length;
-  const thisWeekSub = mySubs.find(s => s.week === currentWeekLabel());
+  const thisWeekSub = mySubs.find(s => s.week === currentFYWeek());
 
   const navItems = [
     { id: "mykpis",           icon: "◎", label: "My KPIs"           },
@@ -2952,6 +3004,15 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
               <Metric label="This Week"      value={thisWeekSub ? "Submitted" : "Due"} status={thisWeekSub ? "green" : "red"} />
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
             </div>
+            {kd.krs.length === 0 && (
+              <div style={{ padding: "28px 20px", textAlign: "center", color: T.textMuted, background: T.raised, borderRadius: 10, border: `1px dashed ${T.border}` }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>◎</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: T.text }}>No KPIs assigned yet</div>
+                {!user.teamId
+                  ? <div style={{ fontSize: 13 }}>You haven't been assigned to a team. Ask your admin to assign you to a team so your KPIs can be set up.</div>
+                  : <div style={{ fontSize: 13 }}>Your manager hasn't synced KRs to your profile yet. Once they do, your KPIs will appear here.</div>}
+              </div>
+            )}
             {(myKpiPeriod === "all" ? kd.krs : kd.krs.filter(kr => (kr.period || "monthly") === myKpiPeriod)).map(kr => {
               const r = krCompletion(kr); const s = getStatus(r);
               const isMonthly = !!kr.monthlyTargets;
@@ -3040,9 +3101,12 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                     </>
                   ) : (
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
-                      <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)} target</div></div>
+                      <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)} target{kr.unit ? ` (${kr.unit})` : ""}</div></div>
                       <div style={{ flex: 1 }}><Bar value={r} status={s} h={10} /></div>
-                      <div style={{ fontSize: 26, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</div>
+                      <div>
+                        <div style={{ fontSize: 26, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</div>
+                        {kr.actual > kr.target && <div style={{ fontSize: 10, color: T.ok, fontWeight: 600 }}>↑ exceeded</div>}
+                      </div>
                     </div>
                   )}
                 </Card>
@@ -3261,7 +3325,9 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           <Pane>
             <Card style={{ padding: 20 }}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
-              <Input value={newOut.week} onChange={e => setNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 220, marginBottom: 10 }} />
+              <Select value={newOut.week} onChange={e => setNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 260, marginBottom: 10 }}>
+                {getFYWeeks().map(w => <option key={w} value={w}>{w}</option>)}
+              </Select>
               <TextArea value={newOut.items} onChange={e => setNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
               {mySubs.some(s => s.week === newOut.week) && (
                 <div style={{ fontSize: 13, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "8px 12px", marginTop: 10 }}>
@@ -3272,7 +3338,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 <span style={{ fontSize: 12, color: T.textMuted }}>Your submission will be sent to your manager for approval</span>
                 <Btn primary disabled={!newOut.items || mySubs.some(s => s.week === newOut.week)} onClick={() => {
                   dispatch({ type: "ADD_WEEKLY_SUB", sub: { id: `ws${Date.now()}`, memberId: user.id, week: newOut.week, items: newOut.items, date: new Date().toISOString().slice(0, 10), approval: "pending", mgrNote: "" } });
-                  setNewOut({ week: currentWeekLabel(), items: "" });
+                  setNewOut({ week: currentFYWeek(), items: "" });
                 }}>Submit for Approval</Btn>
               </div>
             </Card>
@@ -3520,7 +3586,18 @@ function appReducer(state, action) {
       return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, teams: d.teams.map(t => t.id === action.teamId ? { ...t, ...action.updates } : t) } : d) };
 
     case "REMOVE_TEAM":
-      return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, teams: d.teams.filter(t => t.id !== action.teamId) } : d) };
+      return {
+        ...state,
+        depts: state.depts.map(d => d.id === action.deptId ? { ...d, teams: d.teams.filter(t => t.id !== action.teamId) } : d),
+        users: state.users.map(u => {
+          if (u.teamId !== action.teamId && u.secondTeamId !== action.teamId && !u.teamIds?.includes(action.teamId)) return u;
+          const updated = { ...u };
+          if (u.teamId === action.teamId) delete updated.teamId;
+          if (u.secondTeamId === action.teamId) delete updated.secondTeamId;
+          if (u.teamIds?.includes(action.teamId)) updated.teamIds = u.teamIds.filter(id => id !== action.teamId);
+          return updated;
+        }),
+      };
 
     default: return state;
   }
