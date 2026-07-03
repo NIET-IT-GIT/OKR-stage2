@@ -425,7 +425,7 @@ function CountBadge({ count, color }) {
   return <span style={{ background: color || T.bad, color: "#fff", borderRadius: 20, padding: "1px 6px", fontSize: 11, fontWeight: 700, marginLeft: 6, letterSpacing: "0.02em" }}>{count}</span>;
 }
 
-function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems, activeSubItem, onSelectSubItem }) {
+function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems, subItemsFor, activeSubItem, onSelectSubItem }) {
   return (
     <div style={{
       width: 240, background: T.glass, borderRight: `1px solid ${T.border}`,
@@ -462,10 +462,10 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
             }}>
               <span style={{ fontSize: 15, width: 18, textAlign: "center", flexShrink: 0, opacity: active === item.id ? 1 : 0.6 }}>{item.icon}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
-              {active === item.id && subItems && <span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>}
+              {item.id === subItemsFor && subItems && <span style={{ fontSize: 10, opacity: 0.6 }}>{active === item.id ? "▾" : "▸"}</span>}
               {pendingCounts?.[item.id] > 0 && <CountBadge count={pendingCounts[item.id]} />}
             </button>
-            {active === item.id && subItems && (
+            {active === item.id && item.id === subItemsFor && subItems && (
               <div style={{ paddingLeft: 10, marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                 {subItems.map(sub => (
                   <button key={sub.id} onClick={() => onSelectSubItem(sub.id)} style={{
@@ -1377,7 +1377,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
       <Side items={navItems} active={page} onSelect={p => { setPage(p); setSelDept(null); }} user={user} onLogout={onLogout}
-        subItems={deptSubItems} activeSubItem={selDept || "__all__"} onSelectSubItem={id => { setPage("departments"); setSelDept(id === "__all__" ? null : id); setSelTeam(null); setAddTarget(null); }} />
+        subItems={deptSubItems} subItemsFor="departments" activeSubItem={selDept || "__all__"} onSelectSubItem={id => { setPage("departments"); setSelDept(id === "__all__" ? null : id); setSelTeam(null); setAddTarget(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} />}
