@@ -425,7 +425,7 @@ function CountBadge({ count, color }) {
   return <span style={{ background: color || T.bad, color: "#fff", borderRadius: 20, padding: "1px 6px", fontSize: 11, fontWeight: 700, marginLeft: 6, letterSpacing: "0.02em" }}>{count}</span>;
 }
 
-function Side({ items, active, onSelect, user, onLogout, pendingCounts }) {
+function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems, activeSubItem, onSelectSubItem }) {
   return (
     <div style={{
       width: 240, background: T.glass, borderRight: `1px solid ${T.border}`,
@@ -450,19 +450,40 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts }) {
       </div>
       <div style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
         {items.map(item => (
-          <button key={item.id} onClick={() => onSelect(item.id)} style={{
-            background: active === item.id ? T.brandDim : "transparent",
-            border: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
-            borderRadius: 9, padding: "9px 12px", cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 9,
-            color: active === item.id ? T.brand : T.textMuted,
-            fontSize: 14, fontWeight: active === item.id ? 600 : 400, textAlign: "left", width: "100%",
-            transition: "all 0.12s", fontFamily: F.body, letterSpacing: "-0.01em",
-          }}>
-            <span style={{ fontSize: 15, width: 18, textAlign: "center", flexShrink: 0, opacity: active === item.id ? 1 : 0.6 }}>{item.icon}</span>
-            <span style={{ flex: 1 }}>{item.label}</span>
-            {pendingCounts?.[item.id] > 0 && <CountBadge count={pendingCounts[item.id]} />}
-          </button>
+          <div key={item.id}>
+            <button onClick={() => onSelect(item.id)} style={{
+              background: active === item.id ? T.brandDim : "transparent",
+              border: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+              borderRadius: 9, padding: "9px 12px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 9,
+              color: active === item.id ? T.brand : T.textMuted,
+              fontSize: 14, fontWeight: active === item.id ? 600 : 400, textAlign: "left", width: "100%",
+              transition: "all 0.12s", fontFamily: F.body, letterSpacing: "-0.01em",
+            }}>
+              <span style={{ fontSize: 15, width: 18, textAlign: "center", flexShrink: 0, opacity: active === item.id ? 1 : 0.6 }}>{item.icon}</span>
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {active === item.id && subItems && <span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>}
+              {pendingCounts?.[item.id] > 0 && <CountBadge count={pendingCounts[item.id]} />}
+            </button>
+            {active === item.id && subItems && (
+              <div style={{ paddingLeft: 10, marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                {subItems.map(sub => (
+                  <button key={sub.id} onClick={() => onSelectSubItem(sub.id)} style={{
+                    background: activeSubItem === sub.id ? T.brandDim : "transparent",
+                    border: activeSubItem === sub.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+                    borderRadius: 7, padding: "7px 10px", cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 7,
+                    color: activeSubItem === sub.id ? T.brand : T.textMuted,
+                    fontSize: 13, fontWeight: activeSubItem === sub.id ? 600 : 400, textAlign: "left", width: "100%",
+                    fontFamily: F.body, letterSpacing: "-0.01em",
+                  }}>
+                    <span style={{ fontSize: 12, width: 16, textAlign: "center", flexShrink: 0, opacity: 0.5 }}>{sub.icon || "·"}</span>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </div>
       <div style={{ padding: "10px 8px 14px", borderTop: `1px solid ${T.border}` }}>
@@ -1219,21 +1240,23 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [subDeptFilter, setSubDeptFilter] = useState("all");
   const [confirmApproval, setConfirmApproval] = useState(null);
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
+  const [expandedPersonalMember, setExpandedPersonalMember] = useState(null);
+  const [addPersonalKr, setAddPersonalKr] = useState(null);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
-    { id: "overview",         icon: "◎", label: "Company Overview"    },
-    { id: "departments",      icon: "⬛", label: "Departments"         },
-    { id: "weekly-setup",     icon: "⚙", label: "Weekly KPI Setup"    },
-    { id: "weekly-overview",  icon: "◉", label: "Weekly Overview"     },
-    { id: "monthly-setup",    icon: "⚙", label: "Monthly KPI Setup"   },
-    { id: "monthly-overview", icon: "◉", label: "Monthly Overview"    },
-    { id: "submissions",      icon: "✉", label: "Weekly Submissions"  },
-    { id: "reports",          icon: "⊞", label: "KPI Reports"         },
-    { id: "projects",         icon: "⚡", label: "Projects"            },
-    { id: "leaderboard",      icon: "▲", label: "Leaderboard"         },
-    { id: "users",            icon: "⊹", label: "User Management"     },
+    { id: "overview",    icon: "◎", label: "Company Overview"  },
+    { id: "departments", icon: "⬛", label: "Departments"       },
+    { id: "submissions", icon: "✉", label: "Weekly Submissions" },
+    { id: "reports",     icon: "⊞", label: "KPI Reports"       },
+    { id: "projects",    icon: "⚡", label: "Projects"          },
+    { id: "leaderboard", icon: "▲", label: "Leaderboard"       },
+    { id: "users",       icon: "⊹", label: "User Management"   },
+  ];
+  const deptSubItems = [
+    { id: "__all__", label: "All Departments", icon: "⊕" },
+    ...depts.map(d => ({ id: d.id, label: d.name })),
   ];
 
   const filtKrs = (krs) => overviewPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === overviewPeriod);
@@ -1328,7 +1351,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} />
+      <Side items={navItems} active={page} onSelect={p => { setPage(p); if (p !== "departments") setSelDept(null); }} user={user} onLogout={onLogout}
+        subItems={deptSubItems} activeSubItem={selDept || "__all__"} onSelectSubItem={id => { setPage("departments"); setSelDept(id === "__all__" ? null : id); setSelTeam(null); setAddTarget(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} />}
@@ -1367,8 +1391,327 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {page === "departments" && <DeptMgmtPage depts={depts} users={users} memberData={memberData} dispatch={dispatch} />}
+        {page === "departments" && (!selDept ? (
+          <DeptMgmtPage depts={depts} users={users} memberData={memberData} dispatch={dispatch} />
+        ) : (() => {
+          const dept = depts.find(d => d.id === selDept);
+          if (!dept) return null;
+          const isFinance = dept.name.toLowerCase().includes("finance");
 
+          const COLS_DEF = [
+            { key: "id",         label: "ID" },
+            { key: "label",      label: "Key Result" },
+            { key: "operator",   label: "Op" },
+            { key: "target",     label: "Target" },
+            { key: "actual",     label: "Actual" },
+            { key: "unit",       label: "Unit" },
+            { key: "dataSource", label: "Data Source" },
+          ];
+          const opSelect = (val, onChange) => (
+            <select value={val} onChange={onChange} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.mono }}>
+              <option value=">=">&gt;=</option><option value=">">&gt;</option><option value="<=">&lt;=</option><option value="<">&lt;</option>
+            </select>
+          );
+          const customCols = dept.customCols || [];
+          const getCustomColWidth = col => customColWidthOverride?.colId === col.id ? customColWidthOverride.width : (col.width ?? 150);
+          const orderedDef = colOrder.filter(k => k !== "period").map(k => COLS_DEF.find(c => c.key === k)).filter(Boolean);
+          const visibleBuiltIn = orderedDef.filter(c => !hiddenCols.has(c.key));
+          const COL = [...visibleBuiltIn.map(c => `${colWidths[c.key]}px`), ...customCols.map(c => `${getCustomColWidth(c)}px`), "34px"].join(" ");
+          const rszHandle = onMd => (
+            <div onMouseDown={onMd} title="Drag to resize" style={{ width: 6, flexShrink: 0, alignSelf: "stretch", cursor: "col-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 2, height: "40%", background: T.border, borderRadius: 1 }} />
+            </div>
+          );
+
+          const renderEditor = (krs, deptId, teamId, sectionPeriod) => {
+            const onTeamChange = (krId, field, value) => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId, field, value }); if (teamId) triggerSyncPrompt(deptId, teamId); };
+            return (
+              <Card style={{ overflow: "auto" }}>
+                <div style={{ minWidth: "max-content" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", alignItems: "center" }}>
+                    {visibleBuiltIn.map(({ key, label }) => (
+                      <div key={key} draggable
+                        onDragStart={e => { dragColRef.current = key; e.dataTransfer.effectAllowed = "move"; }}
+                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                        onDrop={e => { e.preventDefault(); const from = dragColRef.current; if (!from || from === key) return; const next = [...colOrder]; const fi = next.indexOf(from); const ti = next.indexOf(key); if (fi >= 0 && ti >= 0) { next.splice(fi, 1); next.splice(ti, 0, from); dispatch({ type: "SET_SETTINGS", updates: { colOrder: next } }); } dragColRef.current = null; }}
+                        onDragEnd={() => { dragColRef.current = null; }}
+                        style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 2, cursor: "grab", userSelect: "none" }} title="Drag to reorder">
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                        <button onClick={() => setHiddenCols(prev => new Set([...prev, key]))} title="Hide" style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, lineHeight: 1, opacity: 0.6 }}>✕</button>
+                        {rszHandle(e => startResize(key, e))}
+                      </div>
+                    ))}
+                    {customCols.map(col => (
+                      <div key={col.id} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 3 }}>
+                        <input value={col.name} onChange={e => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.map(c => c.id === col.id ? { ...c, name: e.target.value } : c) })}
+                          style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", padding: 0, cursor: "text" }} />
+                        <button onClick={() => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.filter(c => c.id !== col.id) })} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, lineHeight: 1 }}>✕</button>
+                        {rszHandle(e => startResizeCustom(col.id, dept.id, e))}
+                      </div>
+                    ))}
+                    <span />
+                  </div>
+                  {krs.map((kr, i) => {
+                    const isMonthly = !!kr.monthlyTargets;
+                    const curKey = currentFYMonthKey();
+                    const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
+                    const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
+                    const fyMs = isMonthly ? getFYMonths() : [];
+                    const annSumTarget = fyMs.reduce((s, {key}) => s + (kr.monthlyTargets[key] || 0), 0);
+                    const annActual = fyMs.reduce((s, {key}) => s + ((kr.monthlyActuals || {})[key] || 0), 0);
+                    const annDream = isMonthly ? (kr.annualTarget || 0) : 0;
+                    const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
+                    const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
+                    const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
+                    return (
+                      <Fragment key={kr.id}>
+                      <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                        {visibleBuiltIn.map(({ key }) => {
+                          if (key === "id") return <span key="id" style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>;
+                          if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}</div>;
+                          if (key === "operator") return <span key="operator">{opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}</span>;
+                          if (key === "target") return isMonthly ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(curTarget)} <span style={{ color: T.textDim }}>this mo.</span></span> : <Input key="target" value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
+                          if (key === "actual") return isMonthly ? <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(curActual)}</span> : <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>;
+                          if (key === "unit") return <Input key="unit" value={kr.unit || ""} onChange={e => onTeamChange(kr.id, "unit", e.target.value)} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          if (key === "dataSource") return <Input key="dataSource" value={kr.dataSource || ""} onChange={e => onTeamChange(kr.id, "dataSource", e.target.value)} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          return null;
+                        })}
+                        {customCols.map(col => <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => onTeamChange(kr.id, "extras", { ...(kr.extras || {}), [col.id]: e.target.value })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />)}
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="Edit monthly targets" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 12, fontWeight: 700 }}>📅</button>}
+                          <button onClick={() => { dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
+                        </div>
+                      </div>
+                      {isMonthly && expandedMonthlyKr === kr.id && (
+                        <div style={{ padding: "14px 16px 18px", background: T.brandDim, borderBottom: `1px solid ${T.border}` }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 12 }}>KPI Breakdown — {kr.label}{kr.unit ? ` (${kr.unit})` : ""}</div>
+                          <div style={{ overflowX: "auto" }}>
+                            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, minWidth: 960 }}>
+                              <thead><tr style={{ background: T.surface }}>
+                                <th style={{ textAlign: "left", padding: "6px 10px", borderBottom: `2px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, width: 110 }}></th>
+                                {fyMs.map(({ key, label }) => { const isCur = key === curKey; return <th key={key} style={{ textAlign: "center", padding: "6px 3px", borderBottom: `2px solid ${isCur ? T.brand : T.border}`, fontSize: 11, fontWeight: isCur ? 700 : 400, color: isCur ? T.brand : T.textDim, minWidth: 62, background: isCur ? T.brandDim : T.surface }}>{label.split(" ")[0]}{isCur ? " ●" : ""}</th>; })}
+                                <th style={{ textAlign: "right", padding: "6px 10px", borderBottom: `2px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, minWidth: 80, background: T.surface }}>FY Total</th>
+                                <th style={{ textAlign: "center", padding: "6px 10px", borderBottom: `2px solid ${T.okBorder}`, fontSize: 11, fontWeight: 700, color: T.ok, minWidth: 100, background: T.okDim }}>Dream Target</th>
+                              </tr></thead>
+                              <tbody>
+                                <tr>
+                                  <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Perf. Target</td>
+                                  {fyMs.map(({ key }) => { const isCur = key === curKey; const t = kr.monthlyTargets[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><Input value={t} onChange={e => dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "target", value: Number(e.target.value) || 0 })} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
+                                  <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annSumTarget)}</td>
+                                  <td style={{ padding: "5px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, borderLeft: `1px solid ${T.okBorder}` }}>
+                                    <Input value={annDream} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "annualTarget", value: Number(e.target.value) || 0 })} style={{ padding: "4px 6px", fontSize: 13, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box", fontWeight: 700, background: T.surface, border: `1px solid ${T.okBorder}`, borderRadius: 4 }} />
+                                    {kr.unit && <div style={{ fontSize: 10, color: T.ok, textAlign: "center", marginTop: 2 }}>{kr.unit}</div>}
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Actual</td>
+                                  {fyMs.map(({ key }) => { const isCur = key === curKey; const a = (kr.monthlyActuals || {})[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><Input value={a} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
+                                  <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annActual)}</td>
+                                  <td style={{ padding: "4px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, textAlign: "center", color: T.textDim, fontSize: 12, borderLeft: `1px solid ${T.okBorder}` }}>—</td>
+                                </tr>
+                                <tr>
+                                  <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 11, color: T.textDim, background: T.surface }}>Achievement</td>
+                                  {fyMs.map(({ key }) => { const t = kr.monthlyTargets[key] || 0; const a = (kr.monthlyActuals || {})[key] || 0; const pct = t > 0 ? Math.min((a / t) * 100, 100) : null; const isCur = key === curKey; return <td key={key} style={{ padding: "4px 4px", textAlign: "center", background: isCur ? T.brandDim : "transparent" }}>{pct !== null ? <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[getStatus(pct)].color }}>{pct.toFixed(0)}%</span> : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}</td>; })}
+                                  <td style={{ padding: "4px 10px", textAlign: "right", background: T.surface }}>{annSumTarget > 0 ? <><span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color }}>{annVsSum.toFixed(0)}%</span><div style={{ fontSize: 10, color: T.textDim }}>vs. sum</div></> : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}</td>
+                                  <td style={{ padding: "4px 8px", background: T.okDim, textAlign: "center", borderLeft: `1px solid ${T.okBorder}` }}>{annDream > 0 ? <><span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[getStatus(annVsDream)].color }}>{annVsDream.toFixed(0)}%</span><div style={{ fontSize: 10, color: T.ok }}>vs. dream</div></> : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                      </Fragment>
+                    );
+                  })}
+                  {addTarget === (teamId || `dept-${deptId}`) ? (
+                    <div>
+                      <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
+                        {visibleBuiltIn.map(({ key }) => {
+                          if (key === "id") return <span key="id" style={{ fontSize: 12, color: T.brand }}>NEW</span>;
+                          if (key === "label") return <Input key="label" value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />;
+                          if (key === "operator") return <span key="operator">{opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}</span>;
+                          if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
+                          if (key === "actual") return <span key="actual" />;
+                          if (key === "unit") return <Input key="unit" value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          if (key === "dataSource") return <Input key="dataSource" value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />;
+                          return null;
+                        })}
+                        {customCols.map(col => <span key={col.id} />)}
+                        <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
+                      </div>
+                      {sectionPeriod === "monthly" && (
+                        <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}` }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: T.brand, fontWeight: 600 }}>
+                            <input type="checkbox" checked={newKr.useMonthlyTargets} onChange={e => setNewKr(p => ({ ...p, useMonthlyTargets: e.target.checked, target: e.target.checked ? "" : p.target }))} style={{ accentColor: T.brand }} />
+                            Monthly Breakdown — set a different target for each month (Jul–Jun)
+                          </label>
+                          {newKr.useMonthlyTargets && (
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginTop: 8 }}>
+                              <div>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: T.ok, marginBottom: 4 }}>Dream Target <span style={{ fontWeight: 400, color: T.textMuted }}>(optional annual ceiling)</span></div>
+                                <Input value={newKr.dreamTarget || ""} onChange={e => setNewKr(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="e.g. 4997300" style={{ padding: "4px 8px", fontSize: 13, fontFamily: F.mono, textAlign: "right", width: 160 }} />
+                                {newKr.unit && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{newKr.unit}</div>}
+                              </div>
+                              <div style={{ fontSize: 11, color: T.brand, lineHeight: 1.6, paddingTop: 18 }}>Monthly targets open automatically after adding. When Dream Target is set, annual progress tracks against it instead of the sum of monthly targets.</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: "10px 16px" }}>
+                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: sectionPeriod, useMonthlyTargets: false }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                    </div>
+                  )}
+                  {hiddenCols.size > 0 && (
+                    <div style={{ padding: "6px 16px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Hidden:</span>
+                      {[...hiddenCols].map(key => { const c = COLS_DEF.find(c => c.key === key); return c ? <button key={key} onClick={() => setHiddenCols(prev => { const n = new Set(prev); n.delete(key); return n; })} style={{ fontSize: 11, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "2px 8px", cursor: "pointer" }}>{c.label} +</button> : null; })}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            );
+          };
+
+          const renderSection = (sectionPeriod, sectionLabel, accentColor) => {
+            const filterKrs = krs => krs.filter(kr => (kr.period || "monthly") === sectionPeriod);
+            const deptKrs = filterKrs(dept.krs);
+            return (
+              <div key={sectionPeriod} style={{ marginBottom: 36 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, paddingBottom: 10, borderBottom: `2px solid ${accentColor}` }}>
+                  <div style={{ width: 4, height: 22, background: accentColor, borderRadius: 2, flexShrink: 0 }} />
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>{sectionLabel}</div>
+                  <div style={{ flex: 1 }} />
+                  {addingCol ? (<>
+                    <input autoFocus value={newColName} onChange={e => setNewColName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") addCustomCol(); if (e.key === "Escape") { setAddingCol(false); setNewColName(""); } }}
+                      placeholder="Column name" style={{ padding: "5px 10px", fontSize: 13, border: `1px solid ${T.borderFocus}`, borderRadius: 6, background: T.surface, fontFamily: F.body, color: T.text, outline: "none" }} />
+                    <Btn primary small onClick={addCustomCol}>Add</Btn>
+                    <Btn small onClick={() => { setAddingCol(false); setNewColName(""); }}>Cancel</Btn>
+                  </>) : <Btn small onClick={() => setAddingCol(true)}>+ Add Column</Btn>}
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>{dept.name} — Dept KRs</div>
+                  {deptKrs.length === 0 && !addTarget && <div style={{ fontSize: 13, color: T.textMuted, padding: "6px 0 10px" }}>No {sectionLabel} for this department yet.</div>}
+                  {renderEditor(deptKrs, dept.id, null, sectionPeriod)}
+                </div>
+                {dept.teams.length > 0 && (<>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Team KRs</div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    {dept.teams.map(t => <Btn key={t.id} primary={selTeam === t.id} small onClick={() => setSelTeam(p => p === t.id ? null : t.id)}>{t.name}</Btn>)}
+                  </div>
+                  {selTeam && (() => {
+                    const team = dept.teams.find(t => t.id === selTeam);
+                    if (!team) return null;
+                    const teamKrs = filterKrs(team.krs);
+                    return (<>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                        <div style={{ fontSize: 13, color: T.textMuted, flex: 1 }}>Objective: {team.obj}{team.lead ? ` · Lead: ${team.lead}` : ""}</div>
+                        {dirtySync?.deptId === dept.id && dirtySync?.teamId === team.id && <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }}>⚠ Unsynced changes</div>}
+                        <Btn primary small onClick={() => doSync(dept.id, team.id)}>⟳ Sync to Team Members</Btn>
+                      </div>
+                      {teamKrs.length === 0 && !addTarget && <div style={{ fontSize: 13, color: T.textMuted, padding: "6px 0" }}>No {sectionLabel} for {team.name} yet.</div>}
+                      {renderEditor(teamKrs, dept.id, team.id, sectionPeriod)}
+                    </>);
+                  })()}
+                </>)}
+              </div>
+            );
+          };
+
+          const renderPersonalSection = () => {
+            const deptMembers = users.filter(u => u.deptId === dept.id && (u.role === "member" || u.role === "manager"))
+              .map(u => ({ ...u, md: memberData[u.id] || { krs: [] } }));
+            return (
+              <div style={{ marginBottom: 36 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, paddingBottom: 10, borderBottom: `2px solid ${T.ok}` }}>
+                  <div style={{ width: 4, height: 22, background: T.ok, borderRadius: 2, flexShrink: 0 }} />
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Personal KPI</div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginLeft: 4 }}>Individual targets per team member</div>
+                </div>
+                {deptMembers.length === 0
+                  ? <EmptyState text="No members in this department yet. Add members via User Management." />
+                  : deptMembers.map(member => {
+                      const personalKrs = member.md.krs || [];
+                      const isExpanded = expandedPersonalMember === member.id;
+                      const rate = calcRate(personalKrs); const st = getStatus(rate);
+                      return (
+                        <Card key={member.id} style={{ marginBottom: 8, overflow: "hidden" }}>
+                          <div onClick={() => setExpandedPersonalMember(p => p === member.id ? null : member.id)}
+                            style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 12, cursor: "pointer", userSelect: "none" }}>
+                            <Avatar letters={member.av || member.name?.slice(0,2)} size={34} />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, fontSize: 14 }}>{member.name}</div>
+                              <div style={{ fontSize: 12, color: T.textMuted }}>{personalKrs.length} personal KR{personalKrs.length !== 1 ? "s" : ""}{member.teamId ? ` · ${dept.teams.find(t => t.id === member.teamId)?.name || ""}` : ""}</div>
+                            </div>
+                            {personalKrs.length > 0 && <><span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 14, color: STATUS_THEME[st].color }}>{rate.toFixed(0)}%</span><div style={{ width: 80 }}><Bar value={rate} status={st} h={4} /></div><Tag type={st} small /></>}
+                            <span style={{ fontSize: 11, color: T.textMuted }}>{isExpanded ? "▲" : "▼"}</span>
+                          </div>
+                          {isExpanded && (
+                            <div style={{ borderTop: `1px solid ${T.border}`, padding: "14px 16px" }}>
+                              {personalKrs.length > 0 && (
+                                <div style={{ marginBottom: 10 }}>
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 80px 28px", gap: 8, padding: "5px 0 6px", fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${T.border}` }}>
+                                    <span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span />
+                                  </div>
+                                  {personalKrs.map((kr, i) => {
+                                    const pct = krCompletion(kr); const st2 = getStatus(pct);
+                                    return (
+                                      <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 80px 28px", gap: 8, padding: "6px 0", alignItems: "center", borderBottom: `1px solid ${T.border}`, background: i % 2 ? T.raised : "transparent", fontSize: 13 }}>
+                                        <div><span>{kr.label}</span><span style={{ marginLeft: 8, fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[st2].color }}>{pct.toFixed(0)}%</span></div>
+                                        <Input value={kr.target || 0} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />
+                                        <Input value={kr.actual || 0} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />
+                                        <span style={{ fontSize: 12, color: T.textMuted }}>{kr.unit || "—"}</span>
+                                        <button onClick={() => dispatch({ type: "REMOVE_MEMBER_KR", memberId: member.id, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 4, padding: "2px 6px", cursor: "pointer", color: T.bad, fontSize: 11 }}>✕</button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {addPersonalKr?.memberId === member.id ? (
+                                <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", background: T.brandDim, borderRadius: 7 }}>
+                                  <Input value={addPersonalKr.label} onChange={e => setAddPersonalKr(p => ({...p, label: e.target.value}))} placeholder="KR description *" style={{ flex: 1, padding: "4px 8px", fontSize: 13 }} />
+                                  <Input value={addPersonalKr.target} onChange={e => setAddPersonalKr(p => ({...p, target: e.target.value}))} placeholder="Target" style={{ width: 80, textAlign: "right", padding: "4px 6px", fontFamily: F.mono, fontSize: 13 }} />
+                                  <Input value={addPersonalKr.unit} onChange={e => setAddPersonalKr(p => ({...p, unit: e.target.value}))} placeholder="Unit" style={{ width: 70, padding: "4px 6px", fontSize: 13 }} />
+                                  <button onClick={() => { if (!addPersonalKr.label.trim()) return; dispatch({ type: "ADD_MEMBER_KR", memberId: member.id, kr: { id: `P${Date.now().toString(36).slice(-4).toUpperCase()}`, label: addPersonalKr.label.trim(), target: Number(addPersonalKr.target) || 0, actual: 0, unit: addPersonalKr.unit.trim(), operator: ">=", period: "monthly" } }); setAddPersonalKr(null); }} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
+                                  <button onClick={() => setAddPersonalKr(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: T.text, fontSize: 12 }}>✕</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => setAddPersonalKr({ memberId: member.id, label: "", target: "", unit: "" })}
+                                  style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "7px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Personal KR</button>
+                              )}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+              </div>
+            );
+          };
+
+          const sections = isFinance
+            ? [{ period: "monthly", label: "Monthly KPI", color: T.brand }, { period: "annual", label: "Annual KPI", color: "#A78BFA" }]
+            : [{ period: "daily", label: "Daily KPI", color: T.warn }, { period: "monthly", label: "Monthly KPI", color: T.brand }, { period: "annual", label: "Annual KPI", color: "#A78BFA" }];
+
+          return (<>
+            <Header title={dept.name} sub={[dept.college, dept.obj].filter(Boolean).join(" · ")}
+              right={<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {syncNote && <div style={{ fontSize: 12, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }}>✓ Synced {syncNote.teamName} → {syncNote.count} members</div>}
+                <Btn small onClick={() => setSelDept(null)}>← All Departments</Btn>
+              </div>}
+            />
+            <Pane>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 24, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+                {depts.map(d => <Btn key={d.id} primary={d.id === selDept} small onClick={() => { setSelDept(d.id); setSelTeam(null); setAddTarget(null); }}>{d.name}</Btn>)}
+              </div>
+              {sections.map(({ period, label, color }) => renderSection(period, label, color))}
+              {isFinance && renderPersonalSection()}
+            </Pane>
+          </>);
+        })())}
+
+        {/* placeholder needed — removed: weekly-setup, weekly-overview, monthly-setup, monthly-overview */}
         {(page === "weekly-setup" || page === "monthly-setup") && (<>
           <Header
             title={page === "weekly-setup" ? "Weekly KPI Setup" : "Monthly KPI Setup"}
@@ -3621,6 +3964,15 @@ function appReducer(state, action) {
       const md = state.memberData[action.memberId];
       if (!md) return state;
       return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
+    }
+    case "ADD_MEMBER_KR": {
+      const md = state.memberData[action.memberId] || { krs: [] };
+      return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: [...(md.krs || []), action.kr] } } };
+    }
+    case "REMOVE_MEMBER_KR": {
+      const md = state.memberData[action.memberId];
+      if (!md) return state;
+      return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).filter(kr => kr.id !== action.krId) } } };
     }
     case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
     case "APPROVE_SUB":     return { ...state, weeklySubs: state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
