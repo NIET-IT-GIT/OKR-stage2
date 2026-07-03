@@ -1206,8 +1206,33 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
    ADMIN PORTAL
    ───────────────────────────────────────────────────────────── */
 function AdminPortal({ user, onLogout, state, dispatch }) {
-  const [page, setPage] = useState("overview");
-  const [selDept, setSelDept] = useState(null);
+  const [page, setPageRaw] = useState(() => {
+    const p = window.location.pathname.split('/');
+    return p[1] === 'admin' ? (p[2] || 'overview') : 'overview';
+  });
+  const [selDept, setSelDept] = useState(() => {
+    const p = window.location.pathname.split('/');
+    return p[1] === 'admin' && p[2] === 'departments' ? (p[3] || null) : null;
+  });
+  const setPage = useCallback(p => { window.history.pushState(null, '', `/admin/${p}`); setPageRaw(p); }, []);
+  useEffect(() => {
+    if (window.location.pathname.split('/')[1] !== 'admin') {
+      window.history.replaceState(null, '', `/admin/overview`);
+    }
+    const onPop = () => {
+      const p = window.location.pathname.split('/');
+      setPageRaw(p[1] === 'admin' ? (p[2] || 'overview') : 'overview');
+      setSelDept(p[1] === 'admin' && p[2] === 'departments' ? (p[3] || null) : null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  useEffect(() => {
+    if (page === 'departments') {
+      const target = selDept ? `/admin/departments/${selDept}` : '/admin/departments';
+      if (window.location.pathname !== target) window.history.replaceState(null, '', target);
+    }
+  }, [selDept, page]);
   const [selTeam, setSelTeam] = useState(null);
   const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false });
   const [addTarget, setAddTarget] = useState(null);
@@ -1351,7 +1376,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={p => { setPage(p); if (p !== "departments") setSelDept(null); }} user={user} onLogout={onLogout}
+      <Side items={navItems} active={page} onSelect={p => { setPage(p); setSelDept(null); }} user={user} onLogout={onLogout}
         subItems={deptSubItems} activeSubItem={selDept || "__all__"} onSelectSubItem={id => { setPage("departments"); setSelDept(id === "__all__" ? null : id); setSelTeam(null); setAddTarget(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
@@ -2596,7 +2621,22 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
    MANAGER PORTAL
    ───────────────────────────────────────────────────────────── */
 function ManagerPortal({ user, onLogout, state, dispatch }) {
-  const [page, setPage] = useState("dashboard");
+  const [page, setPageRaw] = useState(() => {
+    const p = window.location.pathname.split('/');
+    return p[1] === 'manager' ? (p[2] || 'dashboard') : 'dashboard';
+  });
+  const setPage = useCallback(p => { window.history.pushState(null, '', `/manager/${p}`); setPageRaw(p); }, []);
+  useEffect(() => {
+    if (window.location.pathname.split('/')[1] !== 'manager') {
+      window.history.replaceState(null, '', `/manager/dashboard`);
+    }
+    const onPop = () => {
+      const p = window.location.pathname.split('/');
+      setPageRaw(p[1] === 'manager' ? (p[2] || 'dashboard') : 'dashboard');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [newProj, setNewProj] = useState({ name: "", due: "" });
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
@@ -3410,7 +3450,22 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
    MEMBER PORTAL
    ───────────────────────────────────────────────────────────── */
 function MemberPortal({ user, onLogout, state, dispatch }) {
-  const [page, setPage] = useState("mykpis");
+  const [page, setPageRaw] = useState(() => {
+    const p = window.location.pathname.split('/');
+    return p[1] === 'member' ? (p[2] || 'mykpis') : 'mykpis';
+  });
+  const setPage = useCallback(p => { window.history.pushState(null, '', `/member/${p}`); setPageRaw(p); }, []);
+  useEffect(() => {
+    if (window.location.pathname.split('/')[1] !== 'member') {
+      window.history.replaceState(null, '', `/member/mykpis`);
+    }
+    const onPop = () => {
+      const p = window.location.pathname.split('/');
+      setPageRaw(p[1] === 'member' ? (p[2] || 'mykpis') : 'mykpis');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [newOut, setNewOut] = useState({ week: currentFYWeek(), items: "" });
   const [myKpiPeriod, setMyKpiPeriod] = useState("all");
   const [deptKpiPeriod, setDeptKpiPeriod] = useState("all");
