@@ -240,7 +240,7 @@ const supabase = createClient(
 async function dbGet() {
   const { data, error } = await supabase.from("app_data").select("collection, id, doc");
   if (error) throw new Error(error.message);
-  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], settings: [] };
+  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], okrSubmissions: [], settings: [] };
   for (const row of data) {
     if (result[row.collection]) result[row.collection].push(row.doc);
   }
@@ -274,7 +274,7 @@ async function syncChanges(prev, next) {
   if (JSON.stringify(prev.settings) !== JSON.stringify(next.settings)) {
     tasks.push(dbUpsert("settings", next.settings));
   }
-  for (const col of ["users", "depts", "weeklySubs", "mgrSprints", "projects", "monthlyReports"]) {
+  for (const col of ["users", "depts", "weeklySubs", "mgrSprints", "projects", "monthlyReports", "okrSubmissions"]) {
     const prevArr = prev[col] || [];
     const nextArr = next[col] || [];
     for (const item of nextArr) {
