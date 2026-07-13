@@ -29,7 +29,7 @@ module.exports = async function handler(req, res) {
     port: 587,
     secure: false,
     auth: { user: smtpUser, pass: smtpPass },
-    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+    tls: { rejectUnauthorized: false },
   });
 
   const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", annual: "Annual" };
@@ -96,7 +96,7 @@ module.exports = async function handler(req, res) {
     });
     res.status(200).json({ ok: true });
   } catch (err) {
-    console.error("Email send error:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("Email send error:", err.message, err.code, err.response);
+    res.status(500).json({ error: err.message, code: err.code, response: err.response });
   }
 };
