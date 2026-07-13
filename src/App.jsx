@@ -2270,6 +2270,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         <div style={{ fontSize: 12, color: T.textMuted }}>
                           Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}
                         </div>
+                        {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.bad, marginTop: 3, fontStyle: "italic" }}>Reason: {s.reason}</div>}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                         {s.answer === null
@@ -3065,6 +3066,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                             </div>
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</div>
                             <div style={{ fontSize: 11, color: T.textMuted }}>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · Answered: {s.answeredAt?.slice(0,10) || "—"}</div>
+                            {s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                             <span style={{ fontSize: 13, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
@@ -3574,6 +3576,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const [deptKpiPeriod, setDeptKpiPeriod] = useState("all");
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
+  const [noReason, setNoReason] = useState(null);
 
   const { memberData, weeklySubs, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -3983,7 +3986,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
                   {pending.map(s => (
-                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${T.warn}` }}>
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${noReason?.id === s.id ? T.bad : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
@@ -3991,17 +3994,29 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                             Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)}
                           </div>
                         </div>
-                        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                          <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no" })}
-                            style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
-                            ✗ No
-                          </button>
-                          <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes" })}
-                            style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.ok, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
-                            ✓ Yes
-                          </button>
-                        </div>
+                        {noReason?.id !== s.id && (
+                          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                            <button onClick={() => setNoReason({ id: s.id, reason: "" })}
+                              style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                              ✗ No
+                            </button>
+                            <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes" })}
+                              style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.ok, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                              ✓ Yes
+                            </button>
+                          </div>
+                        )}
                       </div>
+                      {noReason?.id === s.id && (
+                        <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
+                          <TextArea value={noReason.reason} onChange={e => setNoReason(p => ({ ...p, reason: e.target.value }))} placeholder="Briefly explain why this target was not reached..." rows={2} />
+                          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                            <Btn small onClick={() => setNoReason(null)}>Cancel</Btn>
+                            <Btn danger small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null }); setNoReason(null); }}>Submit No</Btn>
+                          </div>
+                        </div>
+                      )}
                     </Card>
                   ))}
                   {answered.length > 0 && (
@@ -4019,6 +4034,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                             </div>
                           </div>
+                          {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
                         </Card>
                       ))}
                     </div>
@@ -4203,7 +4219,7 @@ function appReducer(state, action) {
       return { ...state, okrSubmissions: [...(state.okrSubmissions || []), ...fresh] };
     }
     case "ANSWER_OKR_SUBMISSION":
-      return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, answer: action.answer, answeredAt: new Date().toISOString() } : s) };
+      return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, answer: action.answer, answeredAt: new Date().toISOString(), reason: action.reason || null } : s) };
     case "APPROVE_OKR_SUBMISSION":
       return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, approval: action.status, approvedBy: action.approvedBy } : s) };
     case "REMOVE_OKR_SUBMISSION":
