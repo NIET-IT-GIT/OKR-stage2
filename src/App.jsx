@@ -1347,6 +1347,16 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
   }
 
+  function doDeptSync(deptId) {
+    const dept = depts.find(d => d.id === deptId);
+    if (!dept) return;
+    const count = users.filter(u => u.deptId === deptId && (u.role === "member" || u.role === "manager")).length;
+    dispatch({ type: "SYNC_DEPT_KRS_TO_MEMBERS", deptId });
+    if (syncNoteTimer.current) clearTimeout(syncNoteTimer.current);
+    setSyncNote({ teamName: `${dept.name} (all members)`, count });
+    syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
+  }
+
   function addKr(deptId, teamId) {
     if (!newKr.label) return;
     if (!newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
@@ -1666,7 +1676,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </>) : <Btn small onClick={() => setAddingCol(true)}>+ Add Column</Btn>}
                 </div>
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>{dept.name} — Dept KRs</div>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", flex: 1 }}>{dept.name} — Dept OKRs</div>
+                    {deptKrs.length > 0 && <Btn primary small onClick={() => doDeptSync(dept.id)}>⟳ Sync to All Members</Btn>}
+                  </div>
                   {deptKrs.length === 0 && !addTarget && <div style={{ fontSize: 13, color: T.textMuted, padding: "6px 0 10px" }}>No {sectionLabel} for this department yet.</div>}
                   {renderEditor(deptKrs, dept.id, null, sectionPeriod)}
                 </div>
@@ -2059,10 +2072,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   )}
                 </div>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{dept.name} — Department KRs</div>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, flex: 1 }}>{dept.name} — Department OKRs</div>
+                    {filterKrs(dept.krs).length > 0 && <Btn primary small onClick={() => mgrDoDeptSync(dept.id)}>⟳ Sync to All Members</Btn>}
+                  </div>
                   <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 12 }}>Objective: {dept.obj}</div>
                   {filterKrs(dept.krs).length === 0 && !addTarget
-                    ? <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {isWeeklyPage ? "weekly" : "monthly / annual"} KRs for this department yet. Click below to add one.</div>
+                    ? <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {isWeeklyPage ? "weekly" : "monthly / annual"} OKRs for this department yet. Click below to add one.</div>
                     : null}
                   {renderEditor(filterKrs(dept.krs), dept.id, null)}
                 </div>
@@ -2743,6 +2759,16 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
     setMgrDirtySync(null);
     if (syncNoteTimer.current) clearTimeout(syncNoteTimer.current);
     setSyncNote({ teamName: t.name, count });
+    syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
+  }
+
+  function mgrDoDeptSync(deptId) {
+    const d = depts.find(x => x.id === deptId);
+    if (!d) return;
+    const count = users.filter(u => u.deptId === deptId && (u.role === "member" || u.role === "manager")).length;
+    dispatch({ type: "SYNC_DEPT_KRS_TO_MEMBERS", deptId });
+    if (syncNoteTimer.current) clearTimeout(syncNoteTimer.current);
+    setSyncNote({ teamName: `${d.name} (all members)`, count });
     syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
   }
 
@@ -4172,6 +4198,21 @@ function appReducer(state, action) {
       if (!action.teamId) return { ...d, krs: d.krs.filter(kr => kr.id !== action.krId) };
       return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
     })};
+    case "SYNC_DEPT_KRS_TO_MEMBERS": {
+      const dept = state.depts.find(d => d.id === action.deptId);
+      if (!dept) return state;
+      const memberIds = state.users.filter(u => u.deptId === action.deptId && (u.role === "member" || u.role === "manager")).map(u => u.id);
+      const krsToSync = dept.krs.filter(kr => !kr.monthlyTargets);
+      const newMemberData = { ...state.memberData };
+      for (const memberId of memberIds) {
+        const md = newMemberData[memberId] || { krs: [] };
+        const existing = md.krs || [];
+        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); return dk ? { ...kr, ...dk } : kr; });
+        const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id));
+        newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
+      }
+      return { ...state, memberData: newMemberData };
+    }
     case "SYNC_TEAM_KRS_TO_MEMBERS": {
       const dept = state.depts.find(d => d.id === action.deptId);
       const team = dept?.teams.find(t => t.id === action.teamId);
