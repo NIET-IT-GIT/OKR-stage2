@@ -11,7 +11,7 @@ module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 
-  const { to, name, period, periodKey, krs } = req.body || {};
+  const { to, name, period, periodKey, krs, template = {} } = req.body || {};
   if (!to || !krs?.length) { res.status(400).json({ error: "Missing required fields" }); return; }
 
   const smtpUser = process.env.SMTP_USER;
@@ -33,7 +33,22 @@ module.exports = async function handler(req, res) {
   });
 
   const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", annual: "Annual" };
-  const periodLabel = PERIOD_LABELS[period] || period;
+  const periodLabel = PERIOD_LABELS[period] || period || "Monthly";
+  const periodLower = periodLabel.toLowerCase();
+
+  const resolveTmpl = (tpl, fallback) => {
+    const v = template[tpl] || fallback;
+    return v
+      .replace(/\{periodLabel\}/g, periodLabel)
+      .replace(/\{periodLower\}/g, periodLower)
+      .replace(/\{periodKey\}/g,   periodKey || "");
+  };
+
+  const fromName  = template.fromName || "NIET Group OKR";
+  const subject   = resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-in — ${periodKey || ""}`);
+  const bodyText  = resolveTmpl("body", `Here are your ${periodLower} KPI targets for <strong>${periodKey || ""}</strong>.\nPlease log in to the portal and mark whether you have met each target.`);
+  const ctaText   = template.ctaText  || "Submit My Check-in →";
+  const footerText = (template.footer || "You are receiving this because you have KPI targets in the NIET Group OKR system.\nPlease do not reply to this email.").replace(/\n/g, "<br/>");
 
   const krRows = krs.map(kr => `
     <tr>
@@ -53,10 +68,7 @@ module.exports = async function handler(req, res) {
     </div>
     <div style="padding:28px 32px">
       <p style="margin:0 0 18px;font-size:15px;color:#1d1d1f">Hi ${name || "there"},</p>
-      <p style="margin:0 0 18px;font-size:14px;color:#6e6e73">
-        Here are your <strong>${periodLabel.toLowerCase()} KPI targets</strong> for <strong>${periodKey || ""}</strong>.
-        Please log in to the portal and mark whether you have met each target.
-      </p>
+      <p style="margin:0 0 18px;font-size:14px;color:#6e6e73;line-height:1.6">${bodyText.replace(/\n/g, "<br/>")}</p>
       <table style="width:100%;border-collapse:collapse;margin:0 0 24px">
         <thead>
           <tr style="background:#f5f5f7">
@@ -68,21 +80,18 @@ module.exports = async function handler(req, res) {
       </table>
       <a href="${appUrl}/member/checkin"
          style="display:inline-block;padding:12px 28px;background:#0071e3;color:#fff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600;letter-spacing:-0.01em">
-        Submit My Check-in →
+        ${ctaText}
       </a>
-      <p style="margin:20px 0 0;font-size:12px;color:#a1a1aa">
-        You are receiving this because you have KPI targets in the NIET Group OKR system.
-        Please do not reply to this email.
-      </p>
+      <p style="margin:20px 0 0;font-size:12px;color:#a1a1aa">${footerText}</p>
     </div>
   </div>
 </body></html>`;
 
   try {
     await transporter.sendMail({
-      from: `"NIET Group OKR" <${smtpUser}>`,
+      from: `"${fromName}" <${smtpUser}>`,
       to,
-      subject: `Action Required: ${periodLabel} KPI Check-in — ${periodKey || ""}`,
+      subject,
       html,
     });
     res.status(200).json({ ok: true });
