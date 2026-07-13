@@ -1310,8 +1310,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [expandedPersonalMember, setExpandedPersonalMember] = useState(null);
   const [addPersonalKr, setAddPersonalKr] = useState(null);
-  const [subPeriod, setSubPeriod] = useState("daily");
+  const [subPeriod, setSubPeriod] = useState("monthly");
   const [sendingCheckin, setSendingCheckin] = useState(false);
+  const [checkinResult, setCheckinResult] = useState(null);
   const [selCheckinUser, setSelCheckinUser] = useState("");
   const [tmplPeriod, setTmplPeriod] = useState("default");
   const [testEmailState, setTestEmailState] = useState({ status: "idle", msg: "" });
@@ -1464,7 +1465,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       }
     }
     if (newSubs.length) dispatch({ type: "CREATE_OKR_SUBMISSIONS", submissions: newSubs });
+    const memberCount = new Set(newSubs.map(s => s.memberId)).size;
+    setCheckinResult({ count: newSubs.length, memberCount, period, targetUserId });
     setSendingCheckin(false);
+    setTimeout(() => setCheckinResult(null), 6000);
   }
 
   return (
@@ -2293,6 +2297,16 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </Btn>
                 </div>
               </div>
+              {checkinResult && (
+                <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  background: checkinResult.count > 0 ? T.okDim : T.warnDim,
+                  border: `1px solid ${checkinResult.count > 0 ? T.okBorder : T.warnBorder}`,
+                  color: checkinResult.count > 0 ? T.ok : T.warn }}>
+                  {checkinResult.count > 0
+                    ? `✓ Created ${checkinResult.count} check-in${checkinResult.count !== 1 ? "s" : ""} for ${checkinResult.memberCount} member${checkinResult.memberCount !== 1 ? "s" : ""}${checkinResult.targetUserId ? " (individual send)" : ""}`
+                    : `⚠ No submissions created — no KRs found for this period. Check that KRs are configured with the "${checkinResult.period}" period.`}
+                </div>
+              )}
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
                 <div style={{ display: "flex", gap: 6 }}>
