@@ -1701,7 +1701,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               <div style={{ marginBottom: 36 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, paddingBottom: 10, borderBottom: `2px solid ${T.ok}` }}>
                   <div style={{ width: 4, height: 22, background: T.ok, borderRadius: 2, flexShrink: 0 }} />
-                  <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Personal KPI</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Personal OKR</div>
                   <div style={{ fontSize: 12, color: T.textMuted, marginLeft: 4 }}>Individual targets per team member</div>
                 </div>
                 {deptMembers.length === 0
@@ -1764,9 +1764,12 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             );
           };
 
-          const sections = isFinance
-            ? [{ period: "monthly", label: "Monthly KPI", color: T.brand }, { period: "annual", label: "Annual KPI", color: "#A78BFA" }]
-            : [{ period: "daily", label: "Daily KPI", color: T.warn }, { period: "monthly", label: "Monthly KPI", color: T.brand }, { period: "annual", label: "Annual KPI", color: "#A78BFA" }];
+          const sections = [
+            { period: "daily",   label: "Daily OKR",   color: T.warn    },
+            { period: "weekly",  label: "Weekly OKR",  color: T.brand   },
+            { period: "monthly", label: "Monthly OKR", color: "#6B7280" },
+            { period: "annual",  label: "Annual OKR",  color: "#A78BFA" },
+          ];
 
           return (<>
             <Header title={dept.name} sub={[dept.college, dept.obj].filter(Boolean).join(" · ")}
