@@ -1295,7 +1295,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     { id: "overview",    icon: "◎", label: "Company Overview"  },
     { id: "departments", icon: "⬛", label: "Departments"       },
     { id: "submissions", icon: "✉", label: "Weekly Submissions" },
-    { id: "reports",     icon: "⊞", label: "KPI Reports"       },
+    { id: "reports",     icon: "⊞", label: "OKR Reports"       },
     { id: "projects",    icon: "⚡", label: "Projects"          },
     { id: "leaderboard", icon: "▲", label: "Leaderboard"       },
     { id: "users",       icon: "⊹", label: "User Management"   },
@@ -1308,6 +1308,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const filtKrs = (krs) => overviewPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === overviewPeriod);
   const deptRanks = depts.map(d => ({ ...d, rate: calcRate(filtKrs(d.krs)), status: getStatus(calcRate(filtKrs(d.krs))) })).sort((a, b) => b.rate - a.rate);
   const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
+  const rptMonthKey = currentFYMonthKey();
+  const rptSubs = okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === rptMonthKey);
+  const rptSubRate = rptSubs.length > 0 ? Math.round((rptSubs.filter(s => s.answer === "yes").length / rptSubs.length) * 1000) / 10 : 0;
+  const rptDeptRanks = depts.map(d => { const mIds = users.filter(u => u.deptId === d.id).map(u => u.id); const dSubs = rptSubs.filter(s => mIds.includes(s.memberId)); const rate = dSubs.length > 0 ? Math.round((dSubs.filter(s => s.answer === "yes").length / dSubs.length) * 1000) / 10 : 0; return { name: d.name, rate, status: getStatus(rate) }; }).sort((a, b) => b.rate - a.rate);
   const allMembers = users
     .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
@@ -2285,20 +2289,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         })()}
 
         {page === "reports" && (<>
-          <Header title="KPI Reports" sub="Published reports visible to ALL teams across the company"
+          <Header title="OKR Reports" sub="Published reports visible to ALL teams across the company"
             right={<div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => { setShowGenReport(v => !v); setGenPeriod({ label: "", from: "", to: "" }); }}>{showGenReport ? "Cancel" : "Generate for Period"}</Btn>
               <Btn primary onClick={() => {
-                if (state.monthlyReports.some(r => r.month === currentMonth() && (r.reportType || "monthly") === reportSubTab)) {
-                  if (!window.confirm(`A ${reportSubTab} report for ${currentMonth()} already exists. Publish another?`)) return;
+                if (state.monthlyReports.some(r => r.month === currentMonth())) {
+                  if (!window.confirm(`A report for ${currentMonth()} already exists. Publish another?`)) return;
                 }
-                const filteredByPeriod = (krs, p) => krs.filter(kr => (kr.period || "monthly") === p);
-                const periodRate = (p) => { const rates = depts.map(d => calcRate(filteredByPeriod(d.krs, p))); return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0; };
                 const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
-                  reportType: reportSubTab,
+                  reportType: "monthly",
                   notes: "",
-                  periodRates: { weekly: periodRate("weekly"), monthly: periodRate("monthly"), annual: periodRate("annual") },
-                  data: { companyRate: Math.round(compRate * 10) / 10, deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
+                  submissionRate: rptSubRate,
+                  data: { companyRate: rptSubRate, deptRanks: rptDeptRanks,
                     topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
                     redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
                   },
@@ -2307,18 +2309,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               }}>Publish {currentMonth()} Report</Btn>
             </div>} />
           <Pane>
-            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `2px solid ${T.border}` }}>
-              {[{ key: "weekly", label: "Weekly Report" }, { key: "monthly", label: "Monthly Report" }].map(({ key, label }) => (
-                <button key={key} onClick={() => setReportSubTab(key)} style={{
-                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer",
-                  background: "none", border: "none", borderBottom: reportSubTab === key ? `2px solid ${T.brand}` : "2px solid transparent",
-                  color: reportSubTab === key ? T.brand : T.textMuted, marginBottom: -2, transition: "all 0.12s",
-                }}>{label}</button>
-              ))}
-            </div>
             {showGenReport && (
               <Card style={{ padding: 20, borderLeft: `3px solid ${T.brand}` }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Generate {reportSubTab.charAt(0).toUpperCase() + reportSubTab.slice(1)} Report for Specific Period</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Generate Monthly Report for Specific Period</div>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                   <div>
                     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4 }}>Period Label</div>
@@ -2334,24 +2327,25 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </div>
                   <Btn primary disabled={!genPeriod.label} onClick={() => {
                     const label = genPeriod.label.trim();
-                    if (state.monthlyReports.some(r => r.month === label && (r.reportType || "monthly") === reportSubTab)) {
-                      if (!window.confirm(`A ${reportSubTab} report labelled "${label}" already exists. Publish another?`)) return;
+                    if (state.monthlyReports.some(r => r.month === label)) {
+                      if (!window.confirm(`A report labelled "${label}" already exists. Publish another?`)) return;
                     }
-                    const filteredByPeriod = (krs, p) => krs.filter(kr => (kr.period || "monthly") === p);
-                    const periodRate = (p) => { const rates = depts.map(d => calcRate(filteredByPeriod(d.krs, p))); return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0; };
+                    const allAnswered = (state.okrSubmissions || []).filter(s => s.answer !== null);
+                    const gSubRate = allAnswered.length > 0 ? Math.round((allAnswered.filter(s => s.answer === "yes").length / allAnswered.length) * 1000) / 10 : 0;
+                    const gDeptRanks = depts.map(d => { const mIds = users.filter(u => u.deptId === d.id).map(u => u.id); const dSubs = allAnswered.filter(s => mIds.includes(s.memberId)); const rate = dSubs.length > 0 ? Math.round((dSubs.filter(s => s.answer === "yes").length / dSubs.length) * 1000) / 10 : 0; return { name: d.name, rate, status: getStatus(rate) }; }).sort((a, b) => b.rate - a.rate);
                     const report = {
                       id: `mr${Date.now()}`,
                       month: label,
-                      reportType: reportSubTab,
+                      reportType: "monthly",
                       publishedDate: new Date().toISOString().slice(0, 10),
                       publishedBy: user.id,
                       periodFrom: genPeriod.from || null,
                       periodTo: genPeriod.to || null,
                       notes: "",
-                      periodRates: { weekly: periodRate("weekly"), monthly: periodRate("monthly"), annual: periodRate("annual") },
+                      submissionRate: gSubRate,
                       data: {
-                        companyRate: Math.round(compRate * 10) / 10,
-                        deptRanks: deptRanks.map(d => ({ name: d.name, rate: Math.round(d.rate * 10) / 10, status: d.status })),
+                        companyRate: gSubRate,
+                        deptRanks: gDeptRanks,
                         topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
                         redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
                       },
@@ -2366,14 +2360,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             <Card style={{ padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>Current Data Preview — what will be published</div>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                <div><span style={{ color: T.textMuted }}>Company rate: </span><strong style={{ color: STATUS_THEME[getStatus(compRate)].color }}>{Math.round(compRate * 10) / 10}%</strong></div>
+                <div><span style={{ color: T.textMuted }}>Submission rate ({currentMonth()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
                 <div><span style={{ color: T.textMuted }}>Top performers: </span>{allMembers.slice(0, 3).map(m => m.name).join(", ") || "—"}</div>
                 <div><span style={{ color: T.textMuted }}>Needs attention: </span>{allMembers.filter(m => m.status === "red").length > 0 ? allMembers.filter(m => m.status === "red").map(m => m.name).join(", ") : "None"}</div>
               </div>
             </Card>
             {(() => {
-              const visibleReports = state.monthlyReports.filter(r => (r.reportType || "monthly") === reportSubTab);
-              if (visibleReports.length === 0) return <EmptyState text={`No ${reportSubTab} reports published yet.`} />;
+              const visibleReports = state.monthlyReports;
+              if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
               return visibleReports.map(r => (
                 <Card key={r.id} style={{ overflow: "hidden" }}>
                   <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2415,11 +2409,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                             <Tag type={d.status} small />
                           </div>
                         ))}
-                        {r.periodRates && (
-                          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Weekly avg: {r.periodRates.weekly}%</span>}
-                            {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly avg: {r.periodRates.monthly}%</span>}
-                            {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual avg: {r.periodRates.annual}%</span>}
+                        {r.submissionRate != null && (
+                          <div style={{ marginTop: 12 }}>
+                            <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Submission rate: {r.submissionRate}%</span>
                           </div>
                         )}
                         {r.notes && <div style={{ marginTop: 12, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
@@ -2761,7 +2753,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
     { id: "approvals",        icon: "✓", label: "Approve Submissions"  },
     { id: "projects",         icon: "⚡", label: "Projects"            },
     { id: "members",          icon: "✎", label: "Edit Member KPIs"    },
-    { id: "reports",          icon: "⊞", label: "KPI Reports"         },
+    { id: "reports",          icon: "⊞", label: "OKR Reports"         },
   ];
 
   return (
@@ -3245,20 +3237,11 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "reports" && (<>
-          <Header title="KPI Reports" sub="Published company-wide reports — visible to all teams" />
+          <Header title="OKR Reports" sub="Published company-wide reports — visible to all teams" />
           <Pane>
-            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `2px solid ${T.border}` }}>
-              {[{ key: "weekly", label: "Weekly Report" }, { key: "monthly", label: "Monthly Report" }].map(({ key, label }) => (
-                <button key={key} onClick={() => setReportSubTab(key)} style={{
-                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer",
-                  background: "none", border: "none", borderBottom: reportSubTab === key ? `2px solid ${T.brand}` : "2px solid transparent",
-                  color: reportSubTab === key ? T.brand : T.textMuted, marginBottom: -2, transition: "all 0.12s",
-                }}>{label}</button>
-              ))}
-            </div>
             {(() => {
-              const visibleReports = monthlyReports.filter(r => (r.reportType || "monthly") === reportSubTab);
-              if (visibleReports.length === 0) return <EmptyState text={`No ${reportSubTab} reports published yet.`} />;
+              const visibleReports = monthlyReports;
+              if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
               return visibleReports.map(r => (
                 <Card key={r.id} style={{ overflow: "hidden" }}>
                   <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
@@ -3282,11 +3265,9 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                           <Tag type={d.status} small />
                         </div>
                       ))}
-                      {r.periodRates && (
-                        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Weekly avg: {r.periodRates.weekly}%</span>}
-                          {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly avg: {r.periodRates.monthly}%</span>}
-                          {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual avg: {r.periodRates.annual}%</span>}
+                      {r.submissionRate != null && (
+                        <div style={{ marginTop: 10 }}>
+                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Submission rate: {r.submissionRate}%</span>
                         </div>
                       )}
                       {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
@@ -3611,7 +3592,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
     { id: "monthly-overview", icon: "◉", label: "Monthly Overview"  },
     { id: "submit",           icon: "✎", label: "Weekly Submission"  },
     { id: "history",          icon: "⊞", label: "My History"         },
-    { id: "reports",          icon: "⊠", label: "KPI Reports"       },
+    { id: "reports",          icon: "⊠", label: "OKR Reports"       },
   ];
 
   return (
@@ -4089,20 +4070,11 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "reports" && (<>
-          <Header title="KPI Reports" sub="Company-wide reports — published at end of each period" />
+          <Header title="OKR Reports" sub="Company-wide reports — published at end of each period" />
           <Pane>
-            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `2px solid ${T.border}` }}>
-              {[{ key: "weekly", label: "Weekly Report" }, { key: "monthly", label: "Monthly Report" }].map(({ key, label }) => (
-                <button key={key} onClick={() => setReportSubTab(key)} style={{
-                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer",
-                  background: "none", border: "none", borderBottom: reportSubTab === key ? `2px solid ${T.brand}` : "2px solid transparent",
-                  color: reportSubTab === key ? T.brand : T.textMuted, marginBottom: -2, transition: "all 0.12s",
-                }}>{label}</button>
-              ))}
-            </div>
             {(() => {
-              const visibleReports = monthlyReports.filter(r => (r.reportType || "monthly") === reportSubTab);
-              if (visibleReports.length === 0) return <EmptyState text={`No ${reportSubTab} reports published yet.`} />;
+              const visibleReports = monthlyReports;
+              if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
               return visibleReports.map(r => (
                 <Card key={r.id} style={{ overflow: "hidden" }}>
                   <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
@@ -4125,11 +4097,9 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                           <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
                         </div>
                       ))}
-                      {r.periodRates && (
-                        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {r.periodRates.weekly != null && <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Weekly avg: {r.periodRates.weekly}%</span>}
-                          {r.periodRates.monthly != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Monthly avg: {r.periodRates.monthly}%</span>}
-                          {r.periodRates.annual != null && <span style={{ fontSize: 12, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", color: T.textSoft }}>Annual avg: {r.periodRates.annual}%</span>}
+                      {r.submissionRate != null && (
+                        <div style={{ marginTop: 10 }}>
+                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Submission rate: {r.submissionRate}%</span>
                         </div>
                       )}
                       {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
