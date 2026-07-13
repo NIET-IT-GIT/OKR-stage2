@@ -1312,6 +1312,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [addPersonalKr, setAddPersonalKr] = useState(null);
   const [subPeriod, setSubPeriod] = useState("daily");
   const [sendingCheckin, setSendingCheckin] = useState(false);
+  const [selCheckinUser, setSelCheckinUser] = useState("");
   const [tmplPeriod, setTmplPeriod] = useState("default");
   const [testEmailState, setTestEmailState] = useState({ status: "idle", msg: "" });
   const [testEmailTo, setTestEmailTo] = useState(user?.email || "");
@@ -1437,13 +1438,16 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     setNewColName(""); setAddingCol(false);
   }
 
-  async function sendCheckin(period) {
+  async function sendCheckin(period, targetUserId = "") {
     setSendingCheckin(true);
     const periodKey = currentPeriodKey(period);
     const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
     const newSubs = [];
     let ctr = Date.now();
-    for (const u of users.filter(u => u.role === "member" || u.role === "manager")) {
+    const userPool = targetUserId
+      ? users.filter(u => u.id === targetUserId)
+      : users.filter(u => u.role === "member" || u.role === "manager");
+    for (const u of userPool) {
       const dept = depts.find(d => d.id === u.deptId);
       if (!dept) continue;
       const krList = [];
@@ -2276,9 +2280,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   <Metric label="No" value={periodSubs.filter(s => s.answer === "no").length} status="red" />
                   <Metric label="Approved" value={periodSubs.filter(s => s.approval === "approved").length} status="green" />
                 </div>
-                <Btn primary onClick={() => sendCheckin(subPeriod)} disabled={sendingCheckin}>
-                  {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-in`}
-                </Btn>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select value={selCheckinUser} onChange={e => setSelCheckinUser(e.target.value)}
+                    style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 200 }}>
+                    <option value="">All Members</option>
+                    {users.filter(u => u.role === "member" || u.role === "manager").sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                  <Btn primary onClick={() => sendCheckin(subPeriod, selCheckinUser)} disabled={sendingCheckin}>
+                    {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-in`}
+                  </Btn>
+                </div>
               </div>
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
@@ -3609,7 +3622,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
     { id: "mykpis",       icon: "◎", label: "My KPIs"          },
     { id: "checkin",      icon: "✓", label: "OKR Check-in"     },
     { id: "okr-overview", icon: "⬛", label: "OKR Overview"     },
-    { id: "submit",       icon: "✎", label: "Weekly Submission" },
     { id: "history",      icon: "⊞", label: "My History"        },
     { id: "reports",      icon: "⊠", label: "OKR Reports"      },
   ];
