@@ -723,6 +723,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState(BLANK_FORM);
   const [search, setSearch] = useState("");
+  const [deptFilter, setDeptFilter] = useState("all");
 
   const teamsForDept = (deptId) => depts.find(d => d.id === deptId)?.teams || [];
 
@@ -761,9 +762,11 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
   const roleColor = { admin: T.brand, manager: T.orange, member: T.ok };
 
   const roleCounts = users.reduce((a, u) => { a[u.role] = (a[u.role] || 0) + 1; return a; }, {});
-  const filteredUsers = search.trim()
-    ? users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()))
-    : users;
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = !search.trim() || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
+    const matchesDept = deptFilter === "all" || (deptFilter === "__none__" ? !u.deptId : u.deptId === deptFilter);
+    return matchesSearch && matchesDept;
+  });
 
   return (<>
     <Header title="User Management" sub="Add users, set roles, and control portal access"
@@ -820,22 +823,33 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
         </Card>
       )}
 
-      {/* Search + User table */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
-          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 15, pointerEvents: "none" }}>⌕</span>
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name or email…"
-            style={{ width: "100%", paddingLeft: 34 }}
-          />
-        </div>
-        {search && (
+      {/* Search + Department filter */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
+            <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 15, pointerEvents: "none" }}>⌕</span>
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or email…"
+              style={{ width: "100%", paddingLeft: 34 }}
+            />
+          </div>
           <span style={{ fontSize: 13, color: T.textMuted }}>
-            {filteredUsers.length} of {users.length} users
+            {filteredUsers.length} of {users.length} user{users.length !== 1 ? "s" : ""}
           </span>
-        )}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Btn small primary={deptFilter === "all"} onClick={() => setDeptFilter("all")}>All</Btn>
+          {depts.map(d => (
+            <Btn key={d.id} small primary={deptFilter === d.id} onClick={() => setDeptFilter(d.id)}>
+              {d.name} <span style={{ opacity: 0.7, fontWeight: 400 }}>({users.filter(u => u.deptId === d.id).length})</span>
+            </Btn>
+          ))}
+          <Btn small primary={deptFilter === "__none__"} onClick={() => setDeptFilter("__none__")}>
+            No Dept <span style={{ opacity: 0.7, fontWeight: 400 }}>({users.filter(u => !u.deptId).length})</span>
+          </Btn>
+        </div>
       </div>
 
       <Card style={{ overflow: "hidden" }}>
