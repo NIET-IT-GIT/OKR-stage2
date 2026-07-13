@@ -152,6 +152,25 @@ function calcRate(krs) {
 }
 function getStatus(r) { return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
 function fmt(v) { return typeof v === "number" ? (v % 1 ? v.toFixed(1) : v.toLocaleString()) : v; }
+function currentPeriodKey(period) {
+  const d = new Date();
+  if (period === "daily") return d.toISOString().slice(0, 10);
+  if (period === "weekly") return currentFYWeek();
+  if (period === "monthly") return currentFYMonthKey();
+  if (period === "annual") return String(d.getFullYear());
+  return d.toISOString().slice(0, 10);
+}
+function periodDisplayLabel(period, key) {
+  if (!key) return "—";
+  if (period === "monthly") { const [y, m] = key.split("-"); return new Date(+y, +m - 1).toLocaleString("en", { month: "short", year: "numeric" }); }
+  if (period === "annual") return `FY ${key}`;
+  return key;
+}
+function calcSubmissionRate(okrSubs, memberId, monthKey) {
+  const relevant = okrSubs.filter(s => s.memberId === memberId && s.answer !== null && (s.periodKey || "").slice(0, 7) === monthKey);
+  if (!relevant.length) return null;
+  return (relevant.filter(s => s.answer === "yes").length / relevant.length) * 100;
+}
 function currentWeekLabel() {
   const d = new Date();
   const w = Math.ceil(((d - new Date(d.getFullYear(), 0, 1)) / 86400000 + 1) / 7);
@@ -1267,8 +1286,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [expandedPersonalMember, setExpandedPersonalMember] = useState(null);
   const [addPersonalKr, setAddPersonalKr] = useState(null);
+  const [subPeriod, setSubPeriod] = useState("daily");
+  const [sendingCheckin, setSendingCheckin] = useState(false);
 
-  const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, users, settings } = state;
+  const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
     { id: "overview",    icon: "◎", label: "Company Overview"  },
@@ -1372,6 +1393,30 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     const current = depts.find(d => d.id === selDept)?.customCols || [];
     dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: selDept, customCols: [...current, { id: `col_${Date.now()}`, name: newColName.trim(), width: 150 }] });
     setNewColName(""); setAddingCol(false);
+  }
+
+  async function sendCheckin(period) {
+    setSendingCheckin(true);
+    const periodKey = currentPeriodKey(period);
+    const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
+    const newSubs = [];
+    let ctr = Date.now();
+    for (const u of users.filter(u => u.role === "member" || u.role === "manager")) {
+      const dept = depts.find(d => d.id === u.deptId);
+      if (!dept) continue;
+      const krList = [];
+      dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
+      (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+      if (!krList.length) continue;
+      const freshKrs = krList.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: kr.target || 0, krUnit: kr.unit || "", krOperator: kr.operator || ">=", period, periodKey, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
+      if (freshKrs.length && u.email) {
+        fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, krs: freshKrs }) }).catch(console.error);
+      }
+    }
+    if (newSubs.length) dispatch({ type: "CREATE_OKR_SUBMISSIONS", submissions: newSubs });
+    setSendingCheckin(false);
   }
 
   return (
@@ -2133,88 +2178,111 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           </>);
         })()}
 
-        {page === "submissions" && (<>
-          <Header title="Weekly Staff Submissions" sub="All weekly work outcome submissions — managers approve in their portal" />
-          <Pane>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="Total"    value={weeklySubs.length} />
-              <Metric label="Pending"  value={weeklySubs.filter(s => s.approval === "pending").length}  status="yellow" />
-              <Metric label="Approved" value={weeklySubs.filter(s => s.approval === "approved").length} status="green"  />
-              <Metric label="Rejected" value={weeklySubs.filter(s => s.approval === "rejected").length} status="red"    />
-            </div>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", gap: 6 }}>
-                {["all", "pending", "approved", "rejected"].map(f => (
-                  <Btn key={f} small primary={subFilter === f} onClick={() => setSubFilter(f)}>
-                    {f.charAt(0).toUpperCase() + f.slice(1)}
-                  </Btn>
-                ))}
+        {page === "submissions" && (() => {
+          const PERIOD_TABS = [
+            { id: "daily", label: "Daily", color: T.warn },
+            { id: "weekly", label: "Weekly", color: T.brand },
+            { id: "monthly", label: "Monthly", color: "#A78BFA" },
+            { id: "annual", label: "Annual", color: T.ok },
+          ];
+          const periodSubs = okrSubmissions.filter(s => s.period === subPeriod);
+          const totalPending = okrSubmissions.filter(s => s.answer !== null && s.approval === "pending").length;
+          const q = subSearch.trim().toLowerCase();
+          const filtered = periodSubs.filter(s => {
+            const mem = users.find(u => u.id === s.memberId);
+            if (subDeptFilter !== "all" && mem?.deptId !== subDeptFilter) return false;
+            if (q && !mem?.name?.toLowerCase().includes(q) && !(s.krLabel || "").toLowerCase().includes(q)) return false;
+            if (subFilter === "unanswered") return s.answer === null;
+            if (subFilter === "yes") return s.answer === "yes";
+            if (subFilter === "no") return s.answer === "no";
+            if (subFilter === "pending") return s.answer !== null && s.approval === "pending";
+            if (subFilter === "approved") return s.approval === "approved";
+            return true;
+          }).sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
+          return (<>
+            <Header title="OKR Check-in Submissions" sub="Staff respond to emailed yes/no KPI check-ins — managers approve in their portal"
+              right={totalPending > 0 ? <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }}>{totalPending} awaiting approval</div> : null} />
+            <Pane>
+              {/* Period tabs */}
+              <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: `2px solid ${T.border}` }}>
+                {PERIOD_TABS.map(p => {
+                  const cnt = okrSubmissions.filter(s => s.period === p.id && s.answer !== null && s.approval === "pending").length;
+                  return (
+                    <button key={p.id} onClick={() => setSubPeriod(p.id)} style={{ padding: "8px 22px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer", background: "none", border: "none", borderBottom: subPeriod === p.id ? `3px solid ${p.color}` : "3px solid transparent", color: subPeriod === p.id ? p.color : T.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                      {p.label}{cnt > 0 ? <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{cnt}</span> : null}
+                    </button>
+                  );
+                })}
               </div>
-              <div style={{ width: 1, height: 22, background: T.border, flexShrink: 0 }} />
-              <div style={{ position: "relative", flex: "0 0 200px" }}>
-                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 14, pointerEvents: "none" }}>⌕</span>
-                <input value={subSearch} onChange={e => setSubSearch(e.target.value)} placeholder="Search name..."
-                  style={{ width: "100%", boxSizing: "border-box", paddingLeft: 28, paddingRight: 10, paddingTop: 6, paddingBottom: 6, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontFamily: F.body, outline: "none" }} />
+              {/* Metrics + Send button */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  <Metric label="Total" value={periodSubs.length} />
+                  <Metric label="Unanswered" value={periodSubs.filter(s => s.answer === null).length} status="yellow" />
+                  <Metric label="Yes" value={periodSubs.filter(s => s.answer === "yes").length} status="green" />
+                  <Metric label="No" value={periodSubs.filter(s => s.answer === "no").length} status="red" />
+                  <Metric label="Approved" value={periodSubs.filter(s => s.approval === "approved").length} status="green" />
+                </div>
+                <Btn primary onClick={() => sendCheckin(subPeriod)} disabled={sendingCheckin}>
+                  {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-in`}
+                </Btn>
               </div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                <Btn small primary={subDeptFilter === "all"} onClick={() => setSubDeptFilter("all")}>All Depts</Btn>
-                {depts.map(d => (
-                  <Btn key={d.id} small primary={subDeptFilter === d.id} onClick={() => setSubDeptFilter(d.id)}>{d.name}</Btn>
-                ))}
+              {/* Filter bar */}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[["all","All"],["unanswered","Unanswered"],["yes","Yes"],["no","No"],["pending","Needs Approval"],["approved","Approved"]].map(([f,l]) => (
+                    <Btn key={f} small primary={subFilter === f} onClick={() => setSubFilter(f)}>{l}</Btn>
+                  ))}
+                </div>
+                <div style={{ width: 1, height: 22, background: T.border, flexShrink: 0 }} />
+                <div style={{ position: "relative", flex: "0 0 200px" }}>
+                  <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 14, pointerEvents: "none" }}>⌕</span>
+                  <input value={subSearch} onChange={e => setSubSearch(e.target.value)} placeholder="Search name or KR..."
+                    style={{ width: "100%", boxSizing: "border-box", paddingLeft: 28, paddingRight: 10, paddingTop: 6, paddingBottom: 6, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontFamily: F.body, outline: "none" }} />
+                </div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  <Btn small primary={subDeptFilter === "all"} onClick={() => setSubDeptFilter("all")}>All Depts</Btn>
+                  {depts.map(d => <Btn key={d.id} small primary={subDeptFilter === d.id} onClick={() => setSubDeptFilter(d.id)}>{d.name}</Btn>)}
+                </div>
               </div>
-            </div>
-            {weeklySubs.length === 0 && <EmptyState text="No weekly submissions yet." />}
-            {(() => {
-              const q = subSearch.trim().toLowerCase();
-              const filtered = weeklySubs
-                .filter(s => {
-                  const mem = users.find(u => u.id === s.memberId);
-                  if (subDeptFilter !== "all" && mem?.deptId !== subDeptFilter) return false;
-                  if (q && !mem?.name?.toLowerCase().includes(q) && !mem?.title?.toLowerCase().includes(q)) return false;
-                  return subFilter === "all" || s.approval === subFilter;
-                })
-                .sort((a, b) => b.date.localeCompare(a.date));
-              if (filtered.length === 0) return <EmptyState text="No submissions match your search." />;
-              return filtered.map(s => {
+              {filtered.length === 0 && <EmptyState text={periodSubs.length === 0 ? `No ${subPeriod} check-ins sent yet. Click "Send ${subPeriod.charAt(0).toUpperCase()+subPeriod.slice(1)} Check-in" to generate and email them.` : "No submissions match your filter."} />}
+              {filtered.map(s => {
                 const mem = users.find(u => u.id === s.memberId);
-                const dept = depts.find(d => d.id === mem?.deptId);
-                const mgr = users.find(u => u.role === "manager" && u.deptId === mem?.deptId);
+                const dept = depts.find(d => d.id === s.deptId);
+                const accentColor = s.approval === "approved" ? T.ok : s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === null ? T.warn : T.border;
                 return (
-                  <Card key={s.id} style={{ padding: "16px 20px", borderLeft: s.approval === "pending" ? `3px solid ${T.warn}` : s.approval === "approved" ? `3px solid ${T.ok}` : `3px solid ${T.bad}` }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <Avatar letters={mem?.av || "?"} size={30} />
-                        <div>
-                          <div style={{ fontSize: 15, fontWeight: 700 }}>{mem?.name || "Unknown"}</div>
-                          <div style={{ fontSize: 12, color: T.textMuted }}>
-                            {mem?.title || "—"}{dept ? ` · ${dept.name}` : ""}
-                            {mem?.role === "manager" ? <span style={{ marginLeft: 6, fontSize: 11, background: T.warnDim, color: T.orange, border: `1px solid ${T.warnBorder}`, borderRadius: 8, padding: "1px 6px", fontWeight: 700 }}>Manager</span> : mgr ? ` · Mgr: ${mgr.name}` : ""}
-                          </div>
+                  <Card key={s.id} style={{ padding: "14px 18px", borderLeft: `3px solid ${accentColor}`, marginBottom: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <Avatar letters={mem?.av || "?"} size={26} />
+                          <span style={{ fontWeight: 700, fontSize: 14 }}>{mem?.name || s.memberName || "Unknown"}</span>
+                          {dept && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "1px 6px" }}>{dept.name}</span>}
+                        </div>
+                        <div style={{ fontSize: 14, color: T.text, marginBottom: 2, fontWeight: 600 }}>{s.krLabel}</div>
+                        <div style={{ fontSize: 12, color: T.textMuted }}>
+                          Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}
                         </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 14, fontWeight: 600 }}>{s.week}</div>
-                          <div style={{ fontSize: 12, color: T.textMuted }}>{s.date}</div>
-                        </div>
-                        <Tag type={s.approval} label={APPROVAL[s.approval]?.label || s.approval} />
-                        <button onClick={() => { if (window.confirm(`Delete submission by ${mem?.name || "member"} for ${s.week}?`)) dispatch({ type: "REMOVE_WEEKLY_SUB", subId: s.id }); }} title="Delete submission" style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Delete</button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                        {s.answer === null
+                          ? <span style={{ fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "3px 8px" }}>Awaiting answer</span>
+                          : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                        {s.answer !== null && s.approval === "pending"
+                          ? <div style={{ display: "flex", gap: 6 }}>
+                              <Btn danger small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id })}>Reject</Btn>
+                              <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
+                            </div>
+                          : s.approval !== "pending" && <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
+                        <button onClick={() => dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id })} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
                       </div>
                     </div>
-                    <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{s.items}</p>
-                    {s.mgrNote && <div style={{ marginTop: 8, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Note: {s.mgrNote}</div>}
-                    {mem?.role === "manager" && s.approval === "pending" && (
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
-                        <Btn danger small onClick={() => setConfirmApproval({ subId: s.id, status: "rejected", memberName: mem?.name, week: s.week })}>Reject</Btn>
-                        <Btn primary small onClick={() => setConfirmApproval({ subId: s.id, status: "approved", memberName: mem?.name, week: s.week })}>Approve</Btn>
-                      </div>
-                    )}
                   </Card>
                 );
-              });
-            })()}
-          </Pane>
-        </>)}
+              })}
+            </Pane>
+          </>);
+        })()}
 
         {page === "reports" && (<>
           <Header title="KPI Reports" sub="Published reports visible to ALL teams across the company"
@@ -2652,11 +2720,13 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [mgrSelTeam, setMgrSelTeam] = useState(null);
 
-  const { depts, memberData, weeklySubs, projects, monthlyReports, users } = state;
+  const { depts, memberData, weeklySubs, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
   const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId);
   const myTeamMemberIds = users.filter(u => u.role === "member" && u.deptId === user.deptId).map(u => u.id);
   const pendingSubs = weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId) && s.approval === "pending");
+  const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId));
+  const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => p.mgrId === user.id);
 
   function mgrTriggerSync(deptId, teamId) {
@@ -2696,7 +2766,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length, submit: weeklySubs.some(s => s.memberId === user.id && s.week === currentFYWeek()) ? 0 : 1 }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length + pendingOkrSubs.length, submit: weeklySubs.some(s => s.memberId === user.id && s.week === currentFYWeek()) ? 0 : 1 }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "dept-kpis" && (<>
@@ -2974,40 +3044,89 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </>);
         })()}
 
-        {page === "approvals" && (<>
-          <Header title="Approve Member Submissions" sub={`${pendingSubs.length} pending review`} />
-          <Pane>
-            {pendingSubs.length === 0 && <EmptyState text="All member submissions have been reviewed." />}
-            {weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).sort((a, b) => { const o = { pending: 0, approved: 1, rejected: 2 }; return o[a.approval] - o[b.approval] || b.date.localeCompare(a.date); }).map(sub => {
-              const mem = users.find(u => u.id === sub.memberId);
-              return (
-                <Card key={sub.id} style={{ padding: "16px 20px", borderLeft: sub.approval === "pending" ? `3px solid ${T.warn}` : sub.approval === "rejected" ? `3px solid ${T.bad}` : `3px solid ${T.ok}` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <Avatar letters={mem?.av || "?"} size={28} />
-                      <div><div style={{ fontSize: 15, fontWeight: 700 }}>{mem?.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{mem?.title}</div></div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 600 }}>{sub.week}</div><div style={{ fontSize: 12, color: T.textMuted }}>{sub.date}</div></div>
-                      <button onClick={() => { if (window.confirm(`Delete submission by ${mem?.name || "member"} for ${sub.week}?`)) dispatch({ type: "REMOVE_WEEKLY_SUB", subId: sub.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete submission">✕</button>
-                    </div>
+        {page === "approvals" && (() => {
+          const totalPending = pendingOkrSubs.length + pendingSubs.length;
+          return (<>
+            <Header title="Approve Member Submissions" sub={`${totalPending} pending review`} />
+            <Pane>
+              {/* OKR Check-in submissions */}
+              {myOkrSubsForApproval.length > 0 && (
+                <div style={{ marginBottom: 28 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                    OKR Check-ins
+                    {pendingOkrSubs.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pendingOkrSubs.length} pending</span>}
                   </div>
-                  <p style={{ margin: "0 0 12px", fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{sub.items}</p>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <Tag type={sub.approval} label={APPROVAL[sub.approval].label} />
-                    {sub.approval === "pending" && (
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <Btn danger small onClick={() => setConfirmApproval({ subId: sub.id, status: "rejected", memberName: mem?.name, week: sub.week })}>Reject</Btn>
-                        <Btn primary small onClick={() => setConfirmApproval({ subId: sub.id, status: "approved", memberName: mem?.name, week: sub.week })}>Approve</Btn>
-                      </div>
-                    )}
-                    {sub.approval !== "pending" && sub.mgrNote && <span style={{ fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Note: {sub.mgrNote}</span>}
-                  </div>
-                </Card>
-              );
-            })}
-          </Pane>
-        </>)}
+                  {myOkrSubsForApproval.filter(s => s.answer !== null).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||(b.answeredAt||"").localeCompare(a.answeredAt||""); }).map(s => {
+                    const mem = users.find(u => u.id === s.memberId);
+                    return (
+                      <Card key={s.id} style={{ padding: "12px 16px", marginBottom: 6, borderLeft: `3px solid ${s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : T.warn}` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+                              <Avatar letters={mem?.av || "?"} size={24} />
+                              <span style={{ fontWeight: 700, fontSize: 13 }}>{mem?.name || s.memberName}</span>
+                              <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 5, padding: "1px 5px" }}>{s.period}</span>
+                              <span style={{ fontSize: 11, color: T.textMuted }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
+                            </div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</div>
+                            <div style={{ fontSize: 11, color: T.textMuted }}>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · Answered: {s.answeredAt?.slice(0,10) || "—"}</div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                            {s.approval === "pending"
+                              ? <div style={{ display: "flex", gap: 6 }}>
+                                  <Btn danger small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id })}>Reject</Btn>
+                                  <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
+                                </div>
+                              : <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                  {myOkrSubsForApproval.filter(s => s.answer === null).length > 0 && (
+                    <div style={{ fontSize: 12, color: T.textMuted, padding: "6px 10px", background: T.raised, borderRadius: 6 }}>
+                      {myOkrSubsForApproval.filter(s => s.answer === null).length} check-in(s) awaiting staff response
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Weekly text submissions */}
+              {weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 10 }}>Weekly Submissions</div>
+                  {weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||b.date.localeCompare(a.date); }).map(sub => {
+                    const mem = users.find(u => u.id === sub.memberId);
+                    return (
+                      <Card key={sub.id} style={{ padding: "14px 18px", marginBottom: 6, borderLeft: sub.approval === "pending" ? `3px solid ${T.warn}` : sub.approval === "rejected" ? `3px solid ${T.bad}` : `3px solid ${T.ok}` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <Avatar letters={mem?.av || "?"} size={26} />
+                            <div><div style={{ fontSize: 14, fontWeight: 700 }}>{mem?.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{sub.week} · {sub.date}</div></div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <button onClick={() => { if (window.confirm(`Delete?`)) dispatch({ type: "REMOVE_WEEKLY_SUB", subId: sub.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
+                          </div>
+                        </div>
+                        <p style={{ margin: "0 0 10px", fontSize: 13, color: T.textSoft, lineHeight: 1.6, padding: "8px 12px", background: T.raised, borderRadius: 7 }}>{sub.items}</p>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <Tag type={sub.approval} label={APPROVAL[sub.approval].label} />
+                          {sub.approval === "pending" && <div style={{ display: "flex", gap: 8 }}>
+                            <Btn danger small onClick={() => setConfirmApproval({ subId: sub.id, status: "rejected", memberName: mem?.name, week: sub.week })}>Reject</Btn>
+                            <Btn primary small onClick={() => setConfirmApproval({ subId: sub.id, status: "approved", memberName: mem?.name, week: sub.week })}>Approve</Btn>
+                          </div>}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+              {myOkrSubsForApproval.filter(s => s.answer !== null).length === 0 && weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).length === 0 && (
+                <EmptyState text="No submissions to review yet." />
+              )}
+            </Pane>
+          </>);
+        })()}
 
         {page === "projects" && (<>
           <Header title="Projects" sub="Create and track team projects" />
@@ -3482,8 +3601,11 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const pendingCount = mySubs.filter(s => s.approval === "pending").length;
   const thisWeekSub = mySubs.find(s => s.week === currentFYWeek());
 
+  const myOkrSubs = (state.okrSubmissions || []).filter(s => s.memberId === user.id);
+  const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const navItems = [
     { id: "mykpis",           icon: "◎", label: "My KPIs"           },
+    { id: "checkin",          icon: "✓", label: "OKR Check-in"      },
     { id: "dept-kpis",        icon: "⬛", label: "Dept & Team KPIs"  },
     { id: "weekly-overview",  icon: "◉", label: "Weekly Overview"   },
     { id: "monthly-overview", icon: "◉", label: "Monthly Overview"  },
@@ -3494,7 +3616,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ submit: thisWeekSub ? 0 : 1 }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ submit: thisWeekSub ? 0 : 1, checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "mykpis" && (<>
@@ -3853,6 +3975,76 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           </>);
         })()}
 
+        {page === "checkin" && (() => {
+          const PERIOD_ORDER = ["daily", "weekly", "monthly", "annual"];
+          const grouped = PERIOD_ORDER.map(p => ({ period: p, pending: myOkrSubs.filter(s => s.period === p && s.answer === null), answered: myOkrSubs.filter(s => s.period === p && s.answer !== null).sort((a,b) => (b.answeredAt||"").localeCompare(a.answeredAt||"")) })).filter(g => g.pending.length + g.answered.length > 0);
+          const PERIOD_COLORS = { daily: T.warn, weekly: T.brand, monthly: "#A78BFA", annual: T.ok };
+          const currentMonthKey = currentFYMonthKey();
+          const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
+          return (<>
+            <Header title="OKR Check-in" sub="Answer your KPI check-ins sent by the system"
+              right={subRate !== null ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></div> : null} />
+            <Pane>
+              {myPendingCheckins.length > 0 && (
+                <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, fontSize: 13, color: T.warn, fontWeight: 600, marginBottom: 16 }}>
+                  {myPendingCheckins.length} pending check-in{myPendingCheckins.length !== 1 ? "s" : ""} — please respond below
+                </div>
+              )}
+              {grouped.length === 0 && <EmptyState text="No check-ins yet. Your manager will send them when due." />}
+              {grouped.map(({ period, pending, answered }) => (
+                <div key={period} style={{ marginBottom: 28 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
+                    <div style={{ width: 4, height: 18, background: PERIOD_COLORS[period], borderRadius: 2 }} />
+                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-ins</span>
+                    {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
+                  </div>
+                  {pending.map(s => (
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${T.warn}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>
+                            Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                          <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no" })}
+                            style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                            ✗ No
+                          </button>
+                          <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes" })}
+                            style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.ok, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                            ✓ Yes
+                          </button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                  {answered.length > 0 && (
+                    <div style={{ marginTop: pending.length ? 10 : 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Answered</div>
+                      {answered.slice(0, 10).map(s => (
+                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <span style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</span>
+                              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 8 }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                              <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </Pane>
+          </>);
+        })()}
+
         {page === "submit" && (<>
           <Header title="Weekly Submission" sub="Submit your work outcomes — due every week"
             right={thisWeekSub ? <Tag type="approved" label="This week: Submitted" /> : <Tag type="rejected" label="This week: Not yet submitted" />} />
@@ -4032,6 +4224,17 @@ function appReducer(state, action) {
     case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
     case "APPROVE_SUB":     return { ...state, weeklySubs: state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
     case "REMOVE_WEEKLY_SUB": return { ...state, weeklySubs: state.weeklySubs.filter(s => s.id !== action.subId) };
+    case "CREATE_OKR_SUBMISSIONS": {
+      const seen = new Set((state.okrSubmissions || []).map(s => `${s.memberId}:${s.krId}:${s.periodKey}`));
+      const fresh = action.submissions.filter(s => !seen.has(`${s.memberId}:${s.krId}:${s.periodKey}`));
+      return { ...state, okrSubmissions: [...(state.okrSubmissions || []), ...fresh] };
+    }
+    case "ANSWER_OKR_SUBMISSION":
+      return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, answer: action.answer, answeredAt: new Date().toISOString() } : s) };
+    case "APPROVE_OKR_SUBMISSION":
+      return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, approval: action.status, approvedBy: action.approvedBy } : s) };
+    case "REMOVE_OKR_SUBMISSION":
+      return { ...state, okrSubmissions: (state.okrSubmissions || []).filter(s => s.id !== action.id) };
     case "ADD_MGR_SPRINT":    return { ...state, mgrSprints: [action.sprint, ...state.mgrSprints] };
     case "REMOVE_MGR_SPRINT": return { ...state, mgrSprints: state.mgrSprints.filter(s => s.id !== action.sprintId) };
     case "ADD_PROJECT":     return { ...state, projects: [...state.projects, action.project] };
@@ -4162,6 +4365,7 @@ export default function App({ redirectAccount = null }) {
     depts: INIT_DEPTS,
     memberData: INIT_MEMBER_DATA,
     weeklySubs: INIT_WEEKLY_SUBS,
+    okrSubmissions: [],
     mgrSprints: INIT_MGR_SPRINTS,
     projects: INIT_PROJECTS,
     monthlyReports: INIT_MONTHLY_REPORTS,
@@ -4192,6 +4396,7 @@ export default function App({ redirectAccount = null }) {
             depts: data.depts,
             memberData: Object.fromEntries((data.memberData || []).map(m => [m.id, { krs: m.krs || [] }])),
             weeklySubs: data.weeklySubs || [],
+            okrSubmissions: data.okrSubmissions || [],
             mgrSprints: data.mgrSprints || [],
             projects: data.projects || [],
             monthlyReports: data.monthlyReports || [],
