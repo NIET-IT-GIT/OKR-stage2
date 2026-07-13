@@ -1160,7 +1160,7 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
                                 <div><div style={labelStyle}>Objective</div><Input value={editTeamForm.obj} onChange={e => setEditTeamForm(p => ({ ...p, obj: e.target.value }))} style={{ width: "100%" }} /></div>
                               </div>
                               {(() => {
-                                const deptMembers = users.filter(u => u.role === "member" && u.deptId === d.id);
+                                const deptMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
                                 return deptMembers.length > 0 && (
                                   <div style={{ marginBottom: 14 }}>
                                     <div style={labelStyle}>Team Members</div>
