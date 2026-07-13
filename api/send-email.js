@@ -62,7 +62,7 @@ export default async function handler(req, res) {
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
   <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
-    <div style="background:linear-gradient(135deg,#0071e3,#6b47dc);padding:28px 32px">
+    <div style="background-color:#0071e3;background:linear-gradient(135deg,#0071e3,#6b47dc);padding:28px 32px">
       <div style="color:#fff;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.8;margin-bottom:6px">NIET Group OKR System</div>
       <div style="color:#fff;font-size:22px;font-weight:700">${periodLabel} KPI Check-in</div>
     </div>
