@@ -1,4 +1,4 @@
-const nodemailer = require("nodemailer");
+import nodemailer from "nodemailer";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -6,7 +6,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
@@ -16,7 +16,7 @@ module.exports = async function handler(req, res) {
 
   const smtpUser = process.env.SMTP_USER;
   const smtpPass = process.env.SMTP_PASS;
-  const appUrl   = process.env.APP_URL || "https://okr.niet.edu.au";
+  const appUrl   = process.env.APP_URL || "https://okr.nietgroup.com.au";
 
   if (!smtpUser || !smtpPass) {
     console.warn("SMTP_USER / SMTP_PASS not configured — email skipped");
@@ -99,4 +99,4 @@ module.exports = async function handler(req, res) {
     console.error("Email send error:", err.message, err.code, err.response);
     res.status(500).json({ error: err.message, code: err.code, response: err.response });
   }
-};
+}
