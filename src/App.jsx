@@ -814,6 +814,15 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                 </Select>
               </div>
             )}
+            {form.role !== "admin" && form.deptId && teamsForDept(form.deptId).length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Team</div>
+                <Select value={form.teamId} onChange={e => setForm(p => ({ ...p, teamId: e.target.value }))} style={{ width: "100%" }}>
+                  <option value="">— Select team —</option>
+                  {teamsForDept(form.deptId).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </Select>
+              </div>
+            )}
           </div>
           {formErr && <div style={{ padding: "8px 12px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, fontSize: 13, color: T.bad, marginBottom: 12 }}>{formErr}</div>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -2630,7 +2639,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           <div style={{ borderBottom: `1px solid ${T.border}`, borderLeft: `3px solid ${T.brand}`, background: T.bg, padding: "14px 20px" }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 12 }}>Editing KPIs — {m.name}</div>
                             {krs.length === 0
-                              ? <div style={{ fontSize: 13, color: T.textMuted }}>No KPI data for this member yet. Sync team KPIs first.</div>
+                              ? <div style={{ fontSize: 13, color: T.textMuted }}>No OKRs synced yet — assign this member to a team in User Management, then click ⟳ Sync to Team Members in the Departments tab.</div>
                               : [{ key: "daily", label: "Daily OKRs" }, { key: "weekly", label: "Weekly OKRs" }, { key: "monthly", label: "Monthly OKRs" }, { key: "annual", label: "Annual OKRs" }].map(({ key, label }) => {
                                 const group = krs.filter(kr => (kr.period || "monthly") === key);
                                 if (group.length === 0) return null;
