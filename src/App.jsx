@@ -1313,6 +1313,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [subPeriod, setSubPeriod] = useState("daily");
   const [sendingCheckin, setSendingCheckin] = useState(false);
   const [tmplPeriod, setTmplPeriod] = useState("default");
+  const [testEmailState, setTestEmailState] = useState({ status: "idle", msg: "" });
+  const [testEmailTo, setTestEmailTo] = useState(user?.email || "");
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
@@ -2797,6 +2799,52 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+              <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${T.border}` }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: T.text }}>Send Test Email</div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    value={testEmailTo}
+                    onChange={e => { setTestEmailTo(e.target.value); setTestEmailState({ status: "idle", msg: "" }); }}
+                    placeholder="recipient@example.com"
+                    type="email"
+                    style={{ flex: "1 1 220px", minWidth: 200, padding: "8px 12px", fontSize: 14, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none" }}
+                  />
+                  <Btn primary disabled={testEmailState.status === "sending" || !testEmailTo} onClick={async () => {
+                    if (!testEmailTo) return;
+                    setTestEmailState({ status: "sending", msg: "" });
+                    const period = tmplPeriod === "default" ? "monthly" : tmplPeriod;
+                    try {
+                      const res = await fetch("/api/send-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          to: testEmailTo,
+                          name: "Test User",
+                          period,
+                          periodKey: previewPeriodKey,
+                          krs: [
+                            { label: "Complete 3 coaching sessions", target: "3", unit: "sessions" },
+                            { label: "Customer satisfaction score", target: "90", unit: "%" },
+                          ],
+                          template: localDraft,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (data.ok) {
+                        setTestEmailState({ status: "sent", msg: data.skipped ? "SMTP not configured — email skipped (check SMTP_USER/SMTP_PASS env vars)" : `Sent to ${testEmailTo}` });
+                      } else {
+                        setTestEmailState({ status: "error", msg: data.error || "Send failed" });
+                      }
+                    } catch (err) {
+                      setTestEmailState({ status: "error", msg: err.message });
+                    }
+                  }}>
+                    {testEmailState.status === "sending" ? "Sending…" : "Send Test Email"}
+                  </Btn>
+                  {testEmailState.status === "sent" && <span style={{ fontSize: 13, color: T.ok }}>✓ {testEmailState.msg}</span>}
+                  {testEmailState.status === "error" && <span style={{ fontSize: 13, color: T.bad }}>✗ {testEmailState.msg}</span>}
                 </div>
               </div>
             </Pane>
