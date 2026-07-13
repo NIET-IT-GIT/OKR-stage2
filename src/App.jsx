@@ -1300,6 +1300,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [lbSearch, setLbSearch] = useState("");
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
+  const [lbPeriod, setLbPeriod] = useState("all");
   const [lbExpandedMember, setLbExpandedMember] = useState(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
@@ -2573,7 +2574,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "leaderboard" && (<>
-          <Header title="Company Leaderboard" sub="All staff ranked by KPI completion · FY26 Q1" />
+          <Header title="Company Leaderboard" sub="All staff ranked by OKR completion · FY26 Q1" />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="Total"    value={allMembers.length} />
@@ -2581,26 +2582,38 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               <Metric label="At Risk"  value={allMembers.filter(m => m.status === "yellow").length} status="yellow" />
               <Metric label="Behind"   value={allMembers.filter(m => m.status === "red").length}    status="red"    />
             </div>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ position: "relative", flex: "0 0 220px" }}>
-                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 14, pointerEvents: "none" }}>⌕</span>
-                <input
-                  value={lbSearch}
-                  onChange={e => setLbSearch(e.target.value)}
-                  placeholder="Search name..."
-                  style={{ width: "100%", boxSizing: "border-box", paddingLeft: 28, paddingRight: 10, paddingTop: 7, paddingBottom: 7, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontFamily: F.body, outline: "none" }}
-                />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ position: "relative", flex: "0 0 220px" }}>
+                  <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.textDim, fontSize: 14, pointerEvents: "none" }}>⌕</span>
+                  <input
+                    value={lbSearch}
+                    onChange={e => setLbSearch(e.target.value)}
+                    placeholder="Search name..."
+                    style={{ width: "100%", boxSizing: "border-box", paddingLeft: 28, paddingRight: 10, paddingTop: 7, paddingBottom: 7, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontFamily: F.body, outline: "none" }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  <Btn small primary={lbDeptFilter === "all"} onClick={() => setLbDeptFilter("all")}>All Depts</Btn>
+                  {depts.map(d => (
+                    <Btn key={d.id} small primary={lbDeptFilter === d.id} onClick={() => setLbDeptFilter(d.id)}>{d.name}</Btn>
+                  ))}
+                </div>
               </div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                <Btn small primary={lbDeptFilter === "all"} onClick={() => setLbDeptFilter("all")}>All Depts</Btn>
-                {depts.map(d => (
-                  <Btn key={d.id} small primary={lbDeptFilter === d.id} onClick={() => setLbDeptFilter(d.id)}>{d.name}</Btn>
+                {[{ key: "all", label: "All OKRs" }, { key: "daily", label: "Daily" }, { key: "weekly", label: "Weekly" }, { key: "monthly", label: "Monthly" }, { key: "annual", label: "Annual" }].map(({ key, label }) => (
+                  <Btn key={key} small primary={lbPeriod === key} onClick={() => { setLbPeriod(key); setLbExpandedMember(null); }}>{label}</Btn>
                 ))}
               </div>
             </div>
             {(() => {
               const q = lbSearch.trim().toLowerCase();
-              const filtered = allMembers.filter(m =>
+              const periodMembers = lbPeriod === "all" ? allMembers : allMembers.map(m => {
+                const periodKrs = (memberData[m.id]?.krs || []).filter(kr => (kr.period || "monthly") === lbPeriod);
+                const rate = calcRate(periodKrs);
+                return { ...m, rate, status: getStatus(rate) };
+              }).sort((a, b) => b.rate - a.rate);
+              const filtered = periodMembers.filter(m =>
                 (lbDeptFilter === "all" || m.deptId === lbDeptFilter) &&
                 (!q || m.name.toLowerCase().includes(q) || m.title?.toLowerCase().includes(q))
               );
@@ -2612,7 +2625,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     <span>Rank</span><span></span><span>Name</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span><span></span>
                   </div>
                   {filtered.map(m => {
-                    const globalRank = allMembers.indexOf(m) + 1;
+                    const globalRank = periodMembers.indexOf(m) + 1;
                     const isTop = globalRank === 1;
                     const isExpanded = lbExpandedMember === m.id;
                     const kd = memberData[m.id];
