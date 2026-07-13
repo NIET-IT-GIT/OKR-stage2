@@ -2631,7 +2631,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                             <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 12 }}>Editing KPIs — {m.name}</div>
                             {krs.length === 0
                               ? <div style={{ fontSize: 13, color: T.textMuted }}>No KPI data for this member yet. Sync team KPIs first.</div>
-                              : [{ key: "weekly", label: "Weekly KRs" }, { key: "monthly", label: "Monthly KRs" }, { key: "annual", label: "Annual KRs" }].map(({ key, label }) => {
+                              : [{ key: "daily", label: "Daily OKRs" }, { key: "weekly", label: "Weekly OKRs" }, { key: "monthly", label: "Monthly OKRs" }, { key: "annual", label: "Annual OKRs" }].map(({ key, label }) => {
                                 const group = krs.filter(kr => (kr.period || "monthly") === key);
                                 if (group.length === 0) return null;
                                 return (
