@@ -1294,7 +1294,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const navItems = [
     { id: "overview",    icon: "◎", label: "Company Overview"  },
     { id: "departments", icon: "⬛", label: "Departments"       },
-    { id: "submissions", icon: "✉", label: "Weekly Submissions" },
+    { id: "submissions", icon: "✉", label: "OKR Submissions" },
     { id: "reports",     icon: "⊞", label: "OKR Reports"       },
     { id: "projects",    icon: "⚡", label: "Projects"          },
     { id: "leaderboard", icon: "▲", label: "Leaderboard"       },
