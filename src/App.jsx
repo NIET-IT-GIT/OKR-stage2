@@ -2957,11 +2957,14 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [mgrSelTeam, setMgrSelTeam] = useState(null);
   const [okrPeriod, setOkrPeriod] = useState("monthly");
+  const [noReason, setNoReason] = useState(null);
 
   const { depts, memberData, weeklySubs, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
   const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId);
   const myTeamMemberIds = users.filter(u => u.role === "member" && u.deptId === user.deptId).map(u => u.id);
+  const myOkrSubs = allOkrSubs.filter(s => s.memberId === user.id);
+  const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const pendingSubs = weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId) && s.approval === "pending");
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
@@ -3001,7 +3004,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const navItems = [
     { id: "dashboard",    icon: "⧉", label: "Team Dashboard"       },
     { id: "okr-overview", icon: "◎", label: "OKR Overview"         },
-    { id: "submit",       icon: "✉", label: "My Weekly Submission"  },
+    { id: "checkin",      icon: "✓", label: "OKR Check-in"         },
     { id: "approvals",    icon: "✓", label: "Approve Submissions"   },
     { id: "projects",     icon: "⚡", label: "Projects"             },
     { id: "members",      icon: "✎", label: "Edit Member KPIs"     },
@@ -3010,7 +3013,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length + pendingOkrSubs.length, submit: weeklySubs.some(s => s.memberId === user.id && s.week === currentFYWeek()) ? 0 : 1 }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length + pendingOkrSubs.length, checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "okr-overview" && (() => {
@@ -3239,66 +3242,85 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           </Pane>
         </>)}
 
-        {page === "submit" && (() => {
-          const mgrKd = memberData[user.id] || { krs: [] };
-          const mgrSubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
-          const mgrThisWeekSub = mgrSubs.find(s => s.week === mgrNewOut.week);
+        {page === "checkin" && (() => {
+          const PERIOD_ORDER = ["daily", "weekly", "monthly", "annual"];
+          const grouped = PERIOD_ORDER.map(p => ({ period: p, pending: myOkrSubs.filter(s => s.period === p && s.answer === null), answered: myOkrSubs.filter(s => s.period === p && s.answer !== null).sort((a,b) => (b.answeredAt||"").localeCompare(a.answeredAt||"")) })).filter(g => g.pending.length + g.answered.length > 0);
+          const PERIOD_COLORS = { daily: T.warn, weekly: T.brand, monthly: "#A78BFA", annual: T.ok };
+          const currentMonthKey = currentFYMonthKey();
+          const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
           return (<>
-            <Header title="My Weekly Submission" sub="Submit your own work outcomes — reviewed by admin"
-              right={mgrThisWeekSub ? <Tag type="approved" label={`This week: ${APPROVAL[mgrThisWeekSub.approval]?.label || mgrThisWeekSub.approval}`} /> : <Tag type="rejected" label="This week: Not yet submitted" />} />
+            <Header title="OKR Check-in" sub="Answer your KPI check-ins sent by the system"
+              right={subRate !== null ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></div> : null} />
             <Pane>
-              {mgrKd.krs.length > 0 && (
-                <Card style={{ padding: 20 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Update My KPI Actuals</div>
-                  {mgrKd.krs.map((kr, i) => {
-                    const r = krCompletion(kr); const s = getStatus(r);
-                    return (
-                      <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 70px 100px 50px 130px", padding: "9px 0", gap: 10, alignItems: "center", borderBottom: i < mgrKd.krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
-                        <div><div style={{ fontWeight: 600 }}>{kr.label}</div><div style={{ fontSize: 12, color: T.textMuted }}>Target: {kr.operator || ">="} {fmt(kr.target)}</div></div>
-                        <span style={{ fontSize: 12, color: T.textMuted, textAlign: "right" }}>Actual:</span>
-                        <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: user.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "7px 10px", fontSize: 15, fontFamily: F.mono }} />
-                        <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{r.toFixed(0)}%</span>
-                        <Bar value={r} status={s} h={5} />
-                      </div>
-                    );
-                  })}
-                </Card>
-              )}
-              <Card style={{ padding: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
-                <Select value={mgrNewOut.week} onChange={e => setMgrNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 260, marginBottom: 10 }}>
-                  {getFYWeeks().map(w => <option key={w} value={w}>{w}</option>)}
-                </Select>
-                <TextArea value={mgrNewOut.items} onChange={e => setMgrNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
-                {mgrSubs.some(s => s.week === mgrNewOut.week) && (
-                  <div style={{ fontSize: 13, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "8px 12px", marginTop: 10 }}>
-                    You already submitted for <strong>{mgrNewOut.week}</strong>. Change the week label to submit again.
-                  </div>
-                )}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-                  <span style={{ fontSize: 12, color: T.textMuted }}>Your submission will be reviewed by admin</span>
-                  <Btn primary disabled={!mgrNewOut.items || mgrSubs.some(s => s.week === mgrNewOut.week)} onClick={() => {
-                    dispatch({ type: "ADD_WEEKLY_SUB", sub: { id: `ws${Date.now()}`, memberId: user.id, week: mgrNewOut.week, items: mgrNewOut.items, date: new Date().toISOString().slice(0, 10), approval: "pending", mgrNote: "" } });
-                    setMgrNewOut({ week: currentFYWeek(), items: "" });
-                  }}>Submit to Admin</Btn>
+              {myPendingCheckins.length > 0 && (
+                <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, fontSize: 13, color: T.warn, fontWeight: 600, marginBottom: 16 }}>
+                  {myPendingCheckins.length} pending check-in{myPendingCheckins.length !== 1 ? "s" : ""} — please respond below
                 </div>
-              </Card>
-              {mgrSubs.length > 0 && (<>
-                <SectionLabel>My Past Submissions</SectionLabel>
-                {mgrSubs.slice(0, 5).map(s => (
-                  <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : T.warn}` }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span style={{ fontWeight: 700 }}>{s.week}</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 12, color: T.textMuted }}>{s.date}</span>
-                        <Tag type={s.approval} label={APPROVAL[s.approval]?.label || s.approval} />
+              )}
+              {grouped.length === 0 && <EmptyState text="No check-ins yet. Admin will send them when due." />}
+              {grouped.map(({ period, pending, answered }) => (
+                <div key={period} style={{ marginBottom: 28 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
+                    <div style={{ width: 4, height: 18, background: PERIOD_COLORS[period], borderRadius: 2 }} />
+                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-ins</span>
+                    {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
+                  </div>
+                  {pending.map(s => (
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${noReason?.id === s.id ? T.bad : T.warn}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>
+                            Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)}
+                          </div>
+                        </div>
+                        {noReason?.id !== s.id && (
+                          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                            <button onClick={() => setNoReason({ id: s.id, reason: "" })}
+                              style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                              ✗ No
+                            </button>
+                            <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes" })}
+                              style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.ok, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                              ✓ Yes
+                            </button>
+                          </div>
+                        )}
                       </div>
+                      {noReason?.id === s.id && (
+                        <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
+                          <TextArea value={noReason.reason} onChange={e => setNoReason(p => ({ ...p, reason: e.target.value }))} placeholder="Briefly explain why this target was not reached..." rows={2} />
+                          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                            <Btn small onClick={() => setNoReason(null)}>Cancel</Btn>
+                            <Btn danger small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null }); setNoReason(null); }}>Submit No</Btn>
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                  {answered.length > 0 && (
+                    <div style={{ marginTop: pending.length ? 10 : 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Answered</div>
+                      {answered.slice(0, 10).map(s => (
+                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <span style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</span>
+                              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 8 }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                              <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                            </div>
+                          </div>
+                          {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
+                        </Card>
+                      ))}
                     </div>
-                    <p style={{ margin: 0, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}>{s.items}</p>
-                    {s.mgrNote && <div style={{ marginTop: 6, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Admin note: {s.mgrNote}</div>}
-                  </Card>
-                ))}
-              </>)}
+                  )}
+                </div>
+              ))}
             </Pane>
           </>);
         })()}
