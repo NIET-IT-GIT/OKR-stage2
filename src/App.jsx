@@ -150,6 +150,14 @@ function calcRate(krs) {
   if (!krs?.length) return 0;
   return krs.reduce((sum, kr) => sum + krCompletion(kr), 0) / krs.length;
 }
+function calcMemberRate(memberId, memberKrs, okrSubs) {
+  const answeredKrIds = new Set(
+    (okrSubs || []).filter(s => s.memberId === memberId && s.answer !== null).map(s => s.krId)
+  );
+  const eligible = (memberKrs || []).filter(kr => answeredKrIds.has(kr.id));
+  if (!eligible.length) return 0;
+  return calcRate(eligible);
+}
 function getStatus(r) { return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
 function fmt(v) { return typeof v === "number" ? (v % 1 ? v.toFixed(1) : v.toLocaleString()) : v; }
 function currentFYQuarter() {
@@ -990,7 +998,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
    ───────────────────────────────────────────────────────────── */
 const BLANK_DEPT = { name: "", obj: "", head: "", college: "" };
 
-function DeptMgmtPage({ depts, users, memberData, dispatch }) {
+function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(BLANK_DEPT);
   const [addErr, setAddErr] = useState("");
@@ -1114,7 +1122,7 @@ function DeptMgmtPage({ depts, users, memberData, dispatch }) {
                 const r2 = calcRate(d.krs); const s2 = getStatus(r2);
                 const deptMembers = users
                   .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
-                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = calcRate(kd.krs); return { ...u, rate: mr, status: getStatus(mr) }; })
+                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = calcMemberRate(u.id, kd.krs, okrSubmissions); return { ...u, rate: mr, status: getStatus(mr) }; })
                   .sort((a, b) => b.rate - a.rate);
                 return (
                   <div style={{ background: T.bgSoft, borderBottom: `1px solid ${T.border}`, padding: "16px 18px" }}>
@@ -1366,7 +1374,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
       const kd = memberData[u.id] || { krs: [] };
-      const r = calcRate(kd.krs);
+      const r = calcMemberRate(u.id, kd.krs, okrSubmissions);
       const dept = depts.find(d => d.id === u.deptId);
       const deptName = dept?.name || "—";
       const primaryTeam = dept?.teams.find(t => t.id === u.teamId);
@@ -1537,7 +1545,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "departments" && (!selDept ? (
-          <DeptMgmtPage depts={depts} users={users} memberData={memberData} dispatch={dispatch} />
+          <DeptMgmtPage depts={depts} users={users} memberData={memberData} okrSubmissions={okrSubmissions} dispatch={dispatch} />
         ) : (() => {
           const dept = depts.find(d => d.id === selDept);
           if (!dept) return null;
@@ -3298,7 +3306,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
             <SectionLabel>My Team Members</SectionLabel>
             {myMembers.map(m => {
               const kd = memberData[m.id]; if (!kd) return null;
-              const r = calcRate(kd.krs); const s = getStatus(r);
+              const r = calcMemberRate(m.id, kd.krs, allOkrSubs); const s = getStatus(r);
               const lastSub = weeklySubs.filter(x => x.memberId === m.id).sort((a, b) => b.date.localeCompare(a.date))[0];
               return (
                 <Card key={m.id} style={{ padding: "14px 18px", marginBottom: 8 }}>
@@ -3598,7 +3606,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
             {myMembers.filter(m => m.role === "member").map(m => {
               const kd = memberData[m.id];
               const krs = kd?.krs || [];
-              const r = calcRate(krs); const s = getStatus(r);
+              const r = calcMemberRate(m.id, krs, allOkrSubs); const s = getStatus(r);
               return (
                 <Card key={m.id} style={{ overflow: "hidden" }}>
                   <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -3749,7 +3757,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const myTeam = myDept?.teams.find(t => t.id === user.teamId);
   const mySecondTeam = user.secondTeamId ? myDept?.teams.find(t => t.id === user.secondTeamId) : null;
   const mySubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
-  const rate = calcRate(kd.krs); const st = getStatus(rate);
+  const rate = calcMemberRate(user.id, kd.krs, state.okrSubmissions || []); const st = getStatus(rate);
   const pendingCount = mySubs.filter(s => s.approval === "pending").length;
   const thisWeekSub = mySubs.find(s => s.week === currentFYWeek());
 
