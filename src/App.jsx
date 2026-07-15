@@ -1839,10 +1839,12 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           };
 
           const sections = [
-            { period: "daily",   label: "Daily OKR",   color: T.warn    },
-            { period: "weekly",  label: "Weekly OKR",  color: T.brand   },
-            { period: "monthly", label: "Monthly OKR", color: "#6B7280" },
-            { period: "annual",  label: "Annual OKR",  color: "#A78BFA" },
+            { period: "daily",     label: "Daily OKR",      color: T.warn    },
+            { period: "weekly",    label: "Weekly OKR",     color: T.brand   },
+            { period: "monthly",   label: "Monthly OKR",    color: "#6B7280" },
+            { period: "quarterly", label: "Quarterly OKR",  color: "#F97316" },
+            { period: "biannual",  label: "Bi-Annual OKR",  color: "#06B6D4" },
+            { period: "annual",    label: "Annual OKR",     color: "#A78BFA" },
           ];
 
           return (<>
