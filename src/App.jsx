@@ -2366,9 +2366,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           <span style={{ fontWeight: 700, fontSize: 14 }}>{mem?.name || s.memberName || "Unknown"}</span>
                           {dept && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "1px 6px" }}>{dept.name}</span>}
                         </div>
-                        <div style={{ fontSize: 14, color: T.text, marginBottom: 2, fontWeight: 600 }}>{s.krLabel}</div>
+                        <div style={{ fontSize: 14, color: T.text, marginBottom: 4, fontWeight: 600 }}>{s.krLabel}</div>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
+                          <span style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono, color: T.text, lineHeight: 1 }}>{s.krTarget ?? "—"}</span>
+                          {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
+                          <span style={{ fontSize: 11, color: T.textDim }}>target</span>
+                        </div>
                         <div style={{ fontSize: 12, color: T.textMuted }}>
-                          Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}
+                          {periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}
                         </div>
                         {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.bad, marginTop: 3, fontStyle: "italic" }}>Reason: {s.reason}</div>}
                       </div>
