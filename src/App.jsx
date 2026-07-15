@@ -1546,6 +1546,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             { key: "id",         label: "ID" },
             { key: "label",      label: "Key Result" },
             { key: "operator",   label: "Op" },
+            { key: "period",     label: "Period" },
             { key: "target",     label: "Target" },
             { key: "actual",     label: "Actual" },
             { key: "unit",       label: "Unit" },
@@ -1558,7 +1559,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           );
           const customCols = dept.customCols || [];
           const getCustomColWidth = col => customColWidthOverride?.colId === col.id ? customColWidthOverride.width : (col.width ?? 150);
-          const orderedDef = colOrder.filter(k => k !== "period").map(k => COLS_DEF.find(c => c.key === k)).filter(Boolean);
+          const orderedDef = colOrder.map(k => COLS_DEF.find(c => c.key === k)).filter(Boolean);
           const visibleBuiltIn = orderedDef.filter(c => !hiddenCols.has(c.key));
           const COL = [...visibleBuiltIn.map(c => `${colWidths[c.key]}px`), ...customCols.map(c => `${getCustomColWidth(c)}px`), "34px"].join(" ");
           const rszHandle = onMd => (
