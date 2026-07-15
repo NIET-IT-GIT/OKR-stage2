@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     tls: { rejectUnauthorized: false },
   });
 
-  const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", annual: "Annual" };
+  const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", biannual: "Bi-Annual", annual: "Annual" };
   const periodLabel = PERIOD_LABELS[period] || period || "Monthly";
   const periodLower = periodLabel.toLowerCase();
 
