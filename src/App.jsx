@@ -152,11 +152,20 @@ function calcRate(krs) {
 }
 function getStatus(r) { return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
 function fmt(v) { return typeof v === "number" ? (v % 1 ? v.toFixed(1) : v.toLocaleString()) : v; }
+function currentFYQuarter() {
+  const d = new Date();
+  const m = d.getMonth() + 1;
+  const y = d.getFullYear();
+  const fy = m >= 7 ? y + 1 : y;
+  const q = m >= 7 && m <= 9 ? 1 : m >= 10 ? 2 : m <= 3 ? 3 : 4;
+  return `FY${String(fy).slice(2)} Q${q}`;
+}
 function currentPeriodKey(period) {
   const d = new Date();
   if (period === "daily") return d.toISOString().slice(0, 10);
   if (period === "weekly") return currentFYWeek();
   if (period === "monthly") return currentFYMonthKey();
+  if (period === "quarterly") return currentFYQuarter();
   if (period === "annual") return String(d.getFullYear());
   return d.toISOString().slice(0, 10);
 }
@@ -1488,7 +1497,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             right={<div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted, fontFamily: F.mono }}>Time: {TP}%</span><Tag type={getStatus(compRate)} /></div>} />
           <Pane>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {["all", "weekly", "monthly", "annual"].map(p => (
+              {["all", "weekly", "monthly", "quarterly", "annual"].map(p => (
                 <Btn key={p} small primary={overviewPeriod === p} onClick={() => setOverviewPeriod(p)}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                 </Btn>
@@ -1939,7 +1948,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           if (key === "id") return <span key="id" style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>;
                           if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}</div>;
                           if (key === "operator") return <span key="operator">{opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}</span>;
-                          if (key === "period") return <select key="period" value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="annual">Annual</option></select>;
+                          if (key === "period") return <select key="period" value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select>;
                           if (key === "target") return isMonthly ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(curTarget)} <span style={{ color: T.textDim }}>this mo.</span></span> : <Input key="target" value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
                           if (key === "actual") return isMonthly ? <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(curActual)}</span> : <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>;
                           if (key === "unit") return <Input key="unit" value={kr.unit || ""} onChange={e => onTeamChange(kr.id, "unit", e.target.value)} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />;
@@ -2047,7 +2056,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           if (key === "operator") return <span key="operator">{opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}</span>;
                           if (key === "period") return isWeeklyPage
                             ? <span key="period" style={{ fontSize: 12, color: T.brand, fontWeight: 700 }}>Weekly</span>
-                            : <select key="period" value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="monthly">Monthly</option><option value="annual">Annual</option></select>;
+                            : <select key="period" value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select>;
                           if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
                           if (key === "actual") return <span key="actual" />;
                           if (key === "unit") return <Input key="unit" value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />;
@@ -2248,6 +2257,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             { id: "daily", label: "Daily", color: T.warn },
             { id: "weekly", label: "Weekly", color: T.brand },
             { id: "monthly", label: "Monthly", color: "#A78BFA" },
+            { id: "quarterly", label: "Quarterly", color: "#F97316" },
             { id: "annual", label: "Annual", color: T.ok },
           ];
           const periodSubs = okrSubmissions.filter(s => s.period === subPeriod);
@@ -2638,7 +2648,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                {[{ key: "all", label: "All OKRs" }, { key: "daily", label: "Daily" }, { key: "weekly", label: "Weekly" }, { key: "monthly", label: "Monthly" }, { key: "annual", label: "Annual" }].map(({ key, label }) => (
+                {[{ key: "all", label: "All OKRs" }, { key: "daily", label: "Daily" }, { key: "weekly", label: "Weekly" }, { key: "monthly", label: "Monthly" }, { key: "quarterly", label: "Quarterly" }, { key: "annual", label: "Annual" }].map(({ key, label }) => (
                   <Btn key={key} small primary={lbPeriod === key} onClick={() => { setLbPeriod(key); setLbExpandedMember(null); }}>{label}</Btn>
                 ))}
               </div>
@@ -2690,7 +2700,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                             <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 12 }}>Editing KPIs — {m.name}</div>
                             {krs.length === 0
                               ? <div style={{ fontSize: 13, color: T.textMuted }}>No OKRs synced yet — assign this member to a team in User Management, then click ⟳ Sync to Team Members in the Departments tab.</div>
-                              : [{ key: "daily", label: "Daily OKRs" }, { key: "weekly", label: "Weekly OKRs" }, { key: "monthly", label: "Monthly OKRs" }, { key: "annual", label: "Annual OKRs" }].map(({ key, label }) => {
+                              : [{ key: "daily", label: "Daily OKRs" }, { key: "weekly", label: "Weekly OKRs" }, { key: "monthly", label: "Monthly OKRs" }, { key: "quarterly", label: "Quarterly OKRs" }, { key: "annual", label: "Annual OKRs" }].map(({ key, label }) => {
                                 const group = krs.filter(kr => (kr.period || "monthly") === key);
                                 if (group.length === 0) return null;
                                 return (
@@ -2751,13 +2761,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
         {page === "email-templates" && (() => {
           const TMPL_PERIODS = [
-            { id: "default", label: "Default (all periods)" },
-            { id: "daily",   label: "Daily"   },
-            { id: "weekly",  label: "Weekly"  },
-            { id: "monthly", label: "Monthly" },
-            { id: "annual",  label: "Annual"  },
+            { id: "default",   label: "Default (all periods)" },
+            { id: "daily",     label: "Daily"     },
+            { id: "weekly",    label: "Weekly"    },
+            { id: "monthly",   label: "Monthly"   },
+            { id: "quarterly", label: "Quarterly" },
+            { id: "annual",    label: "Annual"    },
           ];
-          const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", annual: "Annual", default: "Default" };
+          const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", annual: "Annual", default: "Default" };
           const DEFAULT_TMPL = {
             fromName: "NIET Group OKR",
             subject:  "Action Required: {periodLabel} KPI Check-in — {periodKey}",
@@ -2772,7 +2783,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             const updated = { ...saved, [tmplPeriod]: { ...(saved[tmplPeriod] || {}), [field]: value } };
             dispatch({ type: "SET_SETTINGS", updates: { emailTemplates: updated } });
           };
-          const previewPeriodKey = { daily: "Mon 14 Jul 2026", weekly: "FY26 W02", monthly: "July 2026", annual: "FY 2026", default: "July 2026" }[tmplPeriod] || "July 2026";
+          const previewPeriodKey = { daily: "Mon 14 Jul 2026", weekly: "FY26 W02", monthly: "July 2026", quarterly: "FY26 Q1", annual: "FY 2026", default: "July 2026" }[tmplPeriod] || "July 2026";
           const previewPeriodLabel = PERIOD_LABELS[tmplPeriod === "default" ? "monthly" : tmplPeriod] || "Monthly";
           const previewSubject = localDraft.subject.replace(/\{periodLabel\}/g, previewPeriodLabel).replace(/\{periodKey\}/g, previewPeriodKey);
           const previewBody = localDraft.body.replace(/\{periodLower\}/g, previewPeriodLabel.toLowerCase()).replace(/\{periodKey\}/g, `<strong>${previewPeriodKey}</strong>`).replace(/\{periodLabel\}/g, previewPeriodLabel);
@@ -3044,7 +3055,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
         {page === "okr-overview" && (() => {
           if (!dept) return (<><Header title="OKR Overview" sub="Your department's key results by period" /><Pane><EmptyState text="No department assigned to your account." /></Pane></>);
-          const PERIODS = [{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "annual", label: "Annual" }];
+          const PERIODS = [{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "annual", label: "Annual" }];
           const filterP = krs => krs.filter(kr => (kr.period || "monthly") === okrPeriod);
           const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
           const renderRows = (krs, deptId, teamId) => krs.map((kr, i) => {
@@ -3269,9 +3280,9 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "checkin" && (() => {
-          const PERIOD_ORDER = ["daily", "weekly", "monthly", "annual"];
+          const PERIOD_ORDER = ["daily", "weekly", "monthly", "quarterly", "annual"];
           const grouped = PERIOD_ORDER.map(p => ({ period: p, pending: myOkrSubs.filter(s => s.period === p && s.answer === null), answered: myOkrSubs.filter(s => s.period === p && s.answer !== null).sort((a,b) => (b.answeredAt||"").localeCompare(a.answeredAt||"")) })).filter(g => g.pending.length + g.answered.length > 0);
-          const PERIOD_COLORS = { daily: T.warn, weekly: T.brand, monthly: "#A78BFA", annual: T.ok };
+          const PERIOD_COLORS = { daily: T.warn, weekly: T.brand, monthly: "#A78BFA", quarterly: "#F97316", annual: T.ok };
           const currentMonthKey = currentFYMonthKey();
           const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
           return (<>
@@ -3697,7 +3708,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           <Header title="My KPIs" sub={`${user.title} · FY26 Q1`} right={<Tag type={st} />} />
           <Pane>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {["all", "weekly", "monthly", "annual"].map(p => (
+              {["all", "weekly", "monthly", "quarterly", "annual"].map(p => (
                 <Btn key={p} small primary={myKpiPeriod === p} onClick={() => setMyKpiPeriod(p)}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                 </Btn>
@@ -3847,7 +3858,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
 
         {page === "okr-overview" && (() => {
           if (!myDept) return (<><Header title="OKR Overview" sub="" /><Pane><EmptyState text="No department assigned." /></Pane></>);
-          const PERIODS = [{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "annual", label: "Annual" }];
+          const PERIODS = [{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "annual", label: "Annual" }];
           const filterP = krs => krs.filter(kr => (kr.period || "monthly") === okrPeriod);
           const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
           const renderKrRows = (krs) => krs.map((kr, i) => {
@@ -3985,9 +3996,9 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
 
 
         {page === "checkin" && (() => {
-          const PERIOD_ORDER = ["daily", "weekly", "monthly", "annual"];
+          const PERIOD_ORDER = ["daily", "weekly", "monthly", "quarterly", "annual"];
           const grouped = PERIOD_ORDER.map(p => ({ period: p, pending: myOkrSubs.filter(s => s.period === p && s.answer === null), answered: myOkrSubs.filter(s => s.period === p && s.answer !== null).sort((a,b) => (b.answeredAt||"").localeCompare(a.answeredAt||"")) })).filter(g => g.pending.length + g.answered.length > 0);
-          const PERIOD_COLORS = { daily: T.warn, weekly: T.brand, monthly: "#A78BFA", annual: T.ok };
+          const PERIOD_COLORS = { daily: T.warn, weekly: T.brand, monthly: "#A78BFA", quarterly: "#F97316", annual: T.ok };
           const currentMonthKey = currentFYMonthKey();
           const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
           return (<>
