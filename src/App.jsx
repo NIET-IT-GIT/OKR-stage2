@@ -1302,6 +1302,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
   const [lbPeriod, setLbPeriod] = useState("all");
   const [lbExpandedMember, setLbExpandedMember] = useState(null);
+  const [confirmDeleteKr, setConfirmDeleteKr] = useState(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
   const [subSearch, setSubSearch] = useState("");
@@ -2692,19 +2693,22 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                                 return (
                                   <div key={key} style={{ marginBottom: 14 }}>
                                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>{label} ({group.length})</div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px", gap: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
-                                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span>
+                                    <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
+                                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span></span>
                                     </div>
                                     {group.map((kr, ki) => {
                                       const pct = krCompletion(kr); const st = getStatus(pct);
                                       return (
-                                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
+                                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
                                           <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
                                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={kr.label}>{kr.label}</span>
                                           <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                                           <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
                                           <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
                                           <Bar value={pct} status={st} h={5} />
+                                          <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
+                                            title="Delete this OKR"
+                                            style={{ background: "none", border: `1px solid ${T.badBorder || T.bad}`, borderRadius: 5, padding: "3px 6px", cursor: "pointer", color: T.bad, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
                                         </div>
                                       );
                                     })}
@@ -2722,6 +2726,25 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             })()}
           </Pane>
         </>)}
+
+        {confirmDeleteKr && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: "28px 32px", width: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}>
+              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8, color: T.text }}>Delete OKR?</div>
+              <p style={{ fontSize: 14, color: T.textSoft, lineHeight: 1.6, margin: "0 0 6px" }}>
+                You are about to delete this OKR for <strong style={{ color: T.text }}>{confirmDeleteKr.memberName}</strong>:
+              </p>
+              <div style={{ background: T.badDim, border: `1px solid ${T.badBorder || T.bad}`, borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 600, color: T.bad, margin: "0 0 20px" }}>
+                {confirmDeleteKr.krLabel}
+              </div>
+              <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 20px", lineHeight: 1.5 }}>This only removes the OKR from their personal KPI list. It does not affect department or team KRs. This action cannot be undone.</p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn onClick={() => setConfirmDeleteKr(null)}>Cancel</Btn>
+                <Btn danger onClick={() => { dispatch({ type: "REMOVE_MEMBER_KR", memberId: confirmDeleteKr.memberId, krId: confirmDeleteKr.krId }); setConfirmDeleteKr(null); }}>Delete OKR</Btn>
+              </div>
+            </div>
+          </div>
+        )}
 
         {page === "email-templates" && (() => {
           const TMPL_PERIODS = [
