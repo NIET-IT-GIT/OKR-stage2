@@ -1458,11 +1458,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
       if (!krList.length) continue;
       const freshKrs = krList.filter(kr => !existing.has(`${u.id}:${kr.id}`));
-      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: kr.target || 0, krUnit: kr.unit || "", krOperator: kr.operator || ">=", period, periodKey, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
+      const monthKey = currentFYMonthKey();
+      const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
+      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", period, periodKey, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
       if (freshKrs.length && u.email) {
         const emailTemplates = settings?.emailTemplates || {};
         const template = { ...emailTemplates.default, ...(emailTemplates[period] || {}) };
-        fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, krs: freshKrs, template }) }).catch(console.error);
+        const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr) }));
+        fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, krs: krsForEmail, template }) }).catch(console.error);
       }
     }
     if (newSubs.length) dispatch({ type: "CREATE_OKR_SUBMISSIONS", submissions: newSubs });
