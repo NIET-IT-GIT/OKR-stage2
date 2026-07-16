@@ -1389,7 +1389,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [customColWidthOverride, setCustomColWidthOverride] = useState(null);
   const [addingCol, setAddingCol] = useState(false);
   const [newColName, setNewColName] = useState("");
-  const [overviewPeriod, setOverviewPeriod] = useState("all");
+  const [overviewView, setOverviewView] = useState("monthly");
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
   const [dirtySync, setDirtySync] = useState(null);
@@ -1436,7 +1436,24 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     ...depts.map(d => ({ id: d.id, label: d.name })),
   ];
 
-  const filtKrs = (krs) => overviewPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === overviewPeriod);
+  const OV_TYPES = { weekly: ["daily","weekly"], monthly: ["daily","weekly","monthly"], annual: ["daily","weekly","monthly","quarterly","biannual","annual"] };
+  const ovTypes = OV_TYPES[overviewView] || OV_TYPES.monthly;
+  const ovSubs = okrSubmissions.filter(s => {
+    if (!ovTypes.includes(s.period) || !s.sentAt) return false;
+    const d = new Date(s.sentAt), now = new Date();
+    if (overviewView === "weekly") {
+      const dow = now.getDay();
+      const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 7);
+      return d >= mon && d < sun;
+    }
+    if (overviewView === "monthly") return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    const m = now.getMonth() + 1, y = now.getFullYear();
+    const fyS = new Date(m >= 7 ? y : y - 1, 6, 1);
+    const fyE = new Date(m >= 7 ? y + 1 : y, 5, 30, 23, 59, 59);
+    return d >= fyS && d <= fyE;
+  });
+  const filtKrs = (krs) => krs.filter(kr => ovTypes.includes(kr.period || "monthly"));
   const deptRanks = depts.map(d => {
     const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
     const now = Date.now();
@@ -1445,14 +1462,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       const krs = filtKrs(kd.krs);
       // Include member only if they have at least one answered or overdue-unanswered submission
       const hasEligible = krs.some(kr => {
-        const krSubs = okrSubmissions.filter(s => s.memberId === u.id && s.krId === kr.id);
+        const krSubs = ovSubs.filter(s => s.memberId === u.id && s.krId === kr.id);
         if (!krSubs.length) return false;
         if (krSubs.some(s => s.answer !== null)) return true;
         const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
         return latest && (now - new Date(latest.sentAt).getTime()) >= 86400000;
       });
       if (!hasEligible) return null;
-      return calcMemberRate(u.id, krs, okrSubmissions);
+      return calcMemberRate(u.id, krs, ovSubs);
     }).filter(r => r !== null);
     const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
     return { ...d, rate, status: getStatus(rate) };
@@ -1604,18 +1621,28 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} />}
 
         {page === "overview" && (<>
-          <Header title="Company Overview" sub="FY26 Q1 · All colleges · All departments"
+          <Header title="Company Overview" sub={(() => {
+            const now = new Date();
+            if (overviewView === "weekly") {
+              const dow = now.getDay();
+              const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+              const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+              const fmt = d => d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+              return `${fmt(mon)} – ${fmt(sun)} · All departments`;
+            }
+            if (overviewView === "monthly") return `${now.toLocaleDateString("en-AU", { month: "long", year: "numeric" })} · All departments`;
+            const m = now.getMonth() + 1, y = now.getFullYear();
+            return `FY${String(m >= 7 ? y + 1 : y).slice(2)} · All departments`;
+          })()}
             right={<div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted, fontFamily: F.mono }}>Time: {TP}%</span><Tag type={getStatus(compRate)} /></div>} />
           <Pane>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {["all", "weekly", "monthly", "quarterly", "biannual", "annual"].map(p => (
-                <Btn key={p} small primary={overviewPeriod === p} onClick={() => setOverviewPeriod(p)}>
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
-                </Btn>
+              {[["weekly","Weekly Overview"],["monthly","Monthly Overview"],["annual","Annual Overview"]].map(([v,label]) => (
+                <Btn key={v} small primary={overviewView === v} onClick={() => setOverviewView(v)}>{label}</Btn>
               ))}
             </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="Company Completion" value={`${compRate.toFixed(1)}%`} status={getStatus(compRate)} sub={`Target pace: ${TP}%`} />
+              <Metric label={overviewView === "weekly" ? "Weekly Completion" : overviewView === "annual" ? "Annual Completion" : "Monthly Completion"} value={`${compRate.toFixed(1)}%`} status={getStatus(compRate)} sub={`Target pace: ${TP}%`} />
               <Metric label="Departments" value={depts.length} />
               <Metric label="Teams" value={depts.reduce((a, d) => a + d.teams.length, 0)} />
               <Metric label="Staff Tracked" value={allMembers.length} />
