@@ -1478,18 +1478,29 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const rptMonthKey = currentFYMonthKey();
   const rptSubs = okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === rptMonthKey);
   const rptSubRate = rptSubs.length > 0 ? Math.round((rptSubs.filter(s => s.answer === "yes").length / rptSubs.length) * 1000) / 10 : 0;
-  const rptDeptRanks = depts.map(d => { const mIds = users.filter(u => u.deptId === d.id).map(u => u.id); const dSubs = rptSubs.filter(s => mIds.includes(s.memberId)); const rate = dSubs.length > 0 ? Math.round((dSubs.filter(s => s.answer === "yes").length / dSubs.length) * 1000) / 10 : 0; return { name: d.name, rate, status: getStatus(rate) }; }).sort((a, b) => b.rate - a.rate);
+  const rptDeptRanks = depts.map(d => {
+    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
+    const rates = members.map(u => {
+      const kd = memberData[u.id] || { krs: [] };
+      if (!kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
+      return calcMemberRate(u.id, kd.krs, rptSubs);
+    }).filter(r => r !== null);
+    const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+    return { name: d.name, rate, status: getStatus(rate) };
+  }).sort((a, b) => b.rate - a.rate);
+  const rptCompRate = rptDeptRanks.length ? rptDeptRanks.reduce((a, d) => a + d.rate, 0) / rptDeptRanks.length : 0;
   const allMembers = users
     .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
       const kd = memberData[u.id] || { krs: [] };
-      const r = calcMemberRate(u.id, kd.krs, okrSubmissions);
+      const r = calcMemberRate(u.id, kd.krs, ovSubs);
+      const hasData = kd.krs.some(kr => ovSubs.some(s => s.memberId === u.id && s.krId === kr.id));
       const dept = depts.find(d => d.id === u.deptId);
       const deptName = dept?.name || "—";
       const primaryTeam = dept?.teams.find(t => t.id === u.teamId);
       const secondTeam = u.secondTeamId ? dept?.teams.find(t => t.id === u.secondTeamId) : null;
       const teamName = primaryTeam ? (secondTeam ? `${primaryTeam.name} / ${secondTeam.name}` : primaryTeam.name) : "—";
-      return { ...u, deptName, teamName, rate: r, status: getStatus(r) };
+      return { ...u, deptName, teamName, rate: r, hasData, status: getStatus(r) };
     })
     .sort((a, b) => b.rate - a.rate);
 
@@ -1595,7 +1606,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
       if (!krList.length) continue;
       const freshKrs = krList.filter(kr => !existing.has(`${u.id}:${kr.id}`));
-      const monthKey = period === "monthly" ? periodKey : currentFYMonthKey();
+      const monthKey = period === "monthly" ? periodKey
+        : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
+        : currentFYMonthKey();
       const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
       freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
       if (freshKrs.length && u.email) {
@@ -1649,7 +1662,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             </div>
             <div>
               <SectionLabel>Department Rankings</SectionLabel>
-              {deptRanks.map((d, i) => (
+              {ovSubs.length === 0
+                ? <Card style={{ padding: "18px 20px", color: T.textMuted, textAlign: "center", fontSize: 14 }}>No check-in submissions for this period yet — send check-ins to see department rankings.</Card>
+                : deptRanks.map((d, i) => (
                 <Card key={d.id} onClick={() => { setSelDept(d.id); setPage("departments"); }} style={{ padding: "16px 20px", marginBottom: 8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 60px 180px 80px", alignItems: "center", gap: 14 }}>
                     <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: i === 0 ? T.ok : i === deptRanks.length - 1 ? T.bad : T.textMuted }}>#{i + 1}</span>
@@ -2550,13 +2565,19 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 if (state.monthlyReports.some(r => r.month === currentMonth())) {
                   if (!window.confirm(`A report for ${currentMonth()} already exists. Publish another?`)) return;
                 }
+                const rptMembers = users.filter(u => u.role === "member" || u.role === "manager").map(u => {
+                  const kd = memberData[u.id] || { krs: [] };
+                  const hasData = kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id));
+                  const rate = hasData ? calcMemberRate(u.id, kd.krs, rptSubs) : 0;
+                  return { ...u, rate, hasData, status: getStatus(rate) };
+                }).sort((a, b) => b.rate - a.rate);
                 const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
                   reportType: "monthly",
                   notes: "",
                   submissionRate: rptSubRate,
-                  data: { companyRate: rptSubRate, deptRanks: rptDeptRanks,
-                    topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
-                    redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
+                  data: { companyRate: rptCompRate, deptRanks: rptDeptRanks,
+                    topPerformers: rptMembers.filter(m => m.hasData).slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
+                    redFlags: rptMembers.filter(m => m.hasData && m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
                   },
                 };
                 dispatch({ type: "PUBLISH_REPORT", report });
@@ -2584,9 +2605,30 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     if (state.monthlyReports.some(r => r.month === label)) {
                       if (!window.confirm(`A report labelled "${label}" already exists. Publish another?`)) return;
                     }
-                    const allAnswered = (state.okrSubmissions || []).filter(s => s.answer !== null);
+                    const allAnswered = (state.okrSubmissions || []).filter(s => {
+                      if (s.answer === null) return false;
+                      if (genPeriod.from && s.sentAt && s.sentAt < genPeriod.from) return false;
+                      if (genPeriod.to && s.sentAt && s.sentAt > genPeriod.to + "T23:59:59") return false;
+                      return true;
+                    });
                     const gSubRate = allAnswered.length > 0 ? Math.round((allAnswered.filter(s => s.answer === "yes").length / allAnswered.length) * 1000) / 10 : 0;
-                    const gDeptRanks = depts.map(d => { const mIds = users.filter(u => u.deptId === d.id).map(u => u.id); const dSubs = allAnswered.filter(s => mIds.includes(s.memberId)); const rate = dSubs.length > 0 ? Math.round((dSubs.filter(s => s.answer === "yes").length / dSubs.length) * 1000) / 10 : 0; return { name: d.name, rate, status: getStatus(rate) }; }).sort((a, b) => b.rate - a.rate);
+                    const gDeptRanks = depts.map(d => {
+                      const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
+                      const rates = members.map(u => {
+                        const kd = memberData[u.id] || { krs: [] };
+                        if (!kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
+                        return calcMemberRate(u.id, kd.krs, allAnswered);
+                      }).filter(r => r !== null);
+                      const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+                      return { name: d.name, rate, status: getStatus(rate) };
+                    }).sort((a, b) => b.rate - a.rate);
+                    const gCompRate = gDeptRanks.length ? gDeptRanks.reduce((a, d) => a + d.rate, 0) / gDeptRanks.length : 0;
+                    const gMembers = users.filter(u => u.role === "member" || u.role === "manager").map(u => {
+                      const kd = memberData[u.id] || { krs: [] };
+                      const hasData = kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id));
+                      const rate = hasData ? calcMemberRate(u.id, kd.krs, allAnswered) : 0;
+                      return { ...u, rate, hasData, status: getStatus(rate) };
+                    }).sort((a, b) => b.rate - a.rate);
                     const report = {
                       id: `mr${Date.now()}`,
                       month: label,
@@ -2598,10 +2640,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       notes: "",
                       submissionRate: gSubRate,
                       data: {
-                        companyRate: gSubRate,
+                        companyRate: gCompRate,
                         deptRanks: gDeptRanks,
-                        topPerformers: allMembers.slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
-                        redFlags: allMembers.filter(m => m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
+                        topPerformers: gMembers.filter(m => m.hasData).slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
+                        redFlags: gMembers.filter(m => m.hasData && m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
                       },
                     };
                     dispatch({ type: "PUBLISH_REPORT", report });
@@ -2820,7 +2862,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               const q = lbSearch.trim().toLowerCase();
               const periodMembers = lbPeriod === "all" ? allMembers : allMembers.map(m => {
                 const periodKrs = (memberData[m.id]?.krs || []).filter(kr => (kr.period || "monthly") === lbPeriod);
-                const rate = calcRate(periodKrs);
+                const periodSubs = okrSubmissions.filter(s => s.period === lbPeriod);
+                const rate = calcMemberRate(m.id, periodKrs, periodSubs);
                 return { ...m, rate, status: getStatus(rate) };
               }).sort((a, b) => b.rate - a.rate);
               const filtered = periodMembers.filter(m =>
@@ -3474,7 +3517,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
                             <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
-                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
+                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
                         </div>
                         {noReason?.id !== s.id && (
@@ -4218,7 +4261,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
                             <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
-                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
+                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
                         </div>
                         {noReason?.id !== s.id && (
@@ -4488,7 +4531,16 @@ function appReducer(state, action) {
         }
         return { ...kr, actual: actualToWrite };
       });
-      return { ...state, okrSubmissions: newSubs, memberData: { ...state.memberData, [sub.memberId]: { ...md, krs: updatedKrs } } };
+      const updateDeptKr = kr => {
+        if (kr.id !== sub.krId) return kr;
+        if (kr.monthlyTargets) { const mk = (sub.periodKey || "").slice(0, 7); return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: actualToWrite } }; }
+        return { ...kr, actual: actualToWrite };
+      };
+      const newDepts = state.depts.map(dept => {
+        if (dept.id !== sub.deptId) return dept;
+        return { ...dept, krs: dept.krs.map(updateDeptKr), teams: dept.teams.map(t => ({ ...t, krs: (t.krs || []).map(updateDeptKr) })) };
+      });
+      return { ...state, okrSubmissions: newSubs, memberData: { ...state.memberData, [sub.memberId]: { ...md, krs: updatedKrs } }, depts: newDepts };
     }
     case "REMOVE_OKR_SUBMISSION":
       return { ...state, okrSubmissions: (state.okrSubmissions || []).filter(s => s.id !== action.id) };
