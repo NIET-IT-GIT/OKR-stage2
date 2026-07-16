@@ -1364,7 +1364,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   ];
 
   const filtKrs = (krs) => overviewPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === overviewPeriod);
-  const deptRanks = depts.map(d => ({ ...d, rate: calcRate(filtKrs(d.krs)), status: getStatus(calcRate(filtKrs(d.krs))) })).sort((a, b) => b.rate - a.rate);
+  const answeredPairs = new Set(okrSubmissions.filter(s => s.answer !== null).map(s => `${s.memberId}:${s.krId}`));
+  const deptRanks = depts.map(d => {
+    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
+    const rates = members.map(u => {
+      const kd = memberData[u.id] || { krs: [] };
+      const eligible = filtKrs(kd.krs).filter(kr => answeredPairs.has(`${u.id}:${kr.id}`));
+      if (!eligible.length) return null;
+      return calcRate(eligible);
+    }).filter(r => r !== null);
+    const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+    return { ...d, rate, status: getStatus(rate) };
+  }).sort((a, b) => b.rate - a.rate);
   const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
   const rptMonthKey = currentFYMonthKey();
   const rptSubs = okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === rptMonthKey);
