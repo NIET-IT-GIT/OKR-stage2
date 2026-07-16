@@ -3474,7 +3474,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
                             <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
-                            <span style={{ display: "block", marginTop: 2 }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
+                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
                           </div>
                         </div>
                         {noReason?.id !== s.id && (
@@ -4218,7 +4218,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
                             <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
-                            <span style={{ display: "block", marginTop: 2 }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
+                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
                           </div>
                         </div>
                         {noReason?.id !== s.id && (
