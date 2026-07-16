@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 
-  const { to, name, period, periodKey, krs, template = {} } = req.body || {};
+  const { to, name, period, periodKey, dateRange, krs, template = {} } = req.body || {};
   if (!to || !krs?.length) { res.status(400).json({ error: "Missing required fields" }); return; }
 
   const smtpUser = process.env.SMTP_USER;
@@ -45,8 +45,8 @@ export default async function handler(req, res) {
   };
 
   const fromName  = template.fromName || "NIET Group OKR";
-  const subject   = resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-in — ${periodKey || ""}`);
-  const bodyText  = resolveTmpl("body", `Here are your ${periodLower} KPI targets for <strong>${periodKey || ""}</strong>.\nPlease log in to the portal and mark whether you have met each target.`);
+  const subject   = resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-in — ${dateRange || periodKey || ""}`);
+  const bodyText  = resolveTmpl("body", `Here are your ${periodLower} KPI targets for <strong>${dateRange || periodKey || ""}</strong>.\nPlease log in to the portal and mark whether you have met each target.`);
   const ctaText   = template.ctaText  || "Submit My Check-in →";
   const footerText = (template.footer || "You are receiving this because you have KPI targets in the NIET Group OKR system.\nPlease do not reply to this email.").replace(/\n/g, "<br/>");
 
@@ -69,6 +69,7 @@ export default async function handler(req, res) {
     <div style="padding:28px 32px">
       <p style="margin:0 0 18px;font-size:15px;color:#1d1d1f">Hi ${name || "there"},</p>
       <p style="margin:0 0 18px;font-size:14px;color:#6e6e73;line-height:1.6">${bodyText.replace(/\n/g, "<br/>")}</p>
+      ${dateRange ? `<div style="background:#f0f7ff;border-left:4px solid #0071e3;padding:10px 14px;border-radius:4px;margin:0 0 20px;font-size:13px;color:#1d1d1f"><strong>Review period:</strong> ${dateRange}</div>` : ""}
       <table style="width:100%;border-collapse:collapse;margin:0 0 24px">
         <thead>
           <tr style="background:#f5f5f7">

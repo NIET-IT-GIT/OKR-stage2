@@ -151,12 +151,20 @@ function calcRate(krs) {
   return krs.reduce((sum, kr) => sum + krCompletion(kr), 0) / krs.length;
 }
 function calcMemberRate(memberId, memberKrs, okrSubs) {
-  const answeredKrIds = new Set(
-    (okrSubs || []).filter(s => s.memberId === memberId && s.answer !== null).map(s => s.krId)
-  );
-  const eligible = (memberKrs || []).filter(kr => answeredKrIds.has(kr.id));
-  if (!eligible.length) return 0;
-  return calcRate(eligible);
+  const now = Date.now();
+  const memberSubs = (okrSubs || []).filter(s => s.memberId === memberId);
+  const scores = [];
+  for (const kr of (memberKrs || [])) {
+    const krSubs = memberSubs.filter(s => s.krId === kr.id);
+    if (!krSubs.length) continue; // no check-in sent → excluded
+    const answered = krSubs.filter(s => s.answer !== null);
+    if (answered.length) { scores.push(krCompletion(kr)); continue; } // answered → use real completion
+    const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
+    if (latest && (now - new Date(latest.sentAt).getTime()) >= 86400000) scores.push(0); // overdue → 0%
+    // else < 24h grace period → excluded
+  }
+  if (!scores.length) return 0;
+  return scores.reduce((a, b) => a + b, 0) / scores.length;
 }
 function getStatus(r) { return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
 function fmt(v) { return typeof v === "number" ? (v % 1 ? v.toFixed(1) : v.toLocaleString()) : v; }
@@ -252,6 +260,71 @@ function currentFYMonthKey() {
   const fyKeys = getFYMonths().map(m => m.key);
   // If current calendar month is outside the active FY (e.g. June transition), use first FY month
   return fyKeys.includes(key) ? key : fyKeys[0];
+}
+function prevPeriodKey(period) {
+  const now = new Date();
+  if (period === "daily") return new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+  if (period === "weekly") {
+    const weeks = getFYWeeks();
+    const m = now.getMonth() + 1, y = now.getFullYear();
+    const fy = m >= 7 ? y : y - 1;
+    const fyStart = new Date(fy, 6, 1);
+    const d = fyStart.getDay();
+    fyStart.setDate(fyStart.getDate() + (d === 0 ? 1 : d === 1 ? 0 : 8 - d));
+    const idx = Math.floor((now - fyStart) / (7 * 86400000));
+    return weeks[Math.max(0, idx - 1)];
+  }
+  if (period === "monthly") {
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (period === "quarterly") {
+    const m = now.getMonth() + 1, y = now.getFullYear();
+    const fy = m >= 7 ? y + 1 : y;
+    const q = m >= 7 && m <= 9 ? 1 : m >= 10 ? 2 : m <= 3 ? 3 : 4;
+    return q === 1 ? `FY${String(fy - 1).slice(2)} Q4` : `FY${String(fy).slice(2)} Q${q - 1}`;
+  }
+  if (period === "biannual") {
+    const m = now.getMonth() + 1, y = now.getFullYear();
+    const fy = m >= 7 ? y + 1 : y;
+    const h = m >= 7 ? 1 : 2;
+    return h === 1 ? `FY${String(fy - 1).slice(2)} H2` : `FY${String(fy).slice(2)} H1`;
+  }
+  if (period === "annual") return String(now.getFullYear() - 1);
+  return currentPeriodKey(period);
+}
+function periodDateRange(period, periodKey) {
+  if (!periodKey) return "";
+  const fmt = d => d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  if (period === "daily") return fmt(new Date(periodKey + "T00:00:00"));
+  if (period === "weekly") {
+    const wm = periodKey.match(/Wk\s*(\d+)/); if (!wm) return periodKey;
+    const wk = parseInt(wm[1]);
+    const now2 = new Date(), mo = now2.getMonth() + 1, yr = now2.getFullYear();
+    const fy = mo >= 7 ? yr : yr - 1;
+    const fyS = new Date(fy, 6, 1); const dw = fyS.getDay();
+    fyS.setDate(fyS.getDate() + (dw === 0 ? 1 : dw === 1 ? 0 : 8 - dw));
+    const mon = new Date(fyS); mon.setDate(fyS.getDate() + (wk - 1) * 7);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return `${fmt(mon)} – ${fmt(sun)}`;
+  }
+  if (period === "monthly") {
+    const [y, mo] = periodKey.split("-").map(Number);
+    return `${fmt(new Date(y, mo - 1, 1))} – ${fmt(new Date(y, mo, 0))}`;
+  }
+  if (period === "quarterly") {
+    const r = periodKey.match(/FY(\d+)\s*Q(\d)/); if (!r) return periodKey;
+    const fy = 2000 + +r[1], q = +r[2];
+    const ranges = [[new Date(fy-1,6,1),new Date(fy-1,8,30)],[new Date(fy-1,9,1),new Date(fy-1,11,31)],[new Date(fy,0,1),new Date(fy,2,31)],[new Date(fy,3,1),new Date(fy,5,30)]];
+    return `${fmt(ranges[q-1][0])} – ${fmt(ranges[q-1][1])}`;
+  }
+  if (period === "biannual") {
+    const r = periodKey.match(/FY(\d+)\s*H(\d)/); if (!r) return periodKey;
+    const fy = 2000 + +r[1], h = +r[2];
+    return h === 1 ? `${fmt(new Date(fy-1,6,1))} – ${fmt(new Date(fy-1,11,31))}` : `${fmt(new Date(fy,0,1))} – ${fmt(new Date(fy,5,30))}`;
+  }
+  if (period === "annual") { const y = +periodKey; return `${fmt(new Date(y,0,1))} – ${fmt(new Date(y,11,31))}`; }
+  return periodKey;
 }
 function makeAv(name) {
   return (name || "?").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -1364,14 +1437,22 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   ];
 
   const filtKrs = (krs) => overviewPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === overviewPeriod);
-  const answeredPairs = new Set(okrSubmissions.filter(s => s.answer !== null).map(s => `${s.memberId}:${s.krId}`));
   const deptRanks = depts.map(d => {
     const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
+    const now = Date.now();
     const rates = members.map(u => {
       const kd = memberData[u.id] || { krs: [] };
-      const eligible = filtKrs(kd.krs).filter(kr => answeredPairs.has(`${u.id}:${kr.id}`));
-      if (!eligible.length) return null;
-      return calcRate(eligible);
+      const krs = filtKrs(kd.krs);
+      // Include member only if they have at least one answered or overdue-unanswered submission
+      const hasEligible = krs.some(kr => {
+        const krSubs = okrSubmissions.filter(s => s.memberId === u.id && s.krId === kr.id);
+        if (!krSubs.length) return false;
+        if (krSubs.some(s => s.answer !== null)) return true;
+        const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
+        return latest && (now - new Date(latest.sentAt).getTime()) >= 86400000;
+      });
+      if (!hasEligible) return null;
+      return calcMemberRate(u.id, krs, okrSubmissions);
     }).filter(r => r !== null);
     const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
     return { ...d, rate, status: getStatus(rate) };
@@ -1480,7 +1561,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
   async function sendCheckin(period, targetUserId = "") {
     setSendingCheckin(true);
-    const periodKey = currentPeriodKey(period);
+    const periodKey = prevPeriodKey(period);
+    const dateRange = periodDateRange(period, periodKey);
     const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
     const newSubs = [];
     let ctr = Date.now();
@@ -1496,14 +1578,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
       if (!krList.length) continue;
       const freshKrs = krList.filter(kr => !existing.has(`${u.id}:${kr.id}`));
-      const monthKey = currentFYMonthKey();
+      const monthKey = period === "monthly" ? periodKey : currentFYMonthKey();
       const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
-      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", period, periodKey, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
+      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
       if (freshKrs.length && u.email) {
         const emailTemplates = settings?.emailTemplates || {};
         const template = { ...emailTemplates.default, ...(emailTemplates[period] || {}) };
         const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr) }));
-        fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, krs: krsForEmail, template }) }).catch(console.error);
+        fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, dateRange, krs: krsForEmail, template }) }).catch(console.error);
       }
     }
     if (newSubs.length) dispatch({ type: "CREATE_OKR_SUBMISSIONS", submissions: newSubs });
@@ -3364,7 +3446,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)}
+                            <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            <span style={{ display: "block", marginTop: 2 }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
                           </div>
                         </div>
                         {noReason?.id !== s.id && (
@@ -4107,7 +4190,8 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""} · {periodDisplayLabel(s.period, s.periodKey)}
+                            <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            <span style={{ display: "block", marginTop: 2 }}>Review period: {s.dateRange || periodDateRange(s.period, s.periodKey)}</span>
                           </div>
                         </div>
                         {noReason?.id !== s.id && (
