@@ -1344,7 +1344,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [editReportId, setEditReportId] = useState(null);
   const [editReportForm, setEditReportForm] = useState({ month: "", notes: "" });
   const [reportPeriodView, setReportPeriodView] = useState("all");
-  const [reportSubTab, setReportSubTab] = useState("monthly");
   const [lbSearch, setLbSearch] = useState("");
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
   const [lbPeriod, setLbPeriod] = useState("all");
@@ -1550,7 +1549,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       if (!dept) continue;
       const krList = [];
       dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
-      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
+      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
       (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
       if (!krList.length) continue;
       const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
@@ -1576,7 +1575,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       if (!dept) continue;
       const krList = [];
       dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
-      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
+      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
       (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
       if (!krList.length) continue;
       const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
@@ -2470,7 +2469,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "leaderboard" && (<>
-          <Header title="Company Leaderboard" sub="All staff ranked by OKR completion · FY26 Q1" />
+          <Header title="Company Leaderboard" sub={`All staff ranked by OKR completion · ${currentFYQuarter()}`} />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="Total"    value={allMembers.length} />
@@ -2820,14 +2819,11 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [newProj, setNewProj] = useState({ name: "", due: "" });
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
-  const [kpiPeriod, setKpiPeriod] = useState("all");
-  const [mgrNewOut, setMgrNewOut] = useState({ week: currentFYWeek(), items: "" });
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
   const [mgrDirtySync, setMgrDirtySync] = useState(null);
-  const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [mgrSelTeam, setMgrSelTeam] = useState(null);
   const [okrPeriod, setOkrPeriod] = useState("all");
@@ -3515,7 +3511,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   }, []);
   const [myKpiPeriod, setMyKpiPeriod] = useState("all");
   const [okrPeriod, setOkrPeriod] = useState("all");
-  const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [noReason, setNoReason] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
@@ -3545,7 +3540,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "mykpis" && (<>
-          <Header title="My OKRs" sub={`${user.title} · FY26 Q1`} right={<Tag type={st} />} />
+          <Header title="My OKRs" sub={`${user.title} · ${currentFYQuarter()}`} right={<Tag type={st} />} />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="My Completion"  value={`${rate.toFixed(1)}%`} status={st} sub={`Time: ${TP}%`} />
@@ -4313,8 +4308,15 @@ function appReducer(state, action) {
       return { ...state, users: state.users.map(u => u.id === uid ? updated : u), depts: newDepts, memberData: newMemberData };
     }
 
-    case "REMOVE_USER":
-      return { ...state, users: state.users.filter(u => u.id !== action.userId) };
+    case "REMOVE_USER": {
+      const { [action.userId]: _removed, ...remainingMemberData } = state.memberData;
+      return {
+        ...state,
+        users: state.users.filter(u => u.id !== action.userId),
+        memberData: remainingMemberData,
+        okrSubmissions: (state.okrSubmissions || []).filter(s => s.memberId !== action.userId),
+      };
+    }
 
     case "SET_SETTINGS":
       return { ...state, settings: { ...state.settings, ...action.updates } };
