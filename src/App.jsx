@@ -4361,8 +4361,50 @@ function appReducer(state, action) {
       });
       return { ...state, okrSubmissions: newSubs, memberData: newMemberData, depts: newDepts };
     }
-    case "REMOVE_OKR_SUBMISSION":
-      return { ...state, okrSubmissions: (state.okrSubmissions || []).filter(s => s.id !== action.id) };
+    case "REMOVE_OKR_SUBMISSION": {
+      const sub = (state.okrSubmissions || []).find(s => s.id === action.id);
+      const remaining = (state.okrSubmissions || []).filter(s => s.id !== action.id);
+      if (!sub || sub.approval !== "approved") return { ...state, okrSubmissions: remaining };
+      const isMonthly = !!(state.memberData[sub.memberId]?.krs?.find(k => k.id === sub.krId)?.monthlyTargets);
+      const mk = (sub.periodKey || "").slice(0, 7);
+      // Revert member's personal KR to last remaining approved value, or 0
+      const memberOtherApproved = remaining.filter(s => s.memberId === sub.memberId && s.krId === sub.krId && s.approval === "approved");
+      const memberNewActual = memberOtherApproved.length > 0
+        ? (memberOtherApproved[memberOtherApproved.length - 1].actualValue ?? memberOtherApproved[memberOtherApproved.length - 1].krTarget ?? 0)
+        : 0;
+      const md = state.memberData[sub.memberId];
+      let newMemberData = state.memberData;
+      if (md) {
+        const updatedMemberKrs = (md.krs || []).map(kr => {
+          if (kr.id !== sub.krId) return kr;
+          if (kr.monthlyTargets) return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: memberNewActual } };
+          return { ...kr, actual: memberNewActual };
+        });
+        newMemberData = { ...state.memberData, [sub.memberId]: { ...md, krs: updatedMemberKrs } };
+      }
+      // Recalculate team/dept KR from remaining approved submissions across all members
+      const approvedMemberIds = [...new Set(remaining.filter(s =>
+        s.krId === sub.krId && s.approval === "approved" && s.periodKey === sub.periodKey && s.deptId === sub.deptId
+      ).map(s => s.memberId))];
+      const teamVals = approvedMemberIds.map(mId => {
+        const kr = (newMemberData[mId]?.krs || []).find(k => k.id === sub.krId);
+        if (!kr) return null;
+        return isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : (kr.actual ?? null);
+      }).filter(v => v !== null);
+      const newTeamActual = teamVals.length > 0
+        ? Math.round(teamVals.reduce((a, b) => a + b, 0) / teamVals.length * 100) / 100
+        : 0;
+      const updateDeptKr = kr => {
+        if (kr.id !== sub.krId) return kr;
+        if (kr.monthlyTargets) return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: newTeamActual } };
+        return { ...kr, actual: newTeamActual };
+      };
+      const newDepts = state.depts.map(dept => {
+        if (dept.id !== sub.deptId) return dept;
+        return { ...dept, krs: dept.krs.map(updateDeptKr), teams: dept.teams.map(t => ({ ...t, krs: (t.krs || []).map(updateDeptKr) })) };
+      });
+      return { ...state, okrSubmissions: remaining, memberData: newMemberData, depts: newDepts };
+    }
     case "ADD_MGR_SPRINT":    return { ...state, mgrSprints: [action.sprint, ...state.mgrSprints] };
     case "REMOVE_MGR_SPRINT": return { ...state, mgrSprints: state.mgrSprints.filter(s => s.id !== action.sprintId) };
     case "ADD_PROJECT":     return { ...state, projects: [...state.projects, action.project] };
