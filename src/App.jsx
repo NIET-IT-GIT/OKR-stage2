@@ -2998,7 +2998,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
             const byPeriod = okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
             return byPeriod.filter(kr => kr.type !== "tracker" || kr.showInOverview !== false);
           };
-          const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, currentPeriodKey(okrPeriod));
+          const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod));
           const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
           const renderRows = (krs, deptId, teamId) => krs.map((kr, i) => {
@@ -3857,7 +3857,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             const byPeriod = okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
             return byPeriod.filter(kr => kr.type !== "tracker" || kr.showInOverview !== false);
           };
-          const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, currentPeriodKey(okrPeriod));
+          const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod));
           const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
           const renderKrRows = (krs) => krs.map((kr, i) => {
