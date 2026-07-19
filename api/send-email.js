@@ -45,9 +45,9 @@ export default async function handler(req, res) {
   };
 
   const fromName  = template.fromName || "NIET Group OKRs";
-  const subject   = resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-in — ${dateRange || periodKey || ""}`);
+  const subject   = resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-In — ${dateRange || periodKey || ""}`);
   const bodyText  = resolveTmpl("body", `Here are your ${periodLower} KPI targets for <strong>${dateRange || periodKey || ""}</strong>.\nPlease log in to the portal and mark whether you have met each target.`);
-  const ctaText   = template.ctaText  || "Submit My Check-in →";
+  const ctaText   = template.ctaText  || "Submit My Check-In →";
   const footerText = (template.footer || "You are receiving this because you have KPI targets in the NIET Group OKRs system.\nPlease do not reply to this email.").replace(/\n/g, "<br/>");
 
   const krRows = krs.map(kr => `
@@ -64,7 +64,7 @@ export default async function handler(req, res) {
   <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
     <div style="background-color:#0071e3;background:linear-gradient(135deg,#0071e3,#6b47dc);padding:28px 32px">
       <div style="color:#fff;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.8;margin-bottom:6px">NIET Group OKRs System</div>
-      <div style="color:#fff;font-size:22px;font-weight:700">${periodLabel} KPI Check-in</div>
+      <div style="color:#fff;font-size:22px;font-weight:700">${periodLabel} KPI Check-In</div>
     </div>
     <div style="padding:28px 32px">
       <p style="margin:0 0 18px;font-size:15px;color:#1d1d1f">Hi ${name || "there"},</p>

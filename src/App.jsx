@@ -1703,7 +1703,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div style={{ background: T.surface, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "100%", maxWidth: 580, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontWeight: 800, fontSize: 17 }}>Confirm: Send {checkinPreview.period.charAt(0).toUpperCase() + checkinPreview.period.slice(1)} Check-in</div>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>Confirm: Send {checkinPreview.period.charAt(0).toUpperCase() + checkinPreview.period.slice(1)} Check-In</div>
               <div style={{ fontSize: 12, color: T.textDim, marginTop: 5 }}>
                 <span>Period: <strong style={{ color: T.text }}>{checkinPreview.dateRange || checkinPreview.periodKey}</strong></span>
                 <span style={{ margin: "0 6px", color: T.border }}>·</span>
@@ -2360,7 +2360,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             return true;
           }).sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
           return (<>
-            <Header title="OKR Check-in Submissions" sub="Staff respond to emailed yes/no KPI check-ins — managers approve in their portal"
+            <Header title="OKR Check-In Submissions" sub="Staff respond to emailed yes/no KPI check-ins — managers approve in their portal"
               right={totalPending > 0 ? <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }}>{totalPending} awaiting approval</div> : null} />
             <Pane>
               {/* Period tabs */}
@@ -2422,7 +2422,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     );
                   })()}
                   <Btn primary onClick={() => previewCheckin(subPeriod, checkinScope)} disabled={sendingCheckin}>
-                    {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-in`}
+                    {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-In`}
                   </Btn>
                 </div>
               </div>
@@ -2473,7 +2473,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   </div>
                 ) : null;
               })()}
-              {filtered.length === 0 && <EmptyState text={periodSubs.length === 0 ? `No ${subPeriod} check-ins sent yet. Click "Send ${subPeriod.charAt(0).toUpperCase()+subPeriod.slice(1)} Check-in" to generate and email them.` : "No submissions match your filter."} />}
+              {filtered.length === 0 && <EmptyState text={periodSubs.length === 0 ? `No ${subPeriod} check-ins sent yet. Click "Send ${subPeriod.charAt(0).toUpperCase()+subPeriod.slice(1)} Check-In" to generate and email them.` : "No submissions match your filter."} />}
               {filtered.map(s => {
                 const mem = users.find(u => u.id === s.memberId);
                 const dept = depts.find(d => d.id === s.deptId);
@@ -2962,9 +2962,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", biannual: "Bi-Annual", annual: "Annual", default: "Default" };
           const DEFAULT_TMPL = {
             fromName: "NIET Group OKRs",
-            subject:  "Action Required: {periodLabel} KPI Check-in — {periodKey}",
+            subject:  "Action Required: {periodLabel} KPI Check-In — {periodKey}",
             body:     "Here are your {periodLower} KPI targets for <strong>{periodKey}</strong>.\nPlease log in to the portal and mark whether you have met each target.",
-            ctaText:  "Submit My Check-in →",
+            ctaText:  "Submit My Check-In →",
             footer:   "You are receiving this because you have KPI targets in the NIET Group OKRs system.\nPlease do not reply to this email.",
           };
           const saved = settings?.emailTemplates || {};
@@ -3030,7 +3030,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       <div style={{ maxWidth: 440, margin: "0 auto", background: "#fff", borderRadius: 10, overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.1)", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", fontSize: 14 }}>
                         <div style={{ background: "linear-gradient(135deg,#0071e3,#6b47dc)", padding: "20px 24px" }}>
                           <div style={{ color: "#fff", fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.8, marginBottom: 4 }}>NIET Group OKRs System</div>
-                          <div style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>{previewPeriodLabel} KPI Check-in</div>
+                          <div style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>{previewPeriodLabel} KPI Check-In</div>
                         </div>
                         <div style={{ padding: "20px 24px" }}>
                           <p style={{ margin: "0 0 14px", fontSize: 14, color: "#1d1d1f" }}>Hi <strong>John Smith</strong>,</p>
@@ -3219,7 +3219,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const navItems = [
     { id: "dashboard",    icon: "⧉", label: "Team Dashboard"       },
     { id: "okr-overview", icon: "◎", label: "OKR Overview"         },
-    { id: "checkin",      icon: "✓", label: "OKR Check-in"         },
+    { id: "checkin",      icon: "✓", label: "OKR Check-In"         },
     { id: "approvals",    icon: "✓", label: "Approve Submissions"   },
     { id: "projects",     icon: "⚡", label: "Projects"             },
     { id: "members",      icon: "✎", label: "Edit Member KPIs"     },
@@ -3483,7 +3483,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           const currentMonthKey = currentFYMonthKey();
           const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
           return (<>
-            <Header title="OKR Check-in" sub="Answer your KPI check-ins sent by the system"
+            <Header title="OKR Check-In" sub="Answer your KPI check-ins sent by the system"
               right={subRate !== null ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></div> : null} />
             <Pane>
               {myPendingCheckins.length > 0 && (
@@ -3496,7 +3496,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 <div key={period} style={{ marginBottom: 28 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
                     <div style={{ width: 4, height: 18, background: PERIOD_COLORS[period], borderRadius: 2 }} />
-                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-ins</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-Ins</span>
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
                   {pending.map(s => (
@@ -3585,11 +3585,11 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           return (<>
             <Header title="Approve Member Submissions" sub={`${totalPending} pending review`} />
             <Pane>
-              {/* OKR Check-in submissions */}
+              {/* OKR Check-In submissions */}
               {myOkrSubsForApproval.length > 0 && (
                 <div style={{ marginBottom: 28 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                    OKR Check-ins
+                    OKR Check-Ins
                     {pendingOkrSubs.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pendingOkrSubs.length} pending</span>}
                   </div>
                   {myOkrSubsForApproval.filter(s => s.answer !== null).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||(b.answeredAt||"").localeCompare(a.answeredAt||""); }).map(s => {
@@ -3885,7 +3885,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
   const navItems = [
     { id: "mykpis",       icon: "◎", label: "My OKRs"          },
-    { id: "checkin",      icon: "✓", label: "OKR Check-in"     },
+    { id: "checkin",      icon: "✓", label: "OKR Check-In"     },
     { id: "okr-overview", icon: "⬛", label: "OKR Overview"     },
     { id: "history",      icon: "⊞", label: "My History"        },
     { id: "reports",      icon: "⊠", label: "OKR Reports"      },
@@ -3902,7 +3902,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="My Completion"  value={`${rate.toFixed(1)}%`} status={st} sub={`Time: ${TP}%`} />
               <Metric label="KRs Tracked"    value={kd.krs.length} />
-              <Metric label="Check-ins" value={myPendingCheckins.length === 0 ? "All Done" : `${myPendingCheckins.length} Pending`} status={myPendingCheckins.length === 0 ? "green" : "yellow"} />
+              <Metric label="Check-Ins" value={myPendingCheckins.length === 0 ? "All Done" : `${myPendingCheckins.length} Pending`} status={myPendingCheckins.length === 0 ? "green" : "yellow"} />
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -4063,7 +4063,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                     return (
                       <div style={{ marginTop: 14, borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
                         <button onClick={() => setExpandedKrHistory(p => p === kr.id ? null : kr.id)} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 7, padding: "4px 12px", cursor: "pointer", color: T.textDim, fontSize: 12, fontWeight: 600, fontFamily: F.body }}>
-                          {isOpen ? "▲ Hide Check-in History" : `▼ Check-in History (${hist.length})`}
+                          {isOpen ? "▲ Hide Check-In History" : `▼ Check-In History (${hist.length})`}
                         </button>
                         {isOpen && (
                           <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
@@ -4257,7 +4257,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           const currentMonthKey = currentFYMonthKey();
           const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
           return (<>
-            <Header title="OKR Check-in" sub="Answer your KPI check-ins sent by the system"
+            <Header title="OKR Check-In" sub="Answer your KPI check-ins sent by the system"
               right={subRate !== null ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></div> : null} />
             <Pane>
               {myPendingCheckins.length > 0 && (
@@ -4270,7 +4270,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 <div key={period} style={{ marginBottom: 28 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
                     <div style={{ width: 4, height: 18, background: PERIOD_COLORS[period], borderRadius: 2 }} />
-                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-ins</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-Ins</span>
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
                   {pending.map(s => (
@@ -4355,7 +4355,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
         })()}
 
         {page === "history" && (<>
-          <Header title="My OKR Check-in History" sub="All check-in submissions and their approval status" />
+          <Header title="My OKR Check-In History" sub="All check-in submissions and their approval status" />
           <Pane>
             {(() => {
               const periods = [...new Set(myOkrSubs.map(s => s.period))].filter(Boolean);

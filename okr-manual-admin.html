@@ -105,7 +105,7 @@ code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; backgrou
     <li>Overview</li>
     <li>User Management</li>
     <li>Company Overview Dashboard</li>
-    <li>Sending Check-in Emails</li>
+    <li>Sending Check-In Emails</li>
     <li>Departments &amp; KR Configuration</li>
     <li>Leaderboard</li>
     <li>OKR Period Types</li>
@@ -128,7 +128,7 @@ code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; backgrou
         <tr><td><strong>Departments</strong></td><td>Configure department KRs, teams, and individual member KR assignments</td></tr>
         <tr><td><strong>Leaderboard</strong></td><td>Rank all staff by completion rate, filterable by period type and department</td></tr>
         <tr><td><strong>Users</strong></td><td>Create, edit, and manage all portal accounts</td></tr>
-        <tr><td><strong>Send Check-ins</strong></td><td>Dispatch check-in emails to staff for a chosen period type</td></tr>
+        <tr><td><strong>Send Check-Ins</strong></td><td>Dispatch check-in emails to staff for a chosen period type</td></tr>
         <tr><td><strong>Reports</strong></td><td>Publish and manage company-wide OKR snapshot reports</td></tr>
         <tr><td><strong>Email Templates</strong></td><td>Customise the check-in email content per period type</td></tr>
       </tbody>
@@ -162,9 +162,9 @@ code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; backgrou
     <table>
       <thead><tr><th>View</th><th>KR types included</th><th>Which check-ins count</th></tr></thead>
       <tbody>
-        <tr><td><strong>Weekly Overview</strong></td><td>Daily + Weekly</td><td>Check-ins sent in the current calendar week (Mon–Sun)</td></tr>
-        <tr><td><strong>Monthly Overview</strong></td><td>Daily + Weekly + Monthly</td><td>Check-ins sent in the current calendar month</td></tr>
-        <tr><td><strong>Annual Overview</strong></td><td>All period types</td><td>Check-ins sent in the current financial year (Jul–Jun)</td></tr>
+        <tr><td><strong>Weekly Overview</strong></td><td>Daily + Weekly</td><td>Check-Ins sent in the current calendar week (Mon–Sun)</td></tr>
+        <tr><td><strong>Monthly Overview</strong></td><td>Daily + Weekly + Monthly</td><td>Check-Ins sent in the current calendar month</td></tr>
+        <tr><td><strong>Annual Overview</strong></td><td>All period types</td><td>Check-Ins sent in the current financial year (Jul–Jun)</td></tr>
       </tbody>
     </table>
     <h4>How department completion rates are calculated</h4>
@@ -206,7 +206,7 @@ code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; backgrou
     <h3>OKR Period Types</h3>
     <p>Every KR has a period type that controls how frequently check-ins are sent, what date range each check-in covers, and how the period is labelled in emails and cards.</p>
     <table>
-      <thead><tr><th>Period</th><th>Check-in covers</th><th>Label format</th><th>Example</th></tr></thead>
+      <thead><tr><th>Period</th><th>Check-In covers</th><th>Label format</th><th>Example</th></tr></thead>
       <tbody>
         <tr><td><strong>Daily</strong></td><td>Yesterday</td><td>YYYY-MM-DD</td><td>2026-07-16</td></tr>
         <tr><td><strong>Weekly</strong></td><td>Previous Mon–Sun</td><td>Wk N · D Mon – D Mon</td><td>Wk 1 · 7 Jul–13 Jul</td></tr>
@@ -245,12 +245,12 @@ code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; backgrou
 
   <div class="section">
     <div class="section-eyebrow">Operations</div>
-    <h3>Sending Check-in Emails</h3>
+    <h3>Sending Check-In Emails</h3>
     <p>Sending a check-in is what triggers the entire submission-and-approval workflow. It creates submission records for all eligible staff and dispatches personalised emails to each of them.</p>
     <ol class="steps">
       <li><div class="step-num">1</div><div class="step-body"><strong>Select the period type</strong><span>Choose Daily, Weekly, Monthly, Quarterly, Bi-Annual, or Annual. Only staff who have KRs of that type will receive check-ins.</span></div></li>
       <li><div class="step-num">2</div><div class="step-body"><strong>Optionally select a specific user</strong><span>Leave blank to send to all eligible staff. Select a user for a targeted re-send to one individual.</span></div></li>
-      <li><div class="step-num">3</div><div class="step-body"><strong>Click Send Check-in</strong><span>Emails are dispatched and submission records are created. A confirmation banner shows how many submissions were created.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Click Send Check-In</strong><span>Emails are dispatched and submission records are created. A confirmation banner shows how many submissions were created.</span></div></li>
     </ol>
     <div class="callout info">
       <span class="callout-icon">ℹ</span>
@@ -258,7 +258,7 @@ code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; backgrou
     </div>
     <div class="callout warn">
       <span class="callout-icon">⚠</span>
-      <div class="callout-body"><strong>Check-ins always cover the previous period</strong>A weekly check-in sent today asks staff to review last week, not the current week. Both the email and the submission card show the exact date range so staff know which period they are reporting on.</div>
+      <div class="callout-body"><strong>Check-Ins always cover the previous period</strong>A weekly check-in sent today asks staff to review last week, not the current week. Both the email and the submission card show the exact date range so staff know which period they are reporting on.</div>
     </div>
     <h4>The 24-hour rule</h4>
     <p>If a staff member does not respond within 24 hours of a check-in being sent, that KR is automatically counted as 0% in all rate calculations — including their individual rate, their department's rate, and the Company Overview. The rate corrects itself as soon as the member responds and their manager approves.</p>
@@ -335,7 +335,7 @@ code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; backgrou
       <div class="field-card"><div class="fc-label">From Name</div><div class="fc-desc">Sender display name shown in the recipient's email client (default: "NIET Group OKR")</div></div>
       <div class="field-card"><div class="fc-label">Subject</div><div class="fc-desc">Email subject line. Use placeholders to include the period dynamically.</div></div>
       <div class="field-card"><div class="fc-label">Body</div><div class="fc-desc">Opening paragraph shown above the KR table in the email.</div></div>
-      <div class="field-card"><div class="fc-label">CTA Text</div><div class="fc-desc">Label on the submit button in the email, e.g. "Submit My Check-in →"</div></div>
+      <div class="field-card"><div class="fc-label">CTA Text</div><div class="fc-desc">Label on the submit button in the email, e.g. "Submit My Check-In →"</div></div>
       <div class="field-card"><div class="fc-label">Footer</div><div class="fc-desc">Small-print text at the bottom of the email.</div></div>
     </div>
     <div class="callout tip">
