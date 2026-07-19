@@ -4036,6 +4036,8 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [noReason, setNoReason] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
+  const [expandedKrHistory, setExpandedKrHistory] = useState(null);
+  const [histPeriod, setHistPeriod] = useState("all");
 
   const { memberData, weeklySubs, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -4222,6 +4224,36 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                       </div>
                     </div>
                   )}
+                  {(() => {
+                    const hist = myOkrSubs.filter(s => s.krId === kr.id).sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
+                    if (!hist.length) return null;
+                    const isOpen = expandedKrHistory === kr.id;
+                    return (
+                      <div style={{ marginTop: 14, borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
+                        <button onClick={() => setExpandedKrHistory(p => p === kr.id ? null : kr.id)} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 7, padding: "4px 12px", cursor: "pointer", color: T.textDim, fontSize: 12, fontWeight: 600, fontFamily: F.body }}>
+                          {isOpen ? "▲ Hide Check-in History" : `▼ Check-in History (${hist.length})`}
+                        </button>
+                        {isOpen && (
+                          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+                            {hist.map(s => {
+                              const leftCol = s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : s.answer !== null ? T.warn : T.border;
+                              const ansCol = s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === "submitted" ? "#7c3aed" : T.textDim;
+                              const ansLabel = s.answer === "yes" ? "✓ Yes" : s.answer === "no" ? "✗ No" : s.answer === "submitted" ? "Recorded" : "Not answered";
+                              return (
+                                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", borderRadius: 7, background: T.raised, borderLeft: `3px solid ${leftCol}`, fontSize: 13, flexWrap: "wrap" }}>
+                                  <span style={{ fontWeight: 600, flex: 1, minWidth: 120 }}>{s.dateRange || s.periodKey}</span>
+                                  <span style={{ fontSize: 11, color: T.textMuted }}>{s.period}</span>
+                                  <span style={{ fontWeight: 700, color: ansCol, minWidth: 90, textAlign: "right" }}>{ansLabel}</span>
+                                  {(s.answer === "no" || s.answer === "submitted") && s.actualValue != null && <span style={{ fontFamily: F.mono, fontSize: 12, color: s.answer === "submitted" ? "#7c3aed" : T.textMuted }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                  <Tag type={s.approval} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </Card>
               );
             })}
@@ -4499,19 +4531,67 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
         </>)}
 
         {page === "history" && (<>
-          <Header title="My Submission History" sub="All weekly submissions and their approval status" />
+          <Header title="My OKR Check-in History" sub="All check-in submissions and their approval status" />
           <Pane>
-            {mySubs.length === 0 && <EmptyState text="No submissions yet — go to Weekly Submission to log your first one." />}
-            {mySubs.map(s => (
-              <Card key={s.id} style={{ padding: "16px 20px", borderLeft: `3px solid ${APPROVAL[s.approval].color}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700 }}>{s.week}</span>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: 12, color: T.textMuted }}>{s.date}</span><Tag type={s.approval} label={APPROVAL[s.approval].label} small /></div>
-                </div>
-                <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6 }}>{s.items}</p>
-                {s.mgrNote && <div style={{ marginTop: 8, padding: "8px 12px", background: T.raised, borderRadius: 6, fontSize: 13, color: T.textMuted }}><strong style={{ color: T.textSoft }}>Manager Note:</strong> {s.mgrNote}</div>}
-              </Card>
-            ))}
+            {(() => {
+              const periods = [...new Set(myOkrSubs.map(s => s.period))].filter(Boolean);
+              const filtered = (histPeriod === "all" ? myOkrSubs : myOkrSubs.filter(s => s.period === histPeriod))
+                .slice().sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
+              return (<>
+                {periods.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+                    {["all", ...periods].map(p => (
+                      <button key={p} onClick={() => setHistPeriod(p)} style={{ padding: "4px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", background: histPeriod === p ? T.brand : T.raised, color: histPeriod === p ? "#fff" : T.textDim, border: `1px solid ${histPeriod === p ? T.brand : T.border}` }}>
+                        {p === "all" ? "All Periods" : p.charAt(0).toUpperCase() + p.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {filtered.length === 0 && <EmptyState text="No check-in submissions yet." />}
+                {filtered.map(s => {
+                  const leftCol = s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : s.answer !== null ? T.warn : T.border;
+                  const ansCol = s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === "submitted" ? "#7c3aed" : T.textDim;
+                  const ansLabel = s.answer === "yes" ? "✓ Met target" : s.answer === "no" ? "✗ Missed target" : s.answer === "submitted" ? "Recorded" : "Not answered yet";
+                  return (
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${leftCol}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{s.krLabel}</div>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px", fontWeight: 700 }}>{s.period}</span>
+                            <span style={{ fontSize: 12, color: T.textMuted }}>{s.dateRange || s.periodKey}</span>
+                            {s.krType === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Tracker</span>}
+                          </div>
+                          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: ansCol }}>{ansLabel}</div>
+                          {s.answer === "no" && s.actualValue != null && (
+                            <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
+                              Actual: <span style={{ fontFamily: F.mono, fontWeight: 700, color: T.bad }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                              <span style={{ margin: "0 6px" }}>·</span>
+                              Target: <span style={{ fontFamily: F.mono }}>{s.krTarget != null ? s.krTarget : "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            </div>
+                          )}
+                          {s.answer === "yes" && s.krTarget != null && (
+                            <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
+                              Target: <span style={{ fontFamily: F.mono }}>{s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            </div>
+                          )}
+                          {s.answer === "submitted" && s.actualValue != null && (
+                            <div style={{ fontSize: 12, color: "#7c3aed", marginTop: 3 }}>
+                              Recorded: <span style={{ fontFamily: F.mono, fontWeight: 700 }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+                          <Tag type={s.approval} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                          <span style={{ fontSize: 11, color: T.textDim }}>Sent {s.sentAt?.slice(0, 10) || "—"}</span>
+                          {s.answeredAt && <span style={{ fontSize: 11, color: T.textDim }}>Answered {s.answeredAt.slice(0, 10)}</span>}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </>);
+            })()}
           </Pane>
         </>)}
 
