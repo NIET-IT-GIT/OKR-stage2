@@ -557,7 +557,7 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
           <div style={{ width: 40, height: 40, borderRadius: 8, background: `linear-gradient(145deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", boxShadow: "0 2px 8px rgba(0,113,227,0.28)" }}>NIET</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>NIET Group OKR's</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>NIET Group OKRs</div>
             <div style={{ fontSize: 11, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase" }}>NIET GROUP</div>
           </div>
         </div>
@@ -701,7 +701,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
           <div style={{ width: 60, height: 60, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: "#fff" }}>NIET</div>
           <div>
-            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>NIET Group OKR's</div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>NIET Group OKRs</div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", letterSpacing: "0.14em" }}>NIET · CHARLTON BROWN · RHODES · EDUCARE</div>
           </div>
         </div>
@@ -2961,11 +2961,11 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           ];
           const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", biannual: "Bi-Annual", annual: "Annual", default: "Default" };
           const DEFAULT_TMPL = {
-            fromName: "NIET Group OKR",
+            fromName: "NIET Group OKRs",
             subject:  "Action Required: {periodLabel} KPI Check-in — {periodKey}",
             body:     "Here are your {periodLower} KPI targets for <strong>{periodKey}</strong>.\nPlease log in to the portal and mark whether you have met each target.",
             ctaText:  "Submit My Check-in →",
-            footer:   "You are receiving this because you have KPI targets in the NIET Group OKR system.\nPlease do not reply to this email.",
+            footer:   "You are receiving this because you have KPI targets in the NIET Group OKRs system.\nPlease do not reply to this email.",
           };
           const saved = settings?.emailTemplates || {};
           const effective = { ...DEFAULT_TMPL, ...(saved.default || {}), ...(tmplPeriod !== "default" ? (saved[tmplPeriod] || {}) : {}) };
@@ -3012,7 +3012,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "start" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, color: T.text }}>Template Fields</div>
-                  <Field label="Sender Name" value={localDraft.fromName} onChange={v => setField("fromName", v)} hint='Displayed in the From field, e.g. "NIET Group OKR"' />
+                  <Field label="Sender Name" value={localDraft.fromName} onChange={v => setField("fromName", v)} hint='Displayed in the From field, e.g. "NIET Group OKRs"' />
                   <Field label="Subject Line" value={localDraft.subject} onChange={v => setField("subject", v)} hint="Placeholders: {periodLabel} · {periodKey}" />
                   <Field label="Email Body" value={localDraft.body} onChange={v => setField("body", v)} hint="HTML tags OK. Placeholders: {periodLower} · {periodLabel} · {periodKey}" multiline />
                   <Field label="CTA Button Text" value={localDraft.ctaText} onChange={v => setField("ctaText", v)} />
@@ -3029,7 +3029,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                     <div style={{ padding: 12, background: "#f0f0f5", maxHeight: 520, overflowY: "auto" }}>
                       <div style={{ maxWidth: 440, margin: "0 auto", background: "#fff", borderRadius: 10, overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.1)", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", fontSize: 14 }}>
                         <div style={{ background: "linear-gradient(135deg,#0071e3,#6b47dc)", padding: "20px 24px" }}>
-                          <div style={{ color: "#fff", fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.8, marginBottom: 4 }}>NIET Group OKR System</div>
+                          <div style={{ color: "#fff", fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.8, marginBottom: 4 }}>NIET Group OKRs System</div>
                           <div style={{ color: "#fff", fontSize: 17, fontWeight: 700 }}>{previewPeriodLabel} KPI Check-in</div>
                         </div>
                         <div style={{ padding: "20px 24px" }}>
