@@ -1434,12 +1434,15 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [tmplPeriod, setTmplPeriod] = useState("default");
   const [testEmailState, setTestEmailState] = useState({ status: "idle", msg: "" });
   const [testEmailTo, setTestEmailTo] = useState(user?.email || "");
+  const [adminOkrPeriod, setAdminOkrPeriod] = useState("all");
+  const [adminSelDept, setAdminSelDept] = useState(null);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
     { id: "overview",         icon: "◎", label: "Company Overview"  },
     { id: "departments",      icon: "⬛", label: "Departments"       },
+    { id: "okr-review",       icon: "◉", label: "OKR Review"        },
     { id: "submissions",      icon: "✉", label: "OKR Submissions"   },
     { id: "reports",          icon: "⊞", label: "OKR Reports"       },
     { id: "projects",         icon: "⚡", label: "Projects"          },
@@ -1796,6 +1799,207 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             </div>
           </Pane>
         </>)}
+
+        {page === "okr-review" && (() => {
+          const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
+          const filterP = krs => {
+            const byPeriod = adminOkrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === adminOkrPeriod);
+            return byPeriod.filter(kr => kr.type !== "tracker" || kr.showInOverview !== false);
+          };
+          const pLabel = adminOkrPeriod === "all" ? "All Periods" : periodDateRange(adminOkrPeriod, adminOkrPeriod === "weekly" ? prevPeriodKey(adminOkrPeriod) : currentPeriodKey(adminOkrPeriod));
+          const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
+          const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
+          const renderRows = (krs, deptId, teamId) => krs.map((kr, i) => {
+            const pct = krCompletion(kr); const st = getStatus(pct);
+            const isMonthly = !!kr.monthlyTargets;
+            const curKey = currentFYMonthKey();
+            const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
+            const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
+            const fyMs = isMonthly ? getFYMonths() : [];
+            const annSumTarget = fyMs.reduce((s, {key}) => s + (kr.monthlyTargets[key] || 0), 0);
+            const annActual = fyMs.reduce((s, {key}) => s + ((kr.monthlyActuals || {})[key] || 0), 0);
+            const annDream = isMonthly ? (kr.annualTarget || 0) : 0;
+            const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
+            const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
+            const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
+            return (
+              <Fragment key={kr.id}>
+              <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                <div>
+                  <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
+                  {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                  {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                  {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Monthly Breakdown</span>}
+                  {adminOkrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
+                </div>
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)} this mo.` : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
+                {kr.type === "tracker"
+                  ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span>
+                  : isMonthly
+                  ? <Input value={curActual} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: Number(e.target.value) || 0 }); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                  : <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
+                <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
+                {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
+                  {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="View all months" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 11, fontWeight: 700 }}>📅</button>}
+                  {kr.type === "tracker" ? null : <Tag type={st} small />}
+                </div>
+              </div>
+              {isMonthly && expandedMonthlyKr === kr.id && (
+                <div style={{ padding: "14px 16px 18px", background: T.brandDim, borderBottom: `1px solid ${T.border}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 12 }}>KPI Breakdown — {kr.label}{kr.unit ? ` (${kr.unit})` : ""}</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, minWidth: 960 }}>
+                      <thead>
+                        <tr style={{ background: T.surface }}>
+                          <th style={{ textAlign: "left", padding: "6px 10px", borderBottom: `2px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, width: 110 }}></th>
+                          {fyMs.map(({ key, label }) => {
+                            const isCur = key === curKey;
+                            return <th key={key} style={{ textAlign: "center", padding: "6px 3px", borderBottom: `2px solid ${isCur ? T.brand : T.border}`, fontSize: 11, fontWeight: isCur ? 700 : 400, color: isCur ? T.brand : T.textDim, minWidth: 62, background: isCur ? T.brandDim : T.surface }}>{label.split(" ")[0]}{isCur ? " ●" : ""}</th>;
+                          })}
+                          <th style={{ textAlign: "right", padding: "6px 10px", borderBottom: `2px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, minWidth: 80, background: T.surface }}>FY Total</th>
+                          <th style={{ textAlign: "center", padding: "6px 10px", borderBottom: `2px solid ${T.okBorder}`, fontSize: 11, fontWeight: 700, color: T.ok, minWidth: 100, background: T.okDim }}>Dream Target</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Perf. Target</td>
+                          {fyMs.map(({ key }) => { const isCur = key === curKey; const t = kr.monthlyTargets[key] || 0; return <td key={key} style={{ padding: "4px 6px", textAlign: "right", fontFamily: F.mono, fontSize: 12, background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}`, color: T.textMuted }}>{fmt(t)}</td>; })}
+                          <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annSumTarget)}</td>
+                          <td style={{ padding: "4px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, borderLeft: `1px solid ${T.okBorder}`, textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: T.ok }}>{annDream > 0 ? fmt(annDream) : <span style={{ color: T.textDim, fontWeight: 400 }}>—</span>}{kr.unit && annDream > 0 && <div style={{ fontSize: 10, color: T.ok, fontWeight: 400 }}>{kr.unit}</div>}</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Actual</td>
+                          {fyMs.map(({ key }) => { const isCur = key === curKey; const a = (kr.monthlyActuals || {})[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><Input value={a} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
+                          <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annActual)}</td>
+                          <td style={{ padding: "4px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, textAlign: "center", color: T.textDim, fontSize: 12, borderLeft: `1px solid ${T.okBorder}` }}>—</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 11, color: T.textDim, background: T.surface }}>Achievement</td>
+                          {fyMs.map(({ key }) => { const t = kr.monthlyTargets[key] || 0; const a = (kr.monthlyActuals || {})[key] || 0; const mp = t > 0 ? Math.min((a / t) * 100, 100) : null; const isCur = key === curKey; return <td key={key} style={{ padding: "4px 4px", textAlign: "center", background: isCur ? T.brandDim : "transparent" }}>{mp !== null ? <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[getStatus(mp)].color }}>{mp.toFixed(0)}%</span> : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}</td>; })}
+                          <td style={{ padding: "4px 10px", textAlign: "right", background: T.surface }}>{annSumTarget > 0 ? <><span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color }}>{annVsSum.toFixed(0)}%</span><div style={{ fontSize: 10, color: T.textDim }}>vs. sum</div></> : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}</td>
+                          <td style={{ padding: "4px 8px", background: T.okDim, textAlign: "center", borderLeft: `1px solid ${T.okBorder}` }}>{annDream > 0 ? <><span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[getStatus(annVsDream)].color }}>{annVsDream.toFixed(0)}%</span><div style={{ fontSize: 10, color: T.ok }}>vs. dream</div></> : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              </Fragment>
+            );
+          });
+          const renderSection = (krs, deptId, teamId) => {
+            if (krs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {adminOkrPeriod === "all" ? "" : adminOkrPeriod + " "}KRs for this section yet.</div>;
+            return (
+              <Card style={{ overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                  <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                </div>
+                {renderRows(krs, deptId, teamId)}
+              </Card>
+            );
+          };
+          const DeptNav = () => (
+            <div style={{ display: "flex", gap: 4, marginBottom: 20, paddingBottom: 12, borderBottom: `1px solid ${T.border}`, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: T.textMuted, marginRight: 4 }}>Department:</span>
+              <Btn small primary={!adminSelDept} onClick={() => { setAdminSelDept(null); setExpandedMonthlyKr(null); }}>All</Btn>
+              {depts.map(dd => <Btn key={dd.id} primary={adminSelDept === dd.id} small onClick={() => { setAdminSelDept(dd.id); setExpandedMonthlyKr(null); }}>{dd.name}</Btn>)}
+            </div>
+          );
+          const selDeptObj = adminSelDept ? depts.find(d => d.id === adminSelDept) : null;
+          if (selDeptObj) {
+            const d = selDeptObj;
+            const dKrs = filterP(d.krs);
+            const deptRate = calcRate(dKrs);
+            const deptStatus = getStatus(deptRate);
+            const teamStats = (d.teams || []).map(t => { const tKrs = filterP(t.krs); return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) }; });
+            const totalKrs = dKrs.length + teamStats.reduce((s, t) => s + t.krs.length, 0);
+            return (<>
+              <Header title="OKR Review" sub={`${d.name} · ${adminOkrPeriod === "all" ? "All periods" : adminOkrPeriod} key results`} right={<Tag type={deptStatus} />} />
+              <Pane>
+                <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+                  {PERIODS.map(p => <Btn key={p.id} primary={adminOkrPeriod === p.id} small onClick={() => setAdminOkrPeriod(p.id)}>{p.label}</Btn>)}
+                </div>
+                <DeptNav />
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                  <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} sub={`Target: ${TP}%`} />
+                  <Metric label="KRs this period" value={totalKrs} />
+                  <Metric label="Teams" value={(d.teams || []).length} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{d.name} — Department KRs<PChip /></div>
+                  {dKrs.length > 0 && <Btn primary small onClick={() => doDeptSync(d.id)}>⟳ Sync to All Members</Btn>}
+                </div>
+                {renderSection(dKrs, d.id, null)}
+                {(d.teams || []).length > 0 && (<>
+                  <SectionLabel>Team Key Results<PChip /></SectionLabel>
+                  {teamStats.map(t => (
+                    <Card key={t.id} style={{ padding: "14px 16px", marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: t.krs.length > 0 ? 10 : 0 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}</span>
+                        {t.lead && <span style={{ fontSize: 12, color: T.textMuted }}>Lead: {t.lead}</span>}
+                        {t.obj && <span style={{ fontSize: 12, color: T.textMuted, flex: 1 }}>Obj: {t.obj}</span>}
+                        <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate.toFixed(1)}%</span>
+                        <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
+                        <Tag type={t.status} small />
+                        {t.krs.length > 0 && <Btn small onClick={() => doSync(d.id, t.id)}>⟳ Sync</Btn>}
+                      </div>
+                      {t.krs.length > 0 ? renderSection(t.krs, d.id, t.id) : <div style={{ fontSize: 13, color: T.textMuted }}>No KRs for this period.</div>}
+                    </Card>
+                  ))}
+                </>)}
+              </Pane>
+            </>);
+          }
+          const allDeptStats = depts.map(d => {
+            const dKrs = filterP(d.krs || []);
+            const teamKrCount = (d.teams || []).reduce((s, t) => s + filterP(t.krs || []).length, 0);
+            const rate = calcRate(dKrs);
+            const status = getStatus(rate);
+            return { ...d, dKrCount: dKrs.length, teamKrCount, totalKrs: dKrs.length + teamKrCount, rate, status };
+          });
+          const overallRate = allDeptStats.length ? allDeptStats.reduce((s, d) => s + d.rate, 0) / allDeptStats.length : 0;
+          const totalTeams = depts.reduce((s, d) => s + (d.teams || []).length, 0);
+          const totalAllKrs = allDeptStats.reduce((s, d) => s + d.totalKrs, 0);
+          return (<>
+            <Header title="OKR Review" sub="All departments · Key results overview" right={<Tag type={getStatus(overallRate)} />} />
+            <Pane>
+              <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+                {PERIODS.map(p => <Btn key={p.id} primary={adminOkrPeriod === p.id} small onClick={() => setAdminOkrPeriod(p.id)}>{p.label}</Btn>)}
+              </div>
+              <DeptNav />
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                <Metric label="Overall Completion" value={`${overallRate.toFixed(1)}%`} status={getStatus(overallRate)} sub={`Target: ${TP}%`} />
+                <Metric label="Departments" value={depts.length} />
+                <Metric label="Teams" value={totalTeams} />
+                <Metric label="KRs this period" value={totalAllKrs} />
+              </div>
+              {allDeptStats.map(d => (
+                <Card key={d.id} style={{ padding: "16px 20px", marginBottom: 10, cursor: "pointer" }} onClick={() => { setAdminSelDept(d.id); setExpandedMonthlyKr(null); }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 80px 180px 100px", alignItems: "center", gap: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{d.name}</div>
+                      {d.obj && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{d.obj}</div>}
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 2 }}>Teams</div>
+                      <div style={{ fontWeight: 700, fontFamily: F.mono }}>{(d.teams || []).length}</div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 2 }}>KRs</div>
+                      <div style={{ fontWeight: 700, fontFamily: F.mono }}>{d.totalKrs}</div>
+                    </div>
+                    <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
+                    <Bar value={d.rate} status={d.status} h={7} />
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}><Tag type={d.status} /><span style={{ fontSize: 12, color: T.brand, fontWeight: 600 }}>Detail →</span></div>
+                  </div>
+                </Card>
+              ))}
+            </Pane>
+          </>);
+        })()}
 
         {page === "departments" && (!selDept ? (
           <DeptMgmtPage depts={depts} users={users} memberData={memberData} okrSubmissions={okrSubmissions} dispatch={dispatch} />
