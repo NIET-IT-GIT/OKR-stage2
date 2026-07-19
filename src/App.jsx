@@ -3367,7 +3367,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           if (!dept) return (<><Header title="OKR Overview" sub="Your department's key results by period" /><Pane><EmptyState text="No department assigned to your account." /></Pane></>);
           const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
           const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
-          const pLabel = okrPeriod === "all" ? "All Periods" : okrPeriod.charAt(0).toUpperCase() + okrPeriod.slice(1);
+          const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, currentPeriodKey(okrPeriod));
           const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
           const renderRows = (krs, deptId, teamId) => krs.map((kr, i) => {
@@ -4231,7 +4231,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           if (!myDept) return (<><Header title="OKR Overview" sub="" /><Pane><EmptyState text="No department assigned." /></Pane></>);
           const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
           const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
-          const pLabel = okrPeriod === "all" ? "All Periods" : okrPeriod.charAt(0).toUpperCase() + okrPeriod.slice(1);
+          const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, currentPeriodKey(okrPeriod));
           const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
           const renderKrRows = (krs) => krs.map((kr, i) => {
