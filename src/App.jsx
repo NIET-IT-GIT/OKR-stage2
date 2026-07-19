@@ -1836,7 +1836,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                         {visibleBuiltIn.map(({ key }) => {
                           if (key === "id") return <span key="id" style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>;
-                          if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Tracker · does not affect rate</span>}{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}</div>;
+                          if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{kr.type === "tracker" && <><span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Tracker · does not affect rate</span><label style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, cursor: "pointer", userSelect: "none" }}><input type="checkbox" checked={kr.showInOverview !== false} onChange={e => onTeamChange(kr.id, "showInOverview", e.target.checked)} style={{ accentColor: "#7c3aed" }} /><span style={{ fontSize: 10, color: "#7c3aed" }}>Show in portals' OKR Overview</span></label></>}{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}</div>;
                           if (key === "operator") return <span key="operator">{opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}</span>;
                           if (key === "period") return <span key="period"><select value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Biannual</option><option value="annual">Annual</option></select></span>;
                           if (key === "target") return kr.type === "tracker" ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : isMonthly ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(curTarget)} <span style={{ color: T.textDim }}>this mo.</span></span> : <Input key="target" value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
@@ -2993,7 +2993,10 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
         {page === "okr-overview" && (() => {
           if (!dept) return (<><Header title="OKR Overview" sub="Your department's key results by period" /><Pane><EmptyState text="No department assigned to your account." /></Pane></>);
           const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
-          const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const filterP = krs => {
+            const byPeriod = okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+            return byPeriod.filter(kr => kr.type !== "tracker" || kr.showInOverview !== false);
+          };
           const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, currentPeriodKey(okrPeriod));
           const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
@@ -3840,7 +3843,10 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
         {page === "okr-overview" && (() => {
           if (!myDept) return (<><Header title="OKR Overview" sub="" /><Pane><EmptyState text="No department assigned." /></Pane></>);
           const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
-          const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const filterP = krs => {
+            const byPeriod = okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+            return byPeriod.filter(kr => kr.type !== "tracker" || kr.showInOverview !== false);
+          };
           const pLabel = okrPeriod === "all" ? "All Periods" : periodDateRange(okrPeriod, currentPeriodKey(okrPeriod));
           const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
