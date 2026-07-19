@@ -143,6 +143,7 @@ function krCompletion(kr) {
     case ">":  return actual > target ? 100 : Math.min((actual / target) * 100, 100);
     case "<=": return actual <= target ? 100 : Math.min((target / actual) * 100, 100);
     case "<":  return actual < target ? 100 : Math.min((target / actual) * 100, 100);
+    case "=":  return actual === target ? 100 : 0;
     default:   return Math.min((actual / target) * 100, 100);
   }
 }
@@ -1777,7 +1778,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
           ];
           const opSelect = (val, onChange) => (
             <select value={val} onChange={onChange} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.mono }}>
-              <option value=">=">&gt;=</option><option value=">">&gt;</option><option value="<=">&lt;=</option><option value="<">&lt;</option>
+              <option value=">=">&gt;=</option><option value=">">&gt;</option><option value="<=">&lt;=</option><option value="<">&lt;</option><option value="=">=</option>
             </select>
           );
           const customCols = dept.customCols || [];
