@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+﻿import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
@@ -660,9 +660,6 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
   const { instance } = useMsal();
   const [show, setShow] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [adminUser, setAdminUser] = useState("");
-  const [adminPass, setAdminPass] = useState("");
   const [err, setErr] = useState("");
 
   useEffect(() => { setTimeout(() => setShow(true), 80); }, []);
@@ -675,16 +672,6 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
     } catch (e) {
       setMsLoading(false);
       if (e.errorCode !== "user_cancelled") setErr("Sign-in failed. Please try again.");
-    }
-  };
-
-  const handleAdminLogin = () => {
-    setErr("");
-    if (adminUser === "admin" && adminPass === "Ntr1#qez66") {
-      const u = users.find(u => u.id === "sysadmin");
-      onLogin(u);
-    } else {
-      setErr("Invalid credentials.");
     }
   };
 
@@ -761,47 +748,6 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
             </svg>
             {msLoading ? "Signing in…" : "Sign in with Microsoft"}
           </button>
-
-          {/* Divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0" }}>
-            <div style={{ flex: 1, height: 1, background: T.border }} />
-            <span style={{ fontSize: 12, color: T.textDim, fontWeight: 600, letterSpacing: "0.05em" }}>OR</span>
-            <div style={{ flex: 1, height: 1, background: T.border }} />
-          </div>
-
-          {/* Admin credentials toggle */}
-          <button onClick={() => { setShowAdminLogin(p => !p); setErr(""); }} style={{
-            width: "100%", padding: "10px 14px", background: "transparent",
-            border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            fontSize: 14, fontWeight: 600, color: T.textSoft, fontFamily: F.body, transition: "all 0.12s",
-          }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = T.brandBorder}
-            onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
-          >
-            <span>Sign in with admin credentials</span>
-            <span style={{ fontSize: 12, color: T.textDim, transition: "transform 0.2s", display: "inline-block", transform: showAdminLogin ? "rotate(180deg)" : "none" }}>▼</span>
-          </button>
-
-          {showAdminLogin && (
-            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-              <Input
-                value={adminUser} onChange={e => { setAdminUser(e.target.value); setErr(""); }}
-                placeholder="Username" style={{ width: "100%" }}
-                onKeyDown={e => e.key === "Enter" && handleAdminLogin()}
-              />
-              <Input
-                type="password" value={adminPass} onChange={e => { setAdminPass(e.target.value); setErr(""); }}
-                placeholder="Password" style={{ width: "100%" }}
-                onKeyDown={e => e.key === "Enter" && handleAdminLogin()}
-              />
-              <button onClick={handleAdminLogin} style={{
-                width: "100%", padding: "11px", background: `linear-gradient(135deg, ${T.brand}, #5e6bf7)`,
-                border: "none", borderRadius: 8, color: "#fff", fontSize: 15, fontWeight: 800,
-                cursor: "pointer", fontFamily: F.body,
-              }}>Sign In</button>
-            </div>
-          )}
 
           <p style={{ margin: "18px 0 0", fontSize: 12, color: T.textDim, textAlign: "center", lineHeight: 1.6 }}>
             Your role and portal access are determined by your registered account.
@@ -1408,7 +1354,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const syncNoteTimer = useRef(null);
   const [subSearch, setSubSearch] = useState("");
   const [subDeptFilter, setSubDeptFilter] = useState("all");
-  const [confirmApproval, setConfirmApproval] = useState(null);
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [expandedPersonalMember, setExpandedPersonalMember] = useState(null);
   const [addPersonalKr, setAddPersonalKr] = useState(null);
@@ -2090,406 +2035,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             </Pane>
           </>);
         })())}
-
-        {/* placeholder needed — removed: weekly-setup, weekly-overview, monthly-setup, monthly-overview */}
-        {(page === "weekly-setup" || page === "monthly-setup") && (<>
-          <Header
-            title={page === "weekly-setup" ? "Weekly KPI Setup" : "Monthly KPI Setup"}
-            sub={page === "weekly-setup" ? "Set up weekly key results for each department and team" : "Set up monthly and annual key results for each department and team"}
-          />
-          <Pane>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{depts.map(d => <Btn key={d.id} primary={selDept === d.id} small onClick={() => { setSelDept(d.id); setSelTeam(null); setAddTarget(null); }}>{d.name}</Btn>)}</div>
-            {selDept && (() => {
-              const dept = depts.find(d => d.id === selDept); if (!dept) return null;
-              const isWeeklyPage = page === "weekly-setup";
-              const filterKrs = krs => isWeeklyPage
-                ? krs.filter(kr => (kr.period || "monthly") === "weekly")
-                : krs.filter(kr => (kr.period || "monthly") !== "weekly");
-              const COLS_DEF = [
-                { key: "id",         label: "ID" },
-                { key: "label",      label: "Key Result" },
-                { key: "operator",   label: "Op" },
-                { key: "period",     label: "Period" },
-                { key: "target",     label: "Target" },
-                { key: "actual",     label: "Actual" },
-                { key: "unit",       label: "Unit" },
-                { key: "dataSource", label: "Data Source" },
-              ];
-              const opSelect = (val, onChange) => (
-                <select value={val} onChange={onChange} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.mono }}>
-                  <option value=">=">&gt;=</option>
-                  <option value=">">&gt;</option>
-                  <option value="<=">&lt;=</option>
-                  <option value="<">&lt;</option>
-                </select>
-              );
-              const customCols = dept.customCols || [];
-              const getCustomColWidth = (col) => customColWidthOverride?.colId === col.id ? customColWidthOverride.width : (col.width ?? 150);
-              const orderedDef = colOrder.map(k => COLS_DEF.find(c => c.key === k)).filter(Boolean);
-              const visibleBuiltIn = orderedDef.filter(c => !hiddenCols.has(c.key));
-              const COL = [
-                ...visibleBuiltIn.map(c => `${colWidths[c.key]}px`),
-                ...customCols.map(c => `${getCustomColWidth(c)}px`), "34px",
-              ].join(" ");
-              const rszHandle = (onMd) => (
-                <div onMouseDown={onMd} title="Drag to resize" style={{ width: 6, flexShrink: 0, alignSelf: "stretch", cursor: "col-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ width: 2, height: "40%", background: T.border, borderRadius: 1 }} />
-                </div>
-              );
-              const renderEditor = (krs, deptId, teamId) => {
-                const onTeamChange = (krId, field, value) => {
-                  dispatch({ type: "UPDATE_KR", deptId, teamId, krId, field, value });
-                  if (teamId) triggerSyncPrompt(deptId, teamId);
-                };
-                return (
-                <Card style={{ overflow: "auto" }}>
-                  <div style={{ minWidth: "max-content" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", alignItems: "center" }}>
-                      {visibleBuiltIn.map(({ key, label }) => (
-                        <div key={key} draggable
-                          onDragStart={e => { dragColRef.current = key; e.dataTransfer.effectAllowed = "move"; }}
-                          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                          onDrop={e => { e.preventDefault(); const from = dragColRef.current; if (!from || from === key) return; const next = [...colOrder]; const fi = next.indexOf(from); const ti = next.indexOf(key); if (fi >= 0 && ti >= 0) { next.splice(fi, 1); next.splice(ti, 0, from); dispatch({ type: "SET_SETTINGS", updates: { colOrder: next } }); } dragColRef.current = null; }}
-                          onDragEnd={() => { dragColRef.current = null; }}
-                          style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 2, cursor: "grab", userSelect: "none" }}
-                          title="Drag to reorder column">
-                          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                          <button onClick={() => setHiddenCols(prev => new Set([...prev, key]))} title="Hide column" style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, flexShrink: 0, lineHeight: 1, opacity: 0.6 }}>✕</button>
-                          {rszHandle(e => startResize(key, e))}
-                        </div>
-                      ))}
-                      {customCols.map(col => (
-                        <div key={col.id} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 3 }}>
-                          <input value={col.name} onChange={e => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.map(c => c.id === col.id ? { ...c, name: e.target.value } : c) })}
-                            style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", padding: 0, cursor: "text" }} />
-                          <button onClick={() => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.filter(c => c.id !== col.id) })} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, flexShrink: 0, lineHeight: 1 }} title="Remove column">✕</button>
-                          {rszHandle(e => startResizeCustom(col.id, dept.id, e))}
-                        </div>
-                      ))}
-                      <span />
-                    </div>
-                    {krs.map((kr, i) => {
-                      const isMonthly = !!kr.monthlyTargets;
-                      const curKey = currentFYMonthKey();
-                      const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
-                      const curActual = isMonthly ? ((kr.monthlyActuals || {})[curKey] || 0) : null;
-                      const fyMs = isMonthly ? getFYMonths() : [];
-                      const annSumTarget = fyMs.reduce((s, {key}) => s + (kr.monthlyTargets[key] || 0), 0);
-                      const annActual = fyMs.reduce((s, {key}) => s + ((kr.monthlyActuals || {})[key] || 0), 0);
-                      const annDream = isMonthly ? (kr.annualTarget || 0) : 0;
-                      const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
-                      const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
-                      const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
-                      return (
-                      <Fragment key={kr.id}>
-                      <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
-                        {visibleBuiltIn.map(({ key }) => {
-                          if (key === "id") return <span key="id" style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>;
-                          if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Tracker · does not affect rate</span>}{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}</div>;
-                          if (key === "operator") return <span key="operator">{opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}</span>;
-                          if (key === "period") return <select key="period" value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Bi-Annual</option><option value="annual">Annual</option></select>;
-                          if (key === "target") return kr.type === "tracker" ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : isMonthly ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(curTarget)} <span style={{ color: T.textDim }}>this mo.</span></span> : <Input key="target" value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
-                          if (key === "actual") return isMonthly ? <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(curActual)}</span> : <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>;
-                          if (key === "unit") return <Input key="unit" value={kr.unit || ""} onChange={e => onTeamChange(kr.id, "unit", e.target.value)} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />;
-                          if (key === "dataSource") return <Input key="dataSource" value={kr.dataSource || ""} onChange={e => onTeamChange(kr.id, "dataSource", e.target.value)} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />;
-                          return null;
-                        })}
-                        {customCols.map(col => (
-                          <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => onTeamChange(kr.id, "extras", { ...(kr.extras || {}), [col.id]: e.target.value })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />
-                        ))}
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="Edit monthly targets" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 12, fontWeight: 700 }}>📅</button>}
-                          <button onClick={() => { dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
-                        </div>
-                      </div>
-                      {isMonthly && expandedMonthlyKr === kr.id && (
-                        <div style={{ padding: "14px 16px 18px", background: T.brandDim, borderBottom: `1px solid ${T.border}` }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 12 }}>KPI Breakdown — {kr.label}{kr.unit ? ` (${kr.unit})` : ""}</div>
-                          <div style={{ overflowX: "auto" }}>
-                            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, minWidth: 960 }}>
-                              <thead>
-                                <tr style={{ background: T.surface }}>
-                                  <th style={{ textAlign: "left", padding: "6px 10px", borderBottom: `2px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, width: 110 }}></th>
-                                  {fyMs.map(({ key, label }) => {
-                                    const isCur = key === curKey;
-                                    return (
-                                      <th key={key} style={{ textAlign: "center", padding: "6px 3px", borderBottom: `2px solid ${isCur ? T.brand : T.border}`, fontSize: 11, fontWeight: isCur ? 700 : 400, color: isCur ? T.brand : T.textDim, minWidth: 62, background: isCur ? T.brandDim : T.surface }}>
-                                        {label.split(" ")[0]}{isCur ? " ●" : ""}
-                                      </th>
-                                    );
-                                  })}
-                                  <th style={{ textAlign: "right", padding: "6px 10px", borderBottom: `2px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, minWidth: 80, background: T.surface }}>FY Total</th>
-                                  <th style={{ textAlign: "center", padding: "6px 10px", borderBottom: `2px solid ${T.okBorder}`, fontSize: 11, fontWeight: 700, color: T.ok, minWidth: 100, background: T.okDim }}>Dream Target</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr>
-                                  <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Perf. Target</td>
-                                  {fyMs.map(({ key }) => {
-                                    const isCur = key === curKey;
-                                    const t = kr.monthlyTargets[key] || 0;
-                                    return (
-                                      <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}>
-                                        <Input value={t} onChange={e => dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "target", value: Number(e.target.value) || 0 })} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} />
-                                      </td>
-                                    );
-                                  })}
-                                  <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annSumTarget)}</td>
-                                  <td style={{ padding: "5px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, borderLeft: `1px solid ${T.okBorder}` }}>
-                                    <Input value={annDream} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "annualTarget", value: Number(e.target.value) || 0 })} style={{ padding: "4px 6px", fontSize: 13, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box", fontWeight: 700, background: T.surface, border: `1px solid ${T.okBorder}`, borderRadius: 4 }} />
-                                    {kr.unit && <div style={{ fontSize: 10, color: T.ok, textAlign: "center", marginTop: 2 }}>{kr.unit}</div>}
-                                  </td>
-                                </tr>
-                                <tr>
-                                  <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Actual</td>
-                                  {fyMs.map(({ key }) => {
-                                    const isCur = key === curKey;
-                                    const a = (kr.monthlyActuals || {})[key] || 0;
-                                    return (
-                                      <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}>
-                                        <Input value={a} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} />
-                                      </td>
-                                    );
-                                  })}
-                                  <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annActual)}</td>
-                                  <td style={{ padding: "4px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, textAlign: "center", color: T.textDim, fontSize: 12, borderLeft: `1px solid ${T.okBorder}` }}>—</td>
-                                </tr>
-                                <tr>
-                                  <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 11, color: T.textDim, background: T.surface }}>Achievement</td>
-                                  {fyMs.map(({ key }) => {
-                                    const t = kr.monthlyTargets[key] || 0;
-                                    const a = (kr.monthlyActuals || {})[key] || 0;
-                                    const pct = t > 0 ? Math.min((a / t) * 100, 100) : null;
-                                    const isCur = key === curKey;
-                                    return (
-                                      <td key={key} style={{ padding: "4px 4px", textAlign: "center", background: isCur ? T.brandDim : "transparent" }}>
-                                        {pct !== null
-                                          ? <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[getStatus(pct)].color }}>{pct.toFixed(0)}%</span>
-                                          : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}
-                                      </td>
-                                    );
-                                  })}
-                                  <td style={{ padding: "4px 10px", textAlign: "right", background: T.surface }}>
-                                    {annSumTarget > 0 ? <><span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color }}>{annVsSum.toFixed(0)}%</span><div style={{ fontSize: 10, color: T.textDim }}>vs. sum</div></> : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}
-                                  </td>
-                                  <td style={{ padding: "4px 8px", background: T.okDim, textAlign: "center", borderLeft: `1px solid ${T.okBorder}` }}>
-                                    {annDream > 0
-                                      ? <><span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[getStatus(annVsDream)].color }}>{annVsDream.toFixed(0)}%</span><div style={{ fontSize: 10, color: T.ok }}>vs. dream</div></>
-                                      : <span style={{ color: T.textDim, fontSize: 11 }}>—</span>}
-                                  </td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                      </Fragment>
-                      );
-                    })}
-                    {addTarget === (teamId || `dept-${deptId}`) ? (
-                      <div>
-                      <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: T.brandDim }}>
-                        {visibleBuiltIn.map(({ key }) => {
-                          if (key === "id") return <span key="id" style={{ fontSize: 12, color: T.brand }}>NEW</span>;
-                          if (key === "label") return <Input key="label" value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />;
-                          if (key === "operator") return <span key="operator">{opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}</span>;
-                          if (key === "period") return isWeeklyPage
-                            ? <span key="period" style={{ fontSize: 12, color: T.brand, fontWeight: 700 }}>Weekly</span>
-                            : <select key="period" value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Bi-Annual</option><option value="annual">Annual</option></select>;
-                          if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : newKr.krType === "tracker" ? <span key="target" style={{ fontSize: 11, color: T.textMuted, textAlign: "right", fontStyle: "italic" }}>N/A</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
-                          if (key === "actual") return <span key="actual" />;
-                          if (key === "unit") return <Input key="unit" value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />;
-                          if (key === "dataSource") return <Input key="dataSource" value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />;
-                          return null;
-                        })}
-                        {customCols.map(col => <span key={col.id} />)}
-                        <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
-                      </div>
-                      {!isWeeklyPage && (
-                      <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}` }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: T.brand, fontWeight: 600 }}>
-                          <input type="checkbox" checked={newKr.useMonthlyTargets} onChange={e => setNewKr(p => ({ ...p, useMonthlyTargets: e.target.checked, target: e.target.checked ? "" : p.target }))} style={{ accentColor: T.brand }} />
-                          Monthly Breakdown — set a different target for each month (Jul–Jun)
-                        </label>
-                        {newKr.useMonthlyTargets && (
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginTop: 8 }}>
-                            <div>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: T.ok, marginBottom: 4 }}>Dream Target <span style={{ fontWeight: 400, color: T.textMuted }}>(optional annual ceiling)</span></div>
-                              <Input value={newKr.dreamTarget || ""} onChange={e => setNewKr(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="e.g. 4997300" style={{ padding: "4px 8px", fontSize: 13, fontFamily: F.mono, textAlign: "right", width: 160 }} />
-                              {newKr.unit && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{newKr.unit}</div>}
-                            </div>
-                            <div style={{ fontSize: 11, color: T.brand, lineHeight: 1.6, paddingTop: 18 }}>
-                              Monthly targets open automatically after adding. When Dream Target is set, annual progress tracks against it instead of the sum of monthly targets.
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      )}
-                      </div>
-                    ) : (
-                      <div style={{ padding: "10px 16px" }}>
-                        <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: isWeeklyPage ? "weekly" : "monthly", useMonthlyTargets: false }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
-                      </div>
-                    )}
-                    {hiddenCols.size > 0 && (
-                      <div style={{ padding: "6px 16px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                        <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Hidden:</span>
-                        {[...hiddenCols].map(key => {
-                          const col = COLS_DEF.find(c => c.key === key);
-                          return (
-                            <button key={key} onClick={() => setHiddenCols(prev => { const n = new Set(prev); n.delete(key); return n; })}
-                              style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 12, padding: "2px 8px", cursor: "pointer", color: T.textSoft, fontSize: 11, fontFamily: F.body }}>
-                              {col?.label} ↩
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-                );
-              };
-              return (<>
-                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                  {addingCol ? (<>
-                    <input autoFocus value={newColName} onChange={e => setNewColName(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") addCustomCol(); if (e.key === "Escape") { setAddingCol(false); setNewColName(""); } }}
-                      placeholder="Column name" style={{ padding: "5px 10px", fontSize: 13, border: `1px solid ${T.borderFocus}`, borderRadius: 6, background: T.surface, fontFamily: F.body, color: T.text, outline: "none" }} />
-                    <Btn primary small onClick={addCustomCol}>Add</Btn>
-                    <Btn small onClick={() => { setAddingCol(false); setNewColName(""); }}>Cancel</Btn>
-                  </>) : (
-                    <Btn small onClick={() => setAddingCol(true)}>+ Add Column</Btn>
-                  )}
-                </div>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
-                    <div style={{ fontSize: 16, fontWeight: 800, flex: 1 }}>{dept.name} — Department OKRs</div>
-                    {filterKrs(dept.krs).length > 0 && <Btn primary small onClick={() => mgrDoDeptSync(dept.id)}>⟳ Sync to All Members</Btn>}
-                  </div>
-                  <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 12 }}>Objective: {dept.obj}</div>
-                  {filterKrs(dept.krs).length === 0 && !addTarget
-                    ? <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {isWeeklyPage ? "weekly" : "monthly / annual"} OKRs for this department yet. Click below to add one.</div>
-                    : null}
-                  {renderEditor(filterKrs(dept.krs), dept.id, null)}
-                </div>
-                {dept.teams.length > 0 && (<div>
-                  <SectionLabel>Team KRs</SectionLabel>
-                  <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{dept.teams.map(t => <Btn key={t.id} primary={selTeam === t.id} small onClick={() => { setSelTeam(t.id); setAddTarget(null); }}>{t.name}</Btn>)}</div>
-                  {selTeam && (() => { const team = dept.teams.find(t => t.id === selTeam); return team ? (<>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                      <div style={{ fontSize: 13, color: T.textMuted, flex: 1 }}>Objective: {team.obj} · Lead: {team.lead}</div>
-                      {dirtySync?.deptId === dept.id && dirtySync?.teamId === team.id && (
-                        <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }}>⚠ Unsynced changes</div>
-                      )}
-                      <Btn primary small onClick={() => doSync(dept.id, team.id)}>⟳ Sync to Team Members</Btn>
-                    </div>
-                    {filterKrs(team.krs).length === 0 && !addTarget
-                      ? <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {isWeeklyPage ? "weekly" : "monthly / annual"} KRs for this team yet. Click below to add one.</div>
-                      : null}
-                    {renderEditor(filterKrs(team.krs), dept.id, team.id)}
-                  </>) : null; })()}
-                </div>)}
-              </>);
-            })()}
-          </Pane>
-        </>)}
-
-        {(page === "weekly-overview" || page === "monthly-overview") && (() => {
-          const isWeekly = page === "weekly-overview";
-          const filterKrs = krs => isWeekly
-            ? krs.filter(kr => (kr.period || "monthly") === "weekly")
-            : krs.filter(kr => (kr.period || "monthly") !== "weekly");
-          const deptStats = depts.map(d => {
-            const dKrs = filterKrs(d.krs);
-            const teamStats = d.teams.map(t => {
-              const tKrs = filterKrs(t.krs);
-              return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) };
-            }).filter(t => t.krs.length > 0);
-            const rate = calcRate(dKrs);
-            return { ...d, krs: dKrs, teamStats, rate, status: getStatus(rate) };
-          }).sort((a, b) => b.rate - a.rate);
-          const totalKrs = deptStats.reduce((s, d) => s + d.krs.length + d.teamStats.reduce((ts, t) => ts + t.krs.length, 0), 0);
-          const overallRate = deptStats.filter(d => d.krs.length + d.teamStats.reduce((ts, t) => ts + t.krs.length, 0) > 0);
-          const avgRate = overallRate.length ? overallRate.reduce((s, d) => s + d.rate, 0) / overallRate.length : 0;
-          return (<>
-            <Header
-              title={isWeekly ? "Weekly KPI Overview" : "Monthly KPI Overview"}
-              sub={isWeekly ? "Dept & team completion rates for weekly key results" : "Dept & team completion rates for monthly and annual key results"}
-              right={<Tag type={getStatus(avgRate)} />}
-            />
-            <Pane>
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-                <Metric label="Overall Completion" value={`${avgRate.toFixed(1)}%`} status={getStatus(avgRate)} sub={`Time: ${TP}%`} />
-                <Metric label="Total KRs" value={totalKrs} />
-                <Metric label="Departments" value={depts.length} />
-                <Metric label="Teams tracked" value={deptStats.reduce((s, d) => s + d.teamStats.length, 0)} />
-              </div>
-              <SectionLabel>Department Rankings</SectionLabel>
-              {deptStats.map((d, i) => {
-                const hasKrs = d.krs.length + d.teamStats.reduce((s, t) => s + t.krs.length, 0) > 0;
-                return (
-                  <Card key={d.id} style={{ padding: "16px 20px", marginBottom: 10, opacity: hasKrs ? 1 : 0.45 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 65px 200px 80px", alignItems: "center", gap: 14, marginBottom: hasKrs ? 10 : 0 }}>
-                      <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: i === 0 && hasKrs ? T.ok : i === deptStats.length - 1 && hasKrs ? T.bad : T.textMuted }}>#{i + 1}</span>
-                      <div>
-                        <div style={{ fontSize: 16, fontWeight: 700 }}>{d.name}</div>
-                        <div style={{ fontSize: 12, color: T.textMuted }}>{d.krs.length} dept KR{d.krs.length !== 1 ? "s" : ""} · {d.teamStats.length} team{d.teamStats.length !== 1 ? "s" : ""}{!hasKrs ? " · No KRs set up yet" : ""}</div>
-                      </div>
-                      <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
-                      <Bar value={d.rate} status={d.status} h={7} />
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>{hasKrs && <Tag type={d.status} />}</div>
-                    </div>
-                    {/* Dept KRs */}
-                    {d.krs.length > 0 && (
-                      <div style={{ marginTop: 8 }}>
-                        {d.krs.map(kr => {
-                          const pct = krCompletion(kr); const st = getStatus(pct);
-                          return (
-                            <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
-                              <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
-                              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
-                              {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
-                              <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
-                              <div style={{ width: 80, flexShrink: 0 }}><Bar value={pct} status={st} h={4} /></div>
-                              <Tag type={st} small />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {/* Team KRs */}
-                    {d.teamStats.map(t => {
-                      const ts = t.status;
-                      return (
-                        <div key={t.id} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, flex: 1 }}>{t.name}</span>
-                            <span style={{ fontSize: 13, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[ts].color }}>{t.rate.toFixed(1)}%</span>
-                            <div style={{ width: 80, flexShrink: 0 }}><Bar value={t.rate} status={ts} h={4} /></div>
-                            <Tag type={ts} small />
-                          </div>
-                          {t.krs.map(kr => {
-                            const pct = krCompletion(kr); const st = getStatus(pct);
-                            return (
-                              <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0 4px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
-                                <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
-                                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
-                                {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
-                                <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
-                                <div style={{ width: 80, flexShrink: 0 }}><Bar value={pct} status={st} h={4} /></div>
-                                <Tag type={st} small />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </Card>
-                );
-              })}
-            </Pane>
-          </>);
-        })()}
 
         {page === "submissions" && (() => {
           const PERIOD_TABS = [
@@ -3247,22 +2792,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             </div>
           </div>
         )}
-        {confirmApproval && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
-              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{confirmApproval.status === "approved" ? "Approve Submission?" : "Reject Submission?"}</div>
-              <p style={{ fontSize: 14, color: T.textSoft, lineHeight: 1.6, margin: "0 0 24px" }}>
-                {confirmApproval.status === "approved" ? "Approve" : "Reject"} <strong>{confirmApproval.memberName}</strong>'s submission for <strong>{confirmApproval.week}</strong>? This cannot be undone.
-              </p>
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <Btn onClick={() => setConfirmApproval(null)}>Cancel</Btn>
-                {confirmApproval.status === "approved"
-                  ? <Btn primary onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "approved" }); setConfirmApproval(null); }}>Yes, Approve</Btn>
-                  : <Btn danger onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "rejected" }); setConfirmApproval(null); }}>Yes, Reject</Btn>}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -3298,7 +2827,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
   const [mgrDirtySync, setMgrDirtySync] = useState(null);
-  const [confirmApproval, setConfirmApproval] = useState(null);
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [mgrSelTeam, setMgrSelTeam] = useState(null);
@@ -3960,22 +3488,6 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
             <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>{syncNote.teamName} · {syncNote.count} member{syncNote.count !== 1 ? "s" : ""}</div>
           </div>
         )}
-        {confirmApproval && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
-              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{confirmApproval.status === "approved" ? "Approve Submission?" : "Reject Submission?"}</div>
-              <p style={{ fontSize: 14, color: T.textSoft, lineHeight: 1.6, margin: "0 0 24px" }}>
-                {confirmApproval.status === "approved" ? "Approve" : "Reject"} <strong>{confirmApproval.memberName}</strong>'s submission for <strong>{confirmApproval.week}</strong>? This cannot be undone.
-              </p>
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <Btn onClick={() => setConfirmApproval(null)}>Cancel</Btn>
-                {confirmApproval.status === "approved"
-                  ? <Btn primary onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "approved" }); setConfirmApproval(null); }}>Yes, Approve</Btn>
-                  : <Btn danger onClick={() => { dispatch({ type: "APPROVE_SUB", subId: confirmApproval.subId, status: "rejected" }); setConfirmApproval(null); }}>Yes, Reject</Btn>}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -4629,7 +4141,7 @@ function appReducer(state, action) {
       const dept = state.depts.find(d => d.id === action.deptId);
       if (!dept) return state;
       const memberIds = state.users.filter(u => u.deptId === action.deptId && (u.role === "member" || u.role === "manager")).map(u => u.id);
-      const krsToSync = dept.krs.filter(kr => !kr.monthlyTargets);
+      const krsToSync = dept.krs;
       const newMemberData = { ...state.memberData };
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
@@ -4649,8 +4161,7 @@ function appReducer(state, action) {
         ...(team.members || []),
         ...state.users.filter(u => u.teamId === action.teamId || u.secondTeamId === action.teamId).map(u => u.id),
       ])];
-      // Skip monthly-breakdown KRs — they are shared team targets viewed via dept-kpis, not individual
-      const krsToSync = team.krs.filter(kr => !kr.monthlyTargets);
+      const krsToSync = team.krs;
       const newMemberData = { ...state.memberData };
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
@@ -4678,9 +4189,6 @@ function appReducer(state, action) {
       if (!md) return state;
       return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).filter(kr => kr.id !== action.krId) } } };
     }
-    case "ADD_WEEKLY_SUB":  return { ...state, weeklySubs:  [action.sub,    ...state.weeklySubs]  };
-    case "APPROVE_SUB":     return { ...state, weeklySubs: state.weeklySubs.map(s => s.id === action.subId ? { ...s, approval: action.status } : s) };
-    case "REMOVE_WEEKLY_SUB": return { ...state, weeklySubs: state.weeklySubs.filter(s => s.id !== action.subId) };
     case "CREATE_OKR_SUBMISSIONS": {
       const seen = new Set((state.okrSubmissions || []).map(s => `${s.memberId}:${s.krId}:${s.periodKey}`));
       const fresh = action.submissions.filter(s => !seen.has(`${s.memberId}:${s.krId}:${s.periodKey}`));
@@ -4709,7 +4217,7 @@ function appReducer(state, action) {
       });
       const newMemberData = { ...state.memberData, [sub.memberId]: { ...md, krs: updatedMemberKrs } };
       // Average actual across all members with approved submissions for this KR
-      const approvedMemberIds = [...new Set(newSubs.filter(s => s.krId === sub.krId && s.approval === "approved").map(s => s.memberId))];
+      const approvedMemberIds = [...new Set(newSubs.filter(s => s.krId === sub.krId && s.approval === "approved" && s.periodKey === sub.periodKey && s.deptId === sub.deptId).map(s => s.memberId))];
       const isMonthly = !!(newMemberData[sub.memberId]?.krs?.find(k => k.id === sub.krId)?.monthlyTargets);
       const mk = (sub.periodKey || "").slice(0, 7);
       const memberVals = approvedMemberIds.map(mId => {
