@@ -3307,13 +3307,12 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [rejectOkr, setRejectOkr] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
 
-  const { depts, memberData, weeklySubs, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
+  const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
   const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId);
   const myTeamMemberIds = users.filter(u => u.role === "member" && u.deptId === user.deptId).map(u => u.id);
   const myOkrSubs = allOkrSubs.filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
-  const pendingSubs = weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId) && s.approval === "pending");
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => p.mgrId === user.id);
@@ -3361,7 +3360,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingSubs.length + pendingOkrSubs.length, checkin: myPendingCheckins.length }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingOkrSubs.length, checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "okr-overview" && (() => {
@@ -3570,19 +3569,17 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="Dept Completion"   value={`${calcRate(dept?.krs || []).toFixed(1)}%`} status={getStatus(calcRate(dept?.krs || []))} sub={`Time: ${TP}%`} />
               <Metric label="My Members"        value={myMembers.length} />
-              <Metric label="Pending Approvals" value={pendingSubs.length} status={pendingSubs.length > 0 ? "yellow" : undefined} />
+              <Metric label="Pending Approvals" value={pendingOkrSubs.length} status={pendingOkrSubs.length > 0 ? "yellow" : undefined} />
             </div>
             <SectionLabel>My Team Members</SectionLabel>
             {myMembers.map(m => {
               const kd = memberData[m.id]; if (!kd) return null;
               const r = calcMemberRate(m.id, kd.krs, allOkrSubs); const s = getStatus(r);
-              const lastSub = weeklySubs.filter(x => x.memberId === m.id).sort((a, b) => b.date.localeCompare(a.date))[0];
               return (
                 <Card key={m.id} style={{ padding: "14px 18px", marginBottom: 8 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 120px 55px 150px 70px", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 55px 150px 70px", alignItems: "center", gap: 12 }}>
                     <Avatar letters={m.av} size={30} />
-                    <div><div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{m.title} · Last: {lastSub ? lastSub.week : "No submission"}</div></div>
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}>{lastSub && <Tag type={lastSub.approval} small label={APPROVAL[lastSub.approval].label} />}</div>
+                    <div><div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{m.title}</div></div>
                     <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</span>
                     <Bar value={r} status={s} h={6} />
                     <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={s} small /></div>
@@ -3767,37 +3764,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                   )}
                 </div>
               )}
-              {/* Weekly text submissions */}
-              {weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).length > 0 && (
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 10 }}>Weekly Submissions</div>
-                  {weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||b.date.localeCompare(a.date); }).map(sub => {
-                    const mem = users.find(u => u.id === sub.memberId);
-                    return (
-                      <Card key={sub.id} style={{ padding: "14px 18px", marginBottom: 6, borderLeft: sub.approval === "pending" ? `3px solid ${T.warn}` : sub.approval === "rejected" ? `3px solid ${T.bad}` : `3px solid ${T.ok}` }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <Avatar letters={mem?.av || "?"} size={26} />
-                            <div><div style={{ fontSize: 14, fontWeight: 700 }}>{mem?.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{sub.week} · {sub.date}</div></div>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <button onClick={() => { if (window.confirm(`Delete?`)) dispatch({ type: "REMOVE_WEEKLY_SUB", subId: sub.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
-                          </div>
-                        </div>
-                        <p style={{ margin: "0 0 10px", fontSize: 13, color: T.textSoft, lineHeight: 1.6, padding: "8px 12px", background: T.raised, borderRadius: 7 }}>{sub.items}</p>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <Tag type={sub.approval} label={APPROVAL[sub.approval].label} />
-                          {sub.approval === "pending" && <div style={{ display: "flex", gap: 8 }}>
-                            <Btn danger small onClick={() => setConfirmApproval({ subId: sub.id, status: "rejected", memberName: mem?.name, week: sub.week })}>Reject</Btn>
-                            <Btn primary small onClick={() => setConfirmApproval({ subId: sub.id, status: "approved", memberName: mem?.name, week: sub.week })}>Approve</Btn>
-                          </div>}
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-              {myOkrSubsForApproval.filter(s => s.answer !== null).length === 0 && weeklySubs.filter(s => myTeamMemberIds.includes(s.memberId)).length === 0 && (
+              {myOkrSubsForApproval.filter(s => s.answer !== null).length === 0 && (
                 <EmptyState text="No submissions to review yet." />
               )}
             </Pane>
@@ -4029,7 +3996,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
-  const [newOut, setNewOut] = useState({ week: currentFYWeek(), items: "" });
   const [myKpiPeriod, setMyKpiPeriod] = useState("all");
   const [okrPeriod, setOkrPeriod] = useState("monthly");
   const [reportSubTab, setReportSubTab] = useState("monthly");
@@ -4039,18 +4005,15 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const [expandedKrHistory, setExpandedKrHistory] = useState(null);
   const [histPeriod, setHistPeriod] = useState("all");
 
-  const { memberData, weeklySubs, monthlyReports, depts } = state;
+  const { memberData, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
   const myDept = depts.find(d => d.id === user.deptId);
   const myTeam = myDept?.teams.find(t => t.id === user.teamId);
   const mySecondTeam = user.secondTeamId ? myDept?.teams.find(t => t.id === user.secondTeamId) : null;
-  const mySubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
-  const rate = calcMemberRate(user.id, kd.krs, state.okrSubmissions || []); const st = getStatus(rate);
-  const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
-  const thisWeekSub = mySubs.find(s => s.week === currentFYWeek());
-
   const myOkrSubs = (state.okrSubmissions || []).filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
+  const rate = calcMemberRate(user.id, kd.krs, state.okrSubmissions || []); const st = getStatus(rate);
+  const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
   const navItems = [
     { id: "mykpis",       icon: "◎", label: "My OKRs"          },
     { id: "checkin",      icon: "✓", label: "OKR Check-in"     },
@@ -4503,32 +4466,6 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             </Pane>
           </>);
         })()}
-
-        {page === "submit" && (<>
-          <Header title="Weekly Submission" sub="Submit your work outcomes — due every week"
-            right={thisWeekSub ? <Tag type="approved" label="This week: Submitted" /> : <Tag type="rejected" label="This week: Not yet submitted" />} />
-          <Pane>
-            <Card style={{ padding: 20 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Work Outcome Summary</div>
-              <Select value={newOut.week} onChange={e => setNewOut(p => ({ ...p, week: e.target.value }))} style={{ width: 260, marginBottom: 10 }}>
-                {getFYWeeks().map(w => <option key={w} value={w}>{w}</option>)}
-              </Select>
-              <TextArea value={newOut.items} onChange={e => setNewOut(p => ({ ...p, items: e.target.value }))} placeholder="What did you accomplish this week? List your key tasks, wins, and any blockers..." rows={5} />
-              {mySubs.some(s => s.week === newOut.week) && (
-                <div style={{ fontSize: 13, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "8px 12px", marginTop: 10 }}>
-                  You already submitted for <strong>{newOut.week}</strong>. Change the week label to submit again.
-                </div>
-              )}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-                <span style={{ fontSize: 12, color: T.textMuted }}>Your submission will be sent to your manager for approval</span>
-                <Btn primary disabled={!newOut.items || mySubs.some(s => s.week === newOut.week)} onClick={() => {
-                  dispatch({ type: "ADD_WEEKLY_SUB", sub: { id: `ws${Date.now()}`, memberId: user.id, week: newOut.week, items: newOut.items, date: new Date().toISOString().slice(0, 10), approval: "pending", mgrNote: "" } });
-                  setNewOut({ week: currentFYWeek(), items: "" });
-                }}>Submit for Approval</Btn>
-              </div>
-            </Card>
-          </Pane>
-        </>)}
 
         {page === "history" && (<>
           <Header title="My OKR Check-in History" sub="All check-in submissions and their approval status" />
