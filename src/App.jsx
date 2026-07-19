@@ -3367,6 +3367,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           if (!dept) return (<><Header title="OKR Overview" sub="Your department's key results by period" /><Pane><EmptyState text="No department assigned to your account." /></Pane></>);
           const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
           const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const pLabel = okrPeriod === "all" ? "All Periods" : okrPeriod.charAt(0).toUpperCase() + okrPeriod.slice(1);
+          const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
           const renderRows = (krs, deptId, teamId) => krs.map((kr, i) => {
             const pct = krCompletion(kr); const st = getStatus(pct);
@@ -3512,7 +3514,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 <Metric label="Teams" value={dept.teams.length} />
               </div>
               <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{dept.name} — Department KRs</div>
+                <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{dept.name} — Department KRs<PChip /></div>
                 {dKrs.length > 0 && <Btn primary small onClick={() => mgrDoDeptSync(dept.id)}>⟳ Sync to All Members</Btn>}
               </div>
               {renderSection(dKrs, dept.id, null)}
@@ -3537,11 +3539,11 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                 })()}
               </>)}
               {teamStats.filter(t => t.krs.length > 0).length > 0 && (<>
-                <SectionLabel>Team Overview</SectionLabel>
+                <SectionLabel>Team Overview<PChip /></SectionLabel>
                 {teamStats.filter(t => t.krs.length > 0).map(t => (
                   <Card key={t.id} style={{ padding: "14px 16px", marginBottom: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}<PChip /></span>
                       {t.lead && <span style={{ fontSize: 12, color: T.textMuted }}>Lead: {t.lead}</span>}
                       <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate.toFixed(1)}%</span>
                       <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
@@ -4229,6 +4231,8 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           if (!myDept) return (<><Header title="OKR Overview" sub="" /><Pane><EmptyState text="No department assigned." /></Pane></>);
           const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
           const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const pLabel = okrPeriod === "all" ? "All Periods" : okrPeriod.charAt(0).toUpperCase() + okrPeriod.slice(1);
+          const PChip = () => <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 7px", fontWeight: 700, marginLeft: 8, textTransform: "none", letterSpacing: "normal", verticalAlign: "middle" }}>{pLabel}</span>;
           const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
           const renderKrRows = (krs) => krs.map((kr, i) => {
             const pct = krCompletion(kr); const s = getStatus(pct);
@@ -4326,24 +4330,24 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 <Metric label="KRs this period" value={totalKrs} />
                 {myTeam && <Metric label={mySecondTeam ? "My Teams" : "My Team"} value={mySecondTeam ? `${myTeam.name} / ${mySecondTeam.name}` : myTeam.name} />}
               </div>
-              <SectionLabel>Department Key Results</SectionLabel>
+              <SectionLabel>Department Key Results<PChip /></SectionLabel>
               {renderGroup(myDept.krs)}
               {myTeam && (<>
-                <SectionLabel>My Team — {myTeam.name}</SectionLabel>
+                <SectionLabel>My Team — {myTeam.name}<PChip /></SectionLabel>
                 {myTeam.obj && <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>Objective: {myTeam.obj}{myTeam.lead ? ` · Lead: ${myTeam.lead}` : ""}</div>}
                 {renderGroup(myTeam.krs)}
               </>)}
               {mySecondTeam && (<>
-                <SectionLabel>My Team — {mySecondTeam.name}</SectionLabel>
+                <SectionLabel>My Team — {mySecondTeam.name}<PChip /></SectionLabel>
                 {mySecondTeam.obj && <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>Objective: {mySecondTeam.obj}{mySecondTeam.lead ? ` · Lead: ${mySecondTeam.lead}` : ""}</div>}
                 {renderGroup(mySecondTeam.krs)}
               </>)}
               {allTeamStats.length > 0 && (<>
-                <SectionLabel>All Teams Overview</SectionLabel>
+                <SectionLabel>All Teams Overview<PChip /></SectionLabel>
                 {allTeamStats.map(t => (
                   <Card key={t.id} style={{ padding: "14px 16px", marginBottom: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}<PChip /></span>
                       <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate.toFixed(1)}%</span>
                       <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
                       <Tag type={t.status} small />
