@@ -1423,7 +1423,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     const d = new Date(s.sentAt), now = new Date();
     if (overviewView === "weekly") {
       const dow = now.getDay();
-      const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+      const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) - 7);
       const sun = new Date(mon); sun.setDate(mon.getDate() + 7);
       return d >= mon && d < sun;
     }
@@ -1720,7 +1720,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             const now = new Date();
             if (overviewView === "weekly") {
               const dow = now.getDay();
-              const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+              const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) - 7);
               const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
               const fmt = d => d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
               return `${fmt(mon)} – ${fmt(sun)} · All departments`;
