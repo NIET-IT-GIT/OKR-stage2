@@ -1607,7 +1607,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
       (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
       if (!krList.length) continue;
-      const freshKrs = krList.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+      const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
+      const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
       if (!freshKrs.length) continue;
       recipients.push({ user: u, dept, krs: freshKrs });
     }
@@ -1632,7 +1633,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
       (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
       if (!krList.length) continue;
-      const freshKrs = krList.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+      const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
+      const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
       const monthKey = period === "monthly" ? periodKey
         : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
         : currentFYMonthKey();
