@@ -3552,6 +3552,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
                         {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
                         <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>
                         <Tag type={st} small />
@@ -4352,6 +4353,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
                         {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
                         <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>
                         <Tag type={st} small />
