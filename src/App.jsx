@@ -4043,7 +4043,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const myOkrSubs = (state.okrSubmissions || []).filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const navItems = [
-    { id: "mykpis",       icon: "◎", label: "My KPIs"          },
+    { id: "mykpis",       icon: "◎", label: "My OKRs"          },
     { id: "checkin",      icon: "✓", label: "OKR Check-in"     },
     { id: "okr-overview", icon: "⬛", label: "OKR Overview"     },
     { id: "history",      icon: "⊞", label: "My History"        },
@@ -4056,7 +4056,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "mykpis" && (<>
-          <Header title="My KPIs" sub={`${user.title} · FY26 Q1`} right={<Tag type={st} />} />
+          <Header title="My OKRs" sub={`${user.title} · FY26 Q1`} right={<Tag type={st} />} />
           <Pane>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {["all", "weekly", "monthly", "quarterly", "biannual", "annual"].map(p => (
