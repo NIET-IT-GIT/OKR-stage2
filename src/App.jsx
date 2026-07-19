@@ -4046,7 +4046,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const mySecondTeam = user.secondTeamId ? myDept?.teams.find(t => t.id === user.secondTeamId) : null;
   const mySubs = weeklySubs.filter(s => s.memberId === user.id).sort((a, b) => b.date.localeCompare(a.date));
   const rate = calcMemberRate(user.id, kd.krs, state.okrSubmissions || []); const st = getStatus(rate);
-  const pendingCount = mySubs.filter(s => s.approval === "pending").length;
+  const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
   const thisWeekSub = mySubs.find(s => s.week === currentFYWeek());
 
   const myOkrSubs = (state.okrSubmissions || []).filter(s => s.memberId === user.id);
