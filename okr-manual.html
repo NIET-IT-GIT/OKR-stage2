@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIET Group OKR Portal — User Manual</title>
+<style>
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 13.5pt; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  color: #111827;
+  line-height: 1.6;
+  background: #fff;
+}
+
+/* ── COVER PAGE ── */
+.cover {
+  page-break-after: always;
+  height: 100vh;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 72px 80px;
+  background: linear-gradient(150deg, #0071e3 0%, #6b47dc 100%);
+  color: #fff;
+}
+.cover .org { font-size: 10pt; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; opacity: .75; margin-bottom: 24px; }
+.cover h1 { font-size: 38pt; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin-bottom: 16px; }
+.cover .subtitle { font-size: 13pt; opacity: .8; max-width: 380px; line-height: 1.5; }
+.cover .meta { margin-top: auto; padding-top: 40px; border-top: 1px solid rgba(255,255,255,.25); display: flex; gap: 40px; }
+.cover .meta-item .ml { font-size: 8pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .6; margin-bottom: 3px; }
+.cover .meta-item .mv { font-size: 10.5pt; font-weight: 600; }
+
+/* ── TOC PAGE ── */
+.toc-page {
+  page-break-after: always;
+  padding: 60px 80px;
+}
+.toc-page h2 { font-size: 22pt; font-weight: 800; letter-spacing: -.02em; margin-bottom: 32px; color: #111827; border-bottom: 2px solid #dde5f7; padding-bottom: 10px; }
+.toc-portal { margin-bottom: 28px; }
+.toc-portal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.toc-portal-head .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 8pt; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.badge-m   { background: #dcfce7; color: #166534; }
+.badge-mgr { background: #fef3c7; color: #92400e; }
+.badge-adm { background: #ede9fe; color: #5b21b6; }
+.toc-portal-head .ptitle { font-size: 13.5pt; font-weight: 700; }
+.toc-list { list-style: none; padding-left: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 24px; }
+.toc-list li { font-size: 10pt; color: #374151; display: flex; gap: 6px; }
+.toc-list li::before { content: '—'; color: #9ca3af; flex-shrink: 0; }
+
+/* ── PORTAL SECTION DIVIDER ── */
+.portal-divider {
+  page-break-before: always;
+  padding: 60px 80px 40px;
+  margin-bottom: 0;
+  background: linear-gradient(135deg, #0071e3 0%, #6b47dc 100%);
+  color: #fff;
+}
+.portal-divider .pd-eyebrow { font-size: 9pt; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; opacity: .7; margin-bottom: 8px; }
+.portal-divider h2 { font-size: 28pt; font-weight: 800; letter-spacing: -.025em; margin-bottom: 10px; }
+.portal-divider p { font-size: 11pt; opacity: .8; max-width: 480px; line-height: 1.55; }
+.portal-divider .pd-badge { display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3); border-radius: 20px; padding: 3px 12px; font-size: 9pt; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 16px; }
+
+/* ── CONTENT BODY ── */
+.content-body { padding: 48px 80px 56px; }
+.section { margin-bottom: 40px; }
+.section-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: #0071e3; margin-bottom: 6px; }
+.section h3 { font-size: 16pt; font-weight: 800; letter-spacing: -.02em; color: #111827; border-bottom: 1px solid #dde5f7; padding-bottom: 8px; margin-bottom: 14px; }
+.section h4 { font-size: 11.5pt; font-weight: 700; margin: 20px 0 7px; color: #1f2937; }
+.section p { font-size: 10.5pt; color: #374151; margin-bottom: 10px; max-width: 70ch; }
+.section ul, .section ol { font-size: 10.5pt; color: #374151; padding-left: 18px; margin-bottom: 10px; }
+.section li { margin-bottom: 4px; }
+
+/* ── STEPS ── */
+.steps { list-style: none; padding: 0; margin: 14px 0; }
+.steps li { display: flex; gap: 12px; margin-bottom: 9px; background: #f0f4ff; border: 1px solid #dde5f7; border-radius: 7px; padding: 10px 13px; break-inside: avoid; }
+.step-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #0071e3; color: #fff; font-size: 8pt; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.step-body { flex: 1; }
+.step-body strong { display: block; font-size: 10.5pt; color: #111827; margin-bottom: 1px; }
+.step-body span { font-size: 9.5pt; color: #4b5563; }
+
+/* ── CALLOUTS ── */
+.callout { border-radius: 6px; padding: 10px 13px; display: flex; gap: 9px; margin: 13px 0; font-size: 9.5pt; line-height: 1.5; break-inside: avoid; }
+.callout-icon { flex-shrink: 0; }
+.callout-body { flex: 1; }
+.callout-body strong { display: block; margin-bottom: 2px; }
+.callout.info  { background: #eff6ff; border-left: 3px solid #0071e3; color: #1d4ed8; }
+.callout.tip   { background: #dcfce7; border-left: 3px solid #16a34a; color: #15803d; }
+.callout.warn  { background: #fef3c7; border-left: 3px solid #d97706; color: #92400e; }
+
+/* ── TABLE ── */
+table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 12px 0; break-inside: avoid; }
+th { text-align: left; padding: 7px 11px; background: #f5f8ff; color: #6b7280; font-size: 8pt; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; border-bottom: 1.5px solid #dde5f7; }
+td { padding: 8px 11px; border-bottom: 1px solid #dde5f7; color: #374151; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td strong { color: #111827; }
+
+/* ── FIELD GRID ── */
+.field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 12px 0; }
+.field-card { background: #f5f8ff; border: 1px solid #dde5f7; border-radius: 6px; padding: 10px 12px; break-inside: avoid; }
+.field-card .fc-label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: #6b7280; margin-bottom: 3px; }
+.field-card .fc-desc  { font-size: 9pt; color: #374151; }
+
+/* ── CHIPS ── */
+.chip { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 8pt; font-weight: 700; }
+.chip.green  { background: #dcfce7; color: #15803d; }
+.chip.yellow { background: #fef3c7; color: #92400e; }
+.chip.red    { background: #fee2e2; color: #b91c1c; }
+
+/* ── ROLE BADGE (inline) ── */
+.role-badge { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 7.5pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.role-badge.member  { background: #dcfce7; color: #166534; }
+.role-badge.manager { background: #fef3c7; color: #92400e; }
+.role-badge.admin   { background: #ede9fe; color: #5b21b6; }
+
+code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; background: #f1f5ff; padding: 1px 5px; border-radius: 3px; color: #6b47dc; }
+
+/* ── PAGE BREAKS ── */
+.section { break-inside: avoid-page; }
+.no-break { break-inside: avoid; }
+
+/* ── PRINT SETTINGS ── */
+@media print {
+  @page { margin: 0; size: A4; }
+  @page :first { margin: 0; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cover { height: 297mm; page-break-after: always; }
+  .toc-page, .portal-divider, .content-body { padding-left: 72px; padding-right: 72px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════ COVER ══════ -->
+<div class="cover">
+  <div class="org">NIET Group</div>
+  <h1>OKR Portal<br>User Manual</h1>
+  <p class="subtitle">Complete guide for Members, Managers, and Administrators</p>
+  <div class="meta">
+    <div class="meta-item"><div class="ml">Audience</div><div class="mv">All Staff</div></div>
+    <div class="meta-item"><div class="ml">Portals</div><div class="mv">Member · Manager · Admin</div></div>
+    <div class="meta-item"><div class="ml">Version</div><div class="mv">July 2026</div></div>
+  </div>
+</div>
+
+<!-- ══════ TABLE OF CONTENTS ══════ -->
+<div class="toc-page">
+  <h2>Contents</h2>
+
+  <div class="toc-portal">
+    <div class="toc-portal-head">
+      <span class="badge badge-m">Member</span>
+      <span class="ptitle">Member Portal</span>
+    </div>
+    <ul class="toc-list">
+      <li>Overview</li>
+      <li>Submitting Yes — Target Met</li>
+      <li>My Dashboard</li>
+      <li>Submitting No — Target Not Met</li>
+      <li>My Check-ins Page</li>
+      <li>Submission History</li>
+      <li>Company Reports</li>
+      <li></li>
+    </ul>
+  </div>
+
+  <div class="toc-portal">
+    <div class="toc-portal-head">
+      <span class="badge badge-mgr">Manager</span>
+      <span class="ptitle">Manager Portal</span>
+    </div>
+    <ul class="toc-list">
+      <li>Overview</li>
+      <li>Rejecting a Submission</li>
+      <li>Viewing Your Team</li>
+      <li>Approval Outcomes</li>
+      <li>Approving a Submission</li>
+      <li>Reports</li>
+    </ul>
+  </div>
+
+  <div class="toc-portal">
+    <div class="toc-portal-head">
+      <span class="badge badge-adm">Admin</span>
+      <span class="ptitle">Admin Portal</span>
+    </div>
+    <ul class="toc-list">
+      <li>Overview</li>
+      <li>Sending Check-in Emails</li>
+      <li>Company Overview</li>
+      <li>Leaderboard</li>
+      <li>Departments &amp; KR Configuration</li>
+      <li>OKR Reports</li>
+      <li>OKR Period Types</li>
+      <li>Email Templates</li>
+      <li>User Management</li>
+      <li></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     MEMBER PORTAL
+════════════════════════════════════ -->
+<div class="portal-divider">
+  <div class="pd-badge">1 of 3</div>
+  <div class="pd-eyebrow">Portal</div>
+  <h2>Member Portal</h2>
+  <p>Track your Key Results and respond to periodic check-in requests sent by your admin team.</p>
+</div>
+
+<div class="content-body">
+
+  <div class="section">
+    <div class="section-eyebrow">Getting Started</div>
+    <h3>Overview <span class="role-badge member">Member</span></h3>
+    <p>The Member Portal is where all staff track their individual Key Results (KRs) and respond to periodic check-in requests. Your manager and admin team can see your submissions and progress rate.</p>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Your role</strong>You have a Member account if you are a general staff member. Managers also see this portal for their own personal KRs alongside their Manager Portal.</div>
+    </div>
+    <table>
+      <thead><tr><th>Page</th><th>What you do here</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Dashboard</strong></td><td>See your overall KR completion rate and current KR targets</td></tr>
+        <tr><td><strong>My Check-ins</strong></td><td>Submit responses to check-in requests sent by your admin</td></tr>
+        <tr><td><strong>Reports</strong></td><td>Read company-wide OKR reports published by Admin</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Dashboard</div>
+    <h3>My Dashboard</h3>
+    <p>The dashboard gives you a snapshot of your current OKR performance. Your completion rate is shown as a percentage with a colour-coded status.</p>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Completion Rate</div><div class="fc-desc">e.g. 84.2% — average across all active KRs that have received check-ins</div></div>
+      <div class="field-card"><div class="fc-label">Status</div><div class="fc-desc"><span class="chip green">On Track</span> <span class="chip yellow">At Risk</span> <span class="chip red">Off Track</span> — based on completion vs. target pace</div></div>
+      <div class="field-card"><div class="fc-label">Pending Check-ins</div><div class="fc-desc">Badge count showing unanswered check-in requests waiting for you</div></div>
+    </div>
+    <h4>Understanding your completion rate</h4>
+    <p>Your rate is calculated only from KRs that have had a check-in sent to you. KRs with no check-in ever sent do not affect your rate. Once a check-in is sent and goes unanswered for more than 24 hours, that KR is counted as 0% until you respond and your manager approves the submission.</p>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>24-hour rule</strong>If you receive a check-in email and do not respond within 24 hours, that KR will show as 0% in your rate and in your department's rate. Always respond promptly.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Check-ins</div>
+    <h3>My Check-ins Page</h3>
+    <p>When your admin sends a check-in, you receive an email and a card appears here. Each card represents one Key Result for a specific review period.</p>
+    <p>Each card shows:</p>
+    <ul>
+      <li><strong>KR name</strong> — what is being measured</li>
+      <li><strong>Target</strong> — the number you were expected to reach</li>
+      <li><strong>Review period</strong> — the time window this check-in covers (always the <em>previous</em> period)</li>
+    </ul>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Review period is the past period</strong>Check-ins always cover the period that just ended. A weekly check-in sent on Monday covers last week's work (Mon–Sun), not the current week.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Responding to Check-ins</div>
+    <h3>Submitting "Yes" — Target Met</h3>
+    <p>Click <strong>✓ Yes</strong> when you have met or exceeded the target for the review period.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click ✓ Yes</strong><span>Your response is recorded immediately. The system sets your actual value equal to the target.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Submission goes to your manager</strong><span>The card shows "Pending approval" until your manager reviews it.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Manager approves</strong><span>Your KR completion rate updates to reflect the approved actual value.</span></div></li>
+    </ol>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Tip</strong>Your rate does not update until approval. If your manager has not approved within a few days, follow up with them directly.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Responding to Check-ins</div>
+    <h3>Submitting "No" — Target Not Met</h3>
+    <p>Click <strong>✗ No</strong> if you did not fully meet the target. You will be asked to provide a reason and your actual value.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click ✗ No</strong><span>An inline form opens below the card.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Enter your reason</strong><span>Explain briefly why the target was not met. Be specific — this goes to your manager.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Enter your actual value</strong><span>Type the number you actually achieved (e.g. 38 out of a target of 50).</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Click Submit No</strong><span>Your submission is sent to your manager for review, including the reason and actual value you entered.</span></div></li>
+    </ol>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Actual value matters</strong>The number you enter here directly determines your KR completion rate once approved. Enter the real figure — your manager may adjust it if they disagree.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">History</div>
+    <h3>Submission History</h3>
+    <p>Answered check-ins appear below the pending section. Each answered card shows your response, the review period, and the approval status.</p>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip yellow">Pending approval</span></td><td>You have answered; waiting for your manager to approve or reject</td></tr>
+        <tr><td><span class="chip green">Approved</span></td><td>Manager approved — your KR actual value has been updated and counts toward your rate</td></tr>
+        <tr><td><span class="chip red">Rejected</span></td><td>Manager disagreed and has set a different actual value; your KR is updated with their figure</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Reports</div>
+    <h3>Company Reports</h3>
+    <p>The Reports page shows company-wide OKR reports published by the Admin team. Reports are permanent snapshots — they do not change after publishing.</p>
+    <p>Each report shows:</p>
+    <ul>
+      <li><strong>Department Rankings</strong> — KR completion rates by department at time of publishing</li>
+      <li><strong>Top Performers</strong> — highest-achieving staff members that period</li>
+      <li><strong>Needs Improvement</strong> — staff flagged as below target that period</li>
+      <li><strong>Submission Rate</strong> — what percentage of check-ins received a "Yes" answer</li>
+    </ul>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">Reports are read-only for Members and Managers. Only Admins can publish, edit, or delete reports.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ════════════════════════════════════
+     MANAGER PORTAL
+════════════════════════════════════ -->
+<div class="portal-divider">
+  <div class="pd-badge">2 of 3</div>
+  <div class="pd-eyebrow">Portal</div>
+  <h2>Manager Portal</h2>
+  <p>Review and approve check-in submissions from your direct team members.</p>
+</div>
+
+<div class="content-body">
+
+  <div class="section">
+    <div class="section-eyebrow">Getting Started</div>
+    <h3>Overview <span class="role-badge manager">Manager</span></h3>
+    <p>As a Manager, you are responsible for reviewing the check-in submissions from your direct team members and deciding whether their reported actual values are accurate.</p>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Dual access</strong>Managers have access to both the Manager Portal (to manage their team) and the Member Portal (to submit their own personal KR check-ins).</div>
+    </div>
+    <table>
+      <thead><tr><th>Page</th><th>What you do here</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Team Overview</strong></td><td>See all team members, their completion rates, and pending submissions</td></tr>
+        <tr><td><strong>Approve Submissions</strong></td><td>Review, approve, or reject check-in submissions from your team</td></tr>
+        <tr><td><strong>Reports</strong></td><td>Read company-wide OKR reports</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Team Overview</div>
+    <h3>Viewing Your Team</h3>
+    <p>The Team Overview shows every member in your department with their current KR completion rate and a colour-coded status badge.</p>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Completion Rate</div><div class="fc-desc">Based on check-ins that have been answered and approved</div></div>
+      <div class="field-card"><div class="fc-label">Status</div><div class="fc-desc"><span class="chip green">Green</span> when at or above target pace set by Admin</div></div>
+      <div class="field-card"><div class="fc-label">Last submission</div><div class="fc-desc">Date of most recent answered check-in</div></div>
+    </div>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>0% with no data</strong>A member showing 0% may have no check-ins sent yet — not necessarily poor performance. Check whether check-ins have been sent for that period.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Approvals</div>
+    <h3>Approving a Submission</h3>
+    <p>When a team member submits a check-in (either Yes or No), it appears in your <strong>Approve Submissions</strong> queue.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Open Approve Submissions</strong><span>A badge on the nav item shows how many submissions are awaiting your review.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Review the submission card</strong><span>Each card shows: KR name, target, review period, the member's answer (Yes/No), their reported actual value, and (for No answers) their reason.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Click Approve</strong><span>The member's KR actual value is set to what they reported. Their completion rate updates immediately.</span></div></li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Approvals</div>
+    <h3>Rejecting a Submission</h3>
+    <p>Reject a submission when you believe the member's reported actual value is incorrect. You must provide the correct actual value when rejecting.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click Reject</strong><span>An inline form opens on the submission card.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Enter the correct actual value</strong><span>Type the number you believe accurately reflects the member's performance for that period.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Confirm rejection</strong><span>The member's KR actual value is set to your entered value, not theirs.</span></div></li>
+    </ol>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Rejection is definitive</strong>A rejected submission is final. The member's KR actual is immediately updated with the value you provided. There is no further appeal step in the system.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Approvals</div>
+    <h3>Approval Outcomes</h3>
+    <table>
+      <thead><tr><th>Scenario</th><th>Member submitted</th><th>After Approve</th><th>After Reject</th></tr></thead>
+      <tbody>
+        <tr><td>Member said <strong>Yes</strong></td><td>Actual = Target</td><td>kr.actual = target value</td><td>kr.actual = manager's value</td></tr>
+        <tr><td>Member said <strong>No</strong></td><td>Actual = member's reported figure</td><td>kr.actual = member's figure</td><td>kr.actual = manager's figure</td></tr>
+      </tbody>
+    </table>
+    <p>Once approved or rejected, the member's completion rate re-calculates using the new actual value. This also updates the department rate and the Company Overview.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Reports</div>
+    <h3>Company Reports</h3>
+    <p>Managers can read all published company OKR reports. The content is identical to what members see — reports are read-only for all non-admin roles. See <em>Member Portal → Company Reports</em> for details on what each report contains.</p>
+  </div>
+
+</div>
+
+<!-- ════════════════════════════════════
+     ADMIN PORTAL
+════════════════════════════════════ -->
+<div class="portal-divider">
+  <div class="pd-badge">3 of 3</div>
+  <div class="pd-eyebrow">Portal</div>
+  <h2>Admin Portal</h2>
+  <p>Full system control — configure KRs, manage users, send check-in emails, and publish reports.</p>
+</div>
+
+<div class="content-body">
+
+  <div class="section">
+    <div class="section-eyebrow">Getting Started</div>
+    <h3>Overview <span class="role-badge admin">Admin</span></h3>
+    <p>The Admin Portal gives you full control over the OKR system — setting up KRs, managing users, triggering check-in emails, and publishing reports. Admins are the only role that can modify any data in the system.</p>
+    <table>
+      <thead><tr><th>Page</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Company Overview</strong></td><td>Real-time completion rate dashboard by department</td></tr>
+        <tr><td><strong>Departments</strong></td><td>Configure department KRs, teams, and member KR assignments</td></tr>
+        <tr><td><strong>Leaderboard</strong></td><td>Rank all staff by completion rate across any period type</td></tr>
+        <tr><td><strong>Users</strong></td><td>Create, edit, and deactivate user accounts</td></tr>
+        <tr><td><strong>Send Check-ins</strong></td><td>Send check-in emails to staff for a chosen period type</td></tr>
+        <tr><td><strong>Reports</strong></td><td>Publish and manage company-wide OKR snapshot reports</td></tr>
+        <tr><td><strong>Email Templates</strong></td><td>Customise the check-in email content per period type</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Dashboard</div>
+    <h3>Company Overview</h3>
+    <p>The Company Overview shows real-time KR completion rates for every department. Use the three view buttons to change the scope:</p>
+    <table>
+      <thead><tr><th>View</th><th>KR types included</th><th>Submission window</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Weekly Overview</strong></td><td>Daily + Weekly</td><td>Check-ins sent this calendar week (Mon–Sun)</td></tr>
+        <tr><td><strong>Monthly Overview</strong></td><td>Daily + Weekly + Monthly</td><td>Check-ins sent this calendar month</td></tr>
+        <tr><td><strong>Annual Overview</strong></td><td>All types (daily through annual)</td><td>Check-ins sent this financial year (Jul–Jun)</td></tr>
+      </tbody>
+    </table>
+    <h4>How department rates are calculated</h4>
+    <p>Each department's rate is the average of its members' individual completion rates. A member is included only if they have at least one answered or overdue check-in in the selected window. Members with no check-ins sent are excluded so early-period gaps do not drag a department's rate down unfairly.</p>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>No data yet?</strong>If no check-ins have been sent in the selected window, a "No check-in submissions for this period yet" message appears. Switch to Annual Overview to see all-time data, or send check-ins first.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>Departments &amp; KR Configuration</h3>
+    <p>The Departments page is where you set up the KR structure that staff are measured against. Each department contains:</p>
+    <ul>
+      <li><strong>Department-level KRs</strong> — shared by all members of the department</li>
+      <li><strong>Teams</strong> — sub-groups within the department, each with their own KRs</li>
+      <li><strong>Member KRs</strong> — personal KRs assigned to individual staff members</li>
+    </ul>
+    <h4>Adding a KR</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Select the department</strong><span>Use the sidebar or the Departments nav item to open a department.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click Add KR</strong><span>In the appropriate section (dept-level, team, or member).</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Fill in KR details</strong><span>Label, target value, unit, operator (≥ or ≤), and period type.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Save</strong><span>Changes sync to the database automatically.</span></div></li>
+    </ol>
+    <h4>KR Fields</h4>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Label</div><div class="fc-desc">Description of the key result, e.g. "Complete 50 training hours"</div></div>
+      <div class="field-card"><div class="fc-label">Target</div><div class="fc-desc">The number to reach. For monthly KRs you can set a different target per month.</div></div>
+      <div class="field-card"><div class="fc-label">Unit</div><div class="fc-desc">Optional unit shown in emails and cards, e.g. "hours", "%", "calls"</div></div>
+      <div class="field-card"><div class="fc-label">Operator</div><div class="fc-desc">≥ means higher is better; ≤ means lower is better (e.g. error rate)</div></div>
+      <div class="field-card"><div class="fc-label">Period</div><div class="fc-desc">How often this KR is checked: daily, weekly, monthly, quarterly, bi-annual, or annual</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>OKR Period Types</h3>
+    <p>Every KR has a period type that determines how frequently check-ins are sent and how the period key is labelled.</p>
+    <table>
+      <thead><tr><th>Period</th><th>Check-in covers</th><th>Key format</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Daily</strong></td><td>Yesterday</td><td>YYYY-MM-DD</td><td>2026-07-16</td></tr>
+        <tr><td><strong>Weekly</strong></td><td>Previous week (Mon–Sun)</td><td>Wk N · D Mon – D Mon</td><td>Wk 1 · 7 Jul–13 Jul</td></tr>
+        <tr><td><strong>Monthly</strong></td><td>Previous calendar month</td><td>YYYY-MM</td><td>2026-06</td></tr>
+        <tr><td><strong>Quarterly</strong></td><td>Previous FY quarter</td><td>FYXX QN</td><td>FY26 Q1 (Jul–Sep)</td></tr>
+        <tr><td><strong>Bi-Annual</strong></td><td>Previous FY half</td><td>FYXX HN</td><td>FY26 H1 (Jul–Dec)</td></tr>
+        <tr><td><strong>Annual</strong></td><td>Previous calendar year</td><td>YYYY</td><td>2025</td></tr>
+      </tbody>
+    </table>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Australian Financial Year</strong>Quarterly and Bi-Annual periods follow the Australian FY calendar: Q1 = Jul–Sep, Q2 = Oct–Dec, Q3 = Jan–Mar, Q4 = Apr–Jun. H1 = Jul–Dec, H2 = Jan–Jun.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>User Management</h3>
+    <p>The Users page lets you create and manage all portal accounts.</p>
+    <h4>Creating a new user</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click Add User</strong><span>Opens the new-user form.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Fill in name, email, role, and department</strong><span>The email address is where check-in emails will be sent.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Assign to a team (optional)</strong><span>Team membership determines which team-level KRs the member receives check-ins for.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Save</strong><span>The user can now log in and will receive future check-in emails.</span></div></li>
+    </ol>
+    <table>
+      <thead><tr><th>Role</th><th>Portal access</th></tr></thead>
+      <tbody>
+        <tr><td><span class="role-badge member">Member</span></td><td>Member Portal only — submits own check-ins, views reports</td></tr>
+        <tr><td><span class="role-badge manager">Manager</span></td><td>Manager Portal + Member Portal — approves team submissions, submits own check-ins</td></tr>
+        <tr><td><span class="role-badge admin">Admin</span></td><td>Admin Portal — full system access including all configuration, check-in sending, and reporting</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Operations</div>
+    <h3>Sending Check-in Emails</h3>
+    <p>Check-in emails trigger the entire submission-and-approval workflow. Each send creates submission records for all relevant staff and dispatches emails.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Select the period type</strong><span>Choose Daily, Weekly, Monthly, Quarterly, Bi-Annual, or Annual. Only staff with KRs of that type will receive check-ins.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Optionally select a specific user</strong><span>Leave blank to send to all eligible staff, or pick one individual for a targeted re-send.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Click Send Check-in</strong><span>Emails are dispatched and submission records are created. A confirmation banner shows how many submissions were created.</span></div></li>
+    </ol>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Duplicate prevention</strong>If you send the same period type twice in the same window, only staff who did not receive a submission the first time will get one. Already-sent check-ins are not duplicated.</div>
+    </div>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Check-ins cover the previous period</strong>A weekly check-in sent today asks staff to review last week, not this week. The email subject and the submission card both show the exact review date range.</div>
+    </div>
+    <h4>The 24-hour rule</h4>
+    <p>If a staff member does not respond within 24 hours of a check-in being sent, that KR is automatically counted as 0% in all rate calculations. The rate is corrected as soon as the member responds and the submission is approved.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Analytics</div>
+    <h3>Leaderboard</h3>
+    <p>The Leaderboard ranks all Members and Managers by their KR completion rate. Use the filters at the top to narrow results.</p>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Period filter</div><div class="fc-desc">Filter to a specific KR type (Weekly, Monthly, etc.) to see performance for that type only</div></div>
+      <div class="field-card"><div class="fc-label">Department filter</div><div class="fc-desc">Narrow the leaderboard to a single department</div></div>
+      <div class="field-card"><div class="fc-label">Search</div><div class="fc-desc">Find a specific staff member by name</div></div>
+    </div>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">Selecting "All" in the period filter shows overall completion rate. Selecting a specific period type (e.g., Monthly) shows the rate for that type only, so rankings may differ from the overall view.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Reporting</div>
+    <h3>OKR Reports</h3>
+    <p>Published reports are permanent snapshots of performance at a point in time. They are visible to all roles but only Admins can create, edit, or delete them.</p>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Reports are frozen snapshots</strong>Once published, the data inside a report does not update even if more check-ins are approved afterward. Publish when you are satisfied the data is complete for the period.</div>
+    </div>
+    <h4>Publishing the current month's report</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Review the Current Data Preview banner</strong><span>This live panel shows what will be published: submission rate, top performers, and staff needing attention.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click "Publish [Month] Report"</strong><span>A snapshot is taken immediately and stored. The report appears in the list for all roles.</span></div></li>
+    </ol>
+    <h4>Generating a report for a custom period</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click "Generate for Period"</strong><span>An input panel expands above the report list.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Enter a Period Label</strong><span>This is the display name, e.g. "Q1 FY2026" or "Week 22".</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Enter From and To dates</strong><span>Only check-in submissions with a send date in this range are counted.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Click "Generate &amp; Publish"</strong><span>The report is created and immediately visible to all roles.</span></div></li>
+    </ol>
+    <h4>Report contents</h4>
+    <table>
+      <thead><tr><th>Section</th><th>Data shown</th><th>Calculation method</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Company Rate</strong></td><td>Overall completion %</td><td>Average of department completion rates</td></tr>
+        <tr><td><strong>Department Rankings</strong></td><td>Each dept's completion rate</td><td>KR completion rate (actual vs target), not yes/no count</td></tr>
+        <tr><td><strong>Submission Rate</strong></td><td>% of check-ins answered "Yes"</td><td>Yes answers ÷ total answered</td></tr>
+        <tr><td><strong>Top Performers</strong></td><td>Top 3 staff by completion rate</td><td>Only staff with active check-ins that period</td></tr>
+        <tr><td><strong>Action Required</strong></td><td>Staff below target pace</td><td>Staff with &lt;60% completion and active check-ins</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>Email Templates</h3>
+    <p>Customise the check-in email content for each period type. Templates support placeholders that are automatically replaced when emails are sent.</p>
+    <table>
+      <thead><tr><th>Placeholder</th><th>Replaced with</th></tr></thead>
+      <tbody>
+        <tr><td><code>{periodLabel}</code></td><td>Period type label, e.g. "Monthly"</td></tr>
+        <tr><td><code>{periodLower}</code></td><td>Lowercase label, e.g. "monthly"</td></tr>
+        <tr><td><code>{periodKey}</code></td><td>The specific period key, e.g. "2026-06"</td></tr>
+      </tbody>
+    </table>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">From Name</div><div class="fc-desc">Sender display name in the email client (default: "NIET Group OKR")</div></div>
+      <div class="field-card"><div class="fc-label">Subject</div><div class="fc-desc">Email subject line. Use placeholders for dynamic period info.</div></div>
+      <div class="field-card"><div class="fc-label">Body</div><div class="fc-desc">Introductory paragraph shown above the KR table in the email.</div></div>
+      <div class="field-card"><div class="fc-label">CTA Text</div><div class="fc-desc">Label on the button link, e.g. "Submit My Check-in →"</div></div>
+      <div class="field-card"><div class="fc-label">Footer</div><div class="fc-desc">Small print at the bottom of the email.</div></div>
+    </div>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Send a test email</strong>Use the "Send Test Email" button on the Email Templates page to preview exactly how your template looks before triggering a bulk send.</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

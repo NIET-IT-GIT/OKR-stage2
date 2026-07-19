@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIET Group OKR — Manager Portal User Guide</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 13.5pt; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #111827; line-height: 1.6; background: #fff; }
+
+.cover {
+  page-break-after: always;
+  height: 100vh; min-height: 600px;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 72px 80px;
+  background: linear-gradient(150deg, #d97706 0%, #ea580c 100%);
+  color: #fff;
+}
+.cover .org { font-size: 10pt; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; opacity: .75; margin-bottom: 24px; }
+.cover h1 { font-size: 36pt; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin-bottom: 16px; }
+.cover .subtitle { font-size: 13pt; opacity: .8; max-width: 400px; line-height: 1.5; }
+.cover .meta { margin-top: auto; padding-top: 40px; border-top: 1px solid rgba(255,255,255,.25); display: flex; gap: 40px; }
+.cover .meta-item .ml { font-size: 8pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .6; margin-bottom: 3px; }
+.cover .meta-item .mv { font-size: 10.5pt; font-weight: 600; }
+
+.toc-page { page-break-after: always; padding: 60px 80px; }
+.toc-page h2 { font-size: 20pt; font-weight: 800; letter-spacing: -.02em; margin-bottom: 28px; color: #111827; border-bottom: 2px solid #fed7aa; padding-bottom: 10px; }
+.toc-list { list-style: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 32px; }
+.toc-list li { font-size: 10.5pt; color: #374151; display: flex; gap: 8px; align-items: baseline; }
+.toc-list li::before { content: '—'; color: #d97706; flex-shrink: 0; font-weight: 700; }
+
+.content-body { padding: 48px 80px 56px; }
+.section { margin-bottom: 40px; }
+.section-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: #d97706; margin-bottom: 6px; }
+.section h3 { font-size: 16pt; font-weight: 800; letter-spacing: -.02em; color: #111827; border-bottom: 1px solid #fed7aa; padding-bottom: 8px; margin-bottom: 14px; }
+.section h4 { font-size: 11.5pt; font-weight: 700; margin: 20px 0 7px; color: #1f2937; }
+.section p { font-size: 10.5pt; color: #374151; margin-bottom: 10px; max-width: 70ch; }
+.section ul, .section ol { font-size: 10.5pt; color: #374151; padding-left: 18px; margin-bottom: 10px; }
+.section li { margin-bottom: 4px; }
+
+.steps { list-style: none; padding: 0; margin: 14px 0; }
+.steps li { display: flex; gap: 12px; margin-bottom: 9px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 7px; padding: 10px 13px; break-inside: avoid; }
+.step-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #d97706; color: #fff; font-size: 8pt; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.step-body { flex: 1; }
+.step-body strong { display: block; font-size: 10.5pt; color: #111827; margin-bottom: 1px; }
+.step-body span { font-size: 9.5pt; color: #4b5563; }
+
+.callout { border-radius: 6px; padding: 10px 13px; display: flex; gap: 9px; margin: 13px 0; font-size: 9.5pt; line-height: 1.5; break-inside: avoid; }
+.callout-icon { flex-shrink: 0; }
+.callout-body { flex: 1; }
+.callout-body strong { display: block; margin-bottom: 2px; }
+.callout.info  { background: #eff6ff; border-left: 3px solid #0071e3; color: #1d4ed8; }
+.callout.tip   { background: #f0fdf4; border-left: 3px solid #059669; color: #166534; }
+.callout.warn  { background: #fef3c7; border-left: 3px solid #d97706; color: #92400e; }
+
+table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 12px 0; break-inside: avoid; }
+th { text-align: left; padding: 7px 11px; background: #fffbeb; color: #6b7280; font-size: 8pt; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; border-bottom: 1.5px solid #fde68a; }
+td { padding: 8px 11px; border-bottom: 1px solid #e5e7eb; color: #374151; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td strong { color: #111827; }
+
+.chip { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 8pt; font-weight: 700; }
+.chip.green  { background: #dcfce7; color: #15803d; }
+.chip.yellow { background: #fef3c7; color: #92400e; }
+.chip.red    { background: #fee2e2; color: #b91c1c; }
+
+.field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 12px 0; }
+.field-card { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 12px; break-inside: avoid; }
+.field-card .fc-label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: #6b7280; margin-bottom: 3px; }
+.field-card .fc-desc  { font-size: 9pt; color: #374151; }
+
+.section { break-inside: avoid-page; }
+
+@media print {
+  @page { margin: 0; size: A4; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cover { height: 297mm; }
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="org">NIET Group OKR System</div>
+  <h1>Manager Portal<br>User Guide</h1>
+  <p class="subtitle">How to review your team's progress and approve or reject check-in submissions</p>
+  <div class="meta">
+    <div class="meta-item"><div class="ml">Audience</div><div class="mv">Managers</div></div>
+    <div class="meta-item"><div class="ml">Portal</div><div class="mv">Manager Portal</div></div>
+    <div class="meta-item"><div class="ml">Version</div><div class="mv">July 2026</div></div>
+  </div>
+</div>
+
+<div class="toc-page">
+  <h2>Contents</h2>
+  <ul class="toc-list">
+    <li>Overview</li>
+    <li>Rejecting a Submission</li>
+    <li>Your Dual Portal Access</li>
+    <li>What Happens After You Decide</li>
+    <li>Viewing Your Team</li>
+    <li>Company Reports</li>
+    <li>Approving a Submission</li>
+    <li></li>
+  </ul>
+</div>
+
+<div class="content-body">
+
+  <div class="section">
+    <div class="section-eyebrow">Getting Started</div>
+    <h3>Overview</h3>
+    <p>As a Manager, you are responsible for reviewing the check-in submissions from your direct team members and deciding whether their reported actual values are accurate. Your approval determines what gets counted in their KR completion rates.</p>
+    <table>
+      <thead><tr><th>Page</th><th>What you do here</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Team Overview</strong></td><td>See all your team members, their completion rates, and pending submission counts</td></tr>
+        <tr><td><strong>Approve Submissions</strong></td><td>Review and approve or reject check-in submissions from your team</td></tr>
+        <tr><td><strong>Reports</strong></td><td>Read company-wide OKR reports published by the Admin team</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Access</div>
+    <h3>Signing In</h3>
+    <p>The portal is accessed through your NIET Group Microsoft account — the same credentials you use for Outlook and Office 365. No separate password is required.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Open the portal in your browser</strong><span>Navigate to the OKR portal address provided by your admin. The landing page shows a single sign-in button.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click "Sign in with Microsoft"</strong><span>You will be redirected to the Microsoft login page.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Enter your NIET Group credentials</strong><span>Use your NIET Group email address (e.g. firstname.lastname@niet.edu.au) and your usual Microsoft password.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>You are signed in</strong><span>Microsoft redirects you back to the portal. As a Manager you will land on the Manager Portal dashboard by default.</span></div></li>
+    </ol>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Already signed in to Microsoft?</strong>If you are already logged in to your NIET Group Microsoft account on the device, clicking "Sign in with Microsoft" will authenticate you instantly without prompting for a password.</div>
+    </div>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Sign in issues?</strong>If you see an error after signing in, your account may not be set up with the Manager role in the portal yet. Contact your admin to confirm your account and role assignment.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Access</div>
+    <h3>Your Dual Portal Access</h3>
+    <p>Managers have access to two portals:</p>
+    <ul>
+      <li><strong>Manager Portal</strong> — to review and approve your team's submissions (this guide)</li>
+      <li><strong>Member Portal</strong> — to submit your own personal KR check-ins, just like any other staff member</li>
+    </ul>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Your own check-ins</strong>For guidance on how to submit your own KR check-ins as a member, refer to the separate <em>Member Portal User Guide</em>. This guide covers only your manager responsibilities.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Team Overview</div>
+    <h3>Viewing Your Team</h3>
+    <p>The Team Overview shows every member in your department with their current KR completion rate and a colour-coded status badge. Use this page to spot who needs attention and who has pending submissions awaiting your review.</p>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Completion Rate</div><div class="fc-desc">The member's average KR rate across answered and approved check-ins</div></div>
+      <div class="field-card"><div class="fc-label">Status</div><div class="fc-desc"><span class="chip green">Green</span> = at or above target pace · <span class="chip yellow">Amber</span> = at risk · <span class="chip red">Red</span> = below threshold</div></div>
+      <div class="field-card"><div class="fc-label">Last submission</div><div class="fc-desc">Date of the most recent answered check-in from that member</div></div>
+    </div>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>0% does not always mean poor performance</strong>A member showing 0% may simply have had no check-ins sent to them yet for the current period. Check with your admin whether check-ins have been dispatched before drawing conclusions.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Approvals</div>
+    <h3>Approving a Submission</h3>
+    <p>When a team member submits a check-in response (either Yes or No), it appears in your <strong>Approve Submissions</strong> queue. A badge on the nav item shows how many are waiting.</p>
+    <p>Each submission card shows:</p>
+    <ul>
+      <li>The member's name and the KR being checked</li>
+      <li>The target value and the review period it covers</li>
+      <li>The member's answer (Yes or No)</li>
+      <li>Their reported actual value</li>
+      <li>Their reason (only shown for No answers)</li>
+    </ul>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Read the submission card carefully</strong><span>Review the KR, the target, the member's answer, their actual value, and (for No) their reason.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click Approve if you agree with their reported actual value</strong><span>The member's KR actual is set to the figure they submitted. Their completion rate updates immediately.</span></div></li>
+    </ol>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Review promptly</strong>Members' rates show as unchanged until you approve or reject. Timely reviews ensure the leaderboard and company overview reflect current performance accurately.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Approvals</div>
+    <h3>Rejecting a Submission</h3>
+    <p>Reject a submission when you believe the member's reported actual value does not accurately reflect their performance. You are required to provide a corrected value when rejecting.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click Reject on the submission card</strong><span>An inline form opens — you stay on the same page.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Enter the correct actual value</strong><span>Type the number you believe accurately reflects the member's performance for that period.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Confirm the rejection</strong><span>The member's KR actual is immediately set to your entered value. Their completion rate recalculates.</span></div></li>
+    </ol>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Rejection is final</strong>Once rejected, the member's KR is updated with the value you provided. There is no further appeal step in the system. If you make an error, contact your admin — only admins can modify approved data.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Approvals</div>
+    <h3>What Happens After You Decide</h3>
+    <p>The table below shows exactly what value is recorded in the system for each scenario:</p>
+    <table>
+      <thead><tr><th>Scenario</th><th>Member submitted</th><th>You click Approve</th><th>You click Reject</th></tr></thead>
+      <tbody>
+        <tr><td>Member answered <strong>Yes</strong></td><td>Actual = Target value</td><td>KR actual = target value</td><td>KR actual = your entered value</td></tr>
+        <tr><td>Member answered <strong>No</strong></td><td>Actual = member's figure</td><td>KR actual = member's figure</td><td>KR actual = your entered value</td></tr>
+      </tbody>
+    </table>
+    <p>Once the actual value is recorded, the member's completion rate recalculates. This also flows up to their department's rate and the Company Overview dashboard.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Reports</div>
+    <h3>Company Reports</h3>
+    <p>The Reports page shows all company-wide OKR reports published by the Admin team. The content is the same as what members see. Reports are read-only for Managers — only Admins can publish, edit, or delete them.</p>
+    <p>Each published report contains:</p>
+    <ul>
+      <li><strong>Company Rate</strong> — overall completion rate at time of publishing</li>
+      <li><strong>Department Rankings</strong> — each department's KR completion rate</li>
+      <li><strong>Top Performers</strong> — highest-achieving staff for that period</li>
+      <li><strong>Action Required</strong> — staff who were below target pace</li>
+      <li><strong>Submission Rate</strong> — percentage of check-ins that received a "Yes" answer</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

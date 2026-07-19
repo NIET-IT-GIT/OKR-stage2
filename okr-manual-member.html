@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIET Group OKR — Member Portal User Guide</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 13.5pt; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #111827; line-height: 1.6; background: #fff; }
+
+.cover {
+  page-break-after: always;
+  height: 100vh; min-height: 600px;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 72px 80px;
+  background: linear-gradient(150deg, #059669 0%, #0071e3 100%);
+  color: #fff;
+}
+.cover .org { font-size: 10pt; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; opacity: .75; margin-bottom: 24px; }
+.cover h1 { font-size: 36pt; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin-bottom: 16px; }
+.cover .subtitle { font-size: 13pt; opacity: .8; max-width: 380px; line-height: 1.5; }
+.cover .meta { margin-top: auto; padding-top: 40px; border-top: 1px solid rgba(255,255,255,.25); display: flex; gap: 40px; }
+.cover .meta-item .ml { font-size: 8pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .6; margin-bottom: 3px; }
+.cover .meta-item .mv { font-size: 10.5pt; font-weight: 600; }
+
+.toc-page { page-break-after: always; padding: 60px 80px; }
+.toc-page h2 { font-size: 20pt; font-weight: 800; letter-spacing: -.02em; margin-bottom: 28px; color: #111827; border-bottom: 2px solid #d1fae5; padding-bottom: 10px; }
+.toc-list { list-style: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 32px; }
+.toc-list li { font-size: 10.5pt; color: #374151; display: flex; gap: 8px; align-items: baseline; }
+.toc-list li::before { content: '—'; color: #059669; flex-shrink: 0; font-weight: 700; }
+
+.content-body { padding: 48px 80px 56px; }
+.section { margin-bottom: 40px; }
+.section-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: #059669; margin-bottom: 6px; }
+.section h3 { font-size: 16pt; font-weight: 800; letter-spacing: -.02em; color: #111827; border-bottom: 1px solid #d1fae5; padding-bottom: 8px; margin-bottom: 14px; }
+.section h4 { font-size: 11.5pt; font-weight: 700; margin: 20px 0 7px; color: #1f2937; }
+.section p { font-size: 10.5pt; color: #374151; margin-bottom: 10px; max-width: 70ch; }
+.section ul, .section ol { font-size: 10.5pt; color: #374151; padding-left: 18px; margin-bottom: 10px; }
+.section li { margin-bottom: 4px; }
+
+.steps { list-style: none; padding: 0; margin: 14px 0; }
+.steps li { display: flex; gap: 12px; margin-bottom: 9px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 7px; padding: 10px 13px; break-inside: avoid; }
+.step-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #059669; color: #fff; font-size: 8pt; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.step-body { flex: 1; }
+.step-body strong { display: block; font-size: 10.5pt; color: #111827; margin-bottom: 1px; }
+.step-body span { font-size: 9.5pt; color: #4b5563; }
+
+.callout { border-radius: 6px; padding: 10px 13px; display: flex; gap: 9px; margin: 13px 0; font-size: 9.5pt; line-height: 1.5; break-inside: avoid; }
+.callout-icon { flex-shrink: 0; }
+.callout-body { flex: 1; }
+.callout-body strong { display: block; margin-bottom: 2px; }
+.callout.info  { background: #eff6ff; border-left: 3px solid #0071e3; color: #1d4ed8; }
+.callout.tip   { background: #f0fdf4; border-left: 3px solid #059669; color: #166534; }
+.callout.warn  { background: #fef3c7; border-left: 3px solid #d97706; color: #92400e; }
+
+table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 12px 0; break-inside: avoid; }
+th { text-align: left; padding: 7px 11px; background: #f0fdf4; color: #6b7280; font-size: 8pt; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; border-bottom: 1.5px solid #bbf7d0; }
+td { padding: 8px 11px; border-bottom: 1px solid #e5e7eb; color: #374151; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td strong { color: #111827; }
+
+.chip { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 8pt; font-weight: 700; }
+.chip.green  { background: #dcfce7; color: #15803d; }
+.chip.yellow { background: #fef3c7; color: #92400e; }
+.chip.red    { background: #fee2e2; color: #b91c1c; }
+
+.field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 12px 0; }
+.field-card { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 12px; break-inside: avoid; }
+.field-card .fc-label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: #6b7280; margin-bottom: 3px; }
+.field-card .fc-desc  { font-size: 9pt; color: #374151; }
+
+.section { break-inside: avoid-page; }
+
+@media print {
+  @page { margin: 0; size: A4; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cover { height: 297mm; }
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="org">NIET Group OKR System</div>
+  <h1>Member Portal<br>User Guide</h1>
+  <p class="subtitle">How to submit check-ins, track your KR progress, and read company reports</p>
+  <div class="meta">
+    <div class="meta-item"><div class="ml">Audience</div><div class="mv">All Staff (Members)</div></div>
+    <div class="meta-item"><div class="ml">Portal</div><div class="mv">Member Portal</div></div>
+    <div class="meta-item"><div class="ml">Version</div><div class="mv">July 2026</div></div>
+  </div>
+</div>
+
+<div class="toc-page">
+  <h2>Contents</h2>
+  <ul class="toc-list">
+    <li>Overview</li>
+    <li>Submitting Yes — Target Met</li>
+    <li>My Dashboard</li>
+    <li>Submitting No — Target Not Met</li>
+    <li>My Check-ins Page</li>
+    <li>Submission History &amp; Statuses</li>
+    <li>The 24-Hour Rule</li>
+    <li>Company Reports</li>
+  </ul>
+</div>
+
+<div class="content-body">
+
+  <div class="section">
+    <div class="section-eyebrow">Getting Started</div>
+    <h3>Overview</h3>
+    <p>The Member Portal is where you track your individual Key Results (KRs) and respond to periodic check-in requests. Your manager and the admin team can see your submissions and your overall progress rate.</p>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Who sees this guide?</strong>This guide is for general staff members. If you are a Manager, you also have access to this portal for your own personal KRs — this guide covers that part of your experience too.</div>
+    </div>
+    <table>
+      <thead><tr><th>Page</th><th>What you do here</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Dashboard</strong></td><td>See your overall KR completion rate and current KR targets at a glance</td></tr>
+        <tr><td><strong>My Check-ins</strong></td><td>Submit responses to check-in requests sent by your admin</td></tr>
+        <tr><td><strong>Reports</strong></td><td>Read company-wide OKR reports published by the Admin team</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Access</div>
+    <h3>Signing In</h3>
+    <p>The portal is accessed through your NIET Group Microsoft account — the same credentials you use for Outlook and Office 365. No separate password is required.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Open the portal in your browser</strong><span>Navigate to the OKR portal address provided by your admin. The landing page shows a single sign-in button.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click "Sign in with Microsoft"</strong><span>You will be redirected to the Microsoft login page.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Enter your NIET Group credentials</strong><span>Use your NIET Group email address (e.g. firstname.lastname@niet.edu.au) and your usual Microsoft password.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>You are signed in</strong><span>Microsoft redirects you back to the portal and you land on your dashboard automatically.</span></div></li>
+    </ol>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Already signed in to Microsoft?</strong>If you are already logged in to your NIET Group Microsoft account on the device, clicking "Sign in with Microsoft" will authenticate you instantly without prompting for a password.</div>
+    </div>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Sign in issues?</strong>If you see an error after signing in, your account may not have been set up in the portal yet. Contact your admin to confirm your account exists and is assigned to the correct department.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Dashboard</div>
+    <h3>My Dashboard</h3>
+    <p>The dashboard gives you a snapshot of your current OKR performance. Your completion rate is shown as a percentage with a colour-coded status indicator.</p>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Completion Rate</div><div class="fc-desc">e.g. 84.2% — your average across all active KRs that have had a check-in sent</div></div>
+      <div class="field-card"><div class="fc-label">Status</div><div class="fc-desc"><span class="chip green">On Track</span> <span class="chip yellow">At Risk</span> <span class="chip red">Off Track</span> — based on your rate vs. target pace</div></div>
+      <div class="field-card"><div class="fc-label">Pending Check-ins</div><div class="fc-desc">Badge count showing how many unanswered check-ins are waiting for your response</div></div>
+    </div>
+    <h4>How your completion rate is calculated</h4>
+    <p>Your rate is calculated only from KRs that have had a check-in sent to you. KRs that have never received a check-in do not affect your rate at all.</p>
+    <p>For each KR with a check-in sent, your completion is: <strong>actual value ÷ target value</strong>. Your overall rate is the average across all such KRs.</p>
+    <p>If a check-in goes unanswered for more than 24 hours, that KR is automatically counted as 0% until you respond and your manager approves. See the <em>24-Hour Rule</em> section below.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Check-ins</div>
+    <h3>My Check-ins Page</h3>
+    <p>When your admin sends a check-in, you receive an email and a card appears on this page. Each card represents one of your Key Results for a specific review period.</p>
+    <p>Each card shows:</p>
+    <ul>
+      <li><strong>KR name</strong> — what is being measured</li>
+      <li><strong>Target</strong> — the number you were expected to reach for that period</li>
+      <li><strong>Review period</strong> — the exact date range this check-in covers</li>
+      <li><strong>Yes / No buttons</strong> — your response options</li>
+    </ul>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Review period is always the past</strong>Check-ins always cover the period that just ended, not the current one. A weekly check-in sent on Monday covers last week (Mon–Sun). The email and card both show the exact date range so there is no ambiguity.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Responding to Check-ins</div>
+    <h3>Submitting "Yes" — Target Met</h3>
+    <p>Click <strong>✓ Yes</strong> when you have met or exceeded the target for the review period.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click ✓ Yes on the check-in card</strong><span>Your response is recorded immediately. The system treats your actual value as equal to the target.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>The card moves to "Pending approval"</strong><span>Your manager will receive the submission for review. No further action is needed from you.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Manager approves</strong><span>Your KR completion rate updates to reflect the approved actual value.</span></div></li>
+    </ol>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Rate doesn't update until approval</strong>Your rate will not change until your manager approves the submission. If several days pass without approval, follow up with your manager directly.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Responding to Check-ins</div>
+    <h3>Submitting "No" — Target Not Met</h3>
+    <p>Click <strong>✗ No</strong> if you did not fully meet the target for the review period. You will be asked to provide a brief reason and the actual value you achieved.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click ✗ No on the check-in card</strong><span>An inline form opens directly below the card — you do not leave the page.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Enter your reason</strong><span>Briefly explain why the target was not met. Be specific — this reason is visible to your manager and helps them make a fair decision.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Enter your actual value</strong><span>Type the number you actually achieved, e.g. 38 out of a target of 50.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Click Submit No</strong><span>Your submission is sent to your manager, including the reason and actual value you entered.</span></div></li>
+    </ol>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Enter the real figure</strong>The actual value you enter directly determines your KR completion rate once approved. Your manager may adjust it if they believe it is inaccurate, so always enter the genuine number.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">History</div>
+    <h3>Submission History &amp; Statuses</h3>
+    <p>Answered check-ins appear below the pending section on the same page. Each answered card shows your response, the review period it covers, and the current approval status.</p>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>Effect on your rate</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip yellow">Pending approval</span></td><td>You have answered; waiting for your manager to review</td><td>No change yet</td></tr>
+        <tr><td><span class="chip green">Approved</span></td><td>Manager accepted your reported actual value</td><td>Rate updates using your submitted figure</td></tr>
+        <tr><td><span class="chip red">Rejected</span></td><td>Manager set a different actual value</td><td>Rate updates using manager's figure</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Important Rule</div>
+    <h3>The 24-Hour Rule</h3>
+    <p>When a check-in is sent to you, you have <strong>24 hours</strong> to respond. If you do not respond within that window:</p>
+    <ul>
+      <li>That KR is automatically counted as <strong>0% completion</strong> in your rate</li>
+      <li>Your department's rate is also affected</li>
+      <li>The 0% is corrected as soon as you respond and your manager approves</li>
+    </ul>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Check your email promptly</strong>Check-in emails come from the NIET Group OKR system. If you are expecting a check-in and haven't received an email, check your junk/spam folder and contact your admin if it is not there.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Reports</div>
+    <h3>Company Reports</h3>
+    <p>The Reports page shows company-wide OKR reports published by the Admin team. Each report is a permanent snapshot of performance at the time of publishing — the figures do not change after a report is published.</p>
+    <p>Each report shows:</p>
+    <ul>
+      <li><strong>Company Rate</strong> — overall completion rate across all departments</li>
+      <li><strong>Department Rankings</strong> — each department's KR completion rate at time of publishing</li>
+      <li><strong>Top Performers</strong> — highest-achieving staff members for that period</li>
+      <li><strong>Action Required</strong> — staff who were below target pace for the period</li>
+      <li><strong>Submission Rate</strong> — what percentage of check-ins received a "Yes" answer</li>
+    </ul>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">Reports are read-only for Members and Managers. Only Admins can publish, edit, or delete them.</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

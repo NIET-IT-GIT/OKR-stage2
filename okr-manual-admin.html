@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIET Group OKR — Admin Portal User Guide</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 13.5pt; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #111827; line-height: 1.6; background: #fff; }
+
+.cover {
+  page-break-after: always;
+  height: 100vh; min-height: 600px;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 72px 80px;
+  background: linear-gradient(150deg, #7c3aed 0%, #0071e3 100%);
+  color: #fff;
+}
+.cover .org { font-size: 10pt; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; opacity: .75; margin-bottom: 24px; }
+.cover h1 { font-size: 36pt; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin-bottom: 16px; }
+.cover .subtitle { font-size: 13pt; opacity: .8; max-width: 420px; line-height: 1.5; }
+.cover .meta { margin-top: auto; padding-top: 40px; border-top: 1px solid rgba(255,255,255,.25); display: flex; gap: 40px; }
+.cover .meta-item .ml { font-size: 8pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .6; margin-bottom: 3px; }
+.cover .meta-item .mv { font-size: 10.5pt; font-weight: 600; }
+
+.toc-page { page-break-after: always; padding: 60px 80px; }
+.toc-page h2 { font-size: 20pt; font-weight: 800; letter-spacing: -.02em; margin-bottom: 28px; color: #111827; border-bottom: 2px solid #ddd6fe; padding-bottom: 10px; }
+.toc-list { list-style: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 32px; }
+.toc-list li { font-size: 10.5pt; color: #374151; display: flex; gap: 8px; align-items: baseline; }
+.toc-list li::before { content: '—'; color: #7c3aed; flex-shrink: 0; font-weight: 700; }
+
+.content-body { padding: 48px 80px 56px; }
+.section { margin-bottom: 40px; }
+.section-eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: #7c3aed; margin-bottom: 6px; }
+.section h3 { font-size: 16pt; font-weight: 800; letter-spacing: -.02em; color: #111827; border-bottom: 1px solid #ddd6fe; padding-bottom: 8px; margin-bottom: 14px; }
+.section h4 { font-size: 11.5pt; font-weight: 700; margin: 20px 0 7px; color: #1f2937; }
+.section p { font-size: 10.5pt; color: #374151; margin-bottom: 10px; max-width: 70ch; }
+.section ul, .section ol { font-size: 10.5pt; color: #374151; padding-left: 18px; margin-bottom: 10px; }
+.section li { margin-bottom: 4px; }
+
+.steps { list-style: none; padding: 0; margin: 14px 0; }
+.steps li { display: flex; gap: 12px; margin-bottom: 9px; background: #faf5ff; border: 1px solid #ddd6fe; border-radius: 7px; padding: 10px 13px; break-inside: avoid; }
+.step-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #7c3aed; color: #fff; font-size: 8pt; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.step-body { flex: 1; }
+.step-body strong { display: block; font-size: 10.5pt; color: #111827; margin-bottom: 1px; }
+.step-body span { font-size: 9.5pt; color: #4b5563; }
+
+.callout { border-radius: 6px; padding: 10px 13px; display: flex; gap: 9px; margin: 13px 0; font-size: 9.5pt; line-height: 1.5; break-inside: avoid; }
+.callout-icon { flex-shrink: 0; }
+.callout-body { flex: 1; }
+.callout-body strong { display: block; margin-bottom: 2px; }
+.callout.info  { background: #eff6ff; border-left: 3px solid #0071e3; color: #1d4ed8; }
+.callout.tip   { background: #f0fdf4; border-left: 3px solid #059669; color: #166534; }
+.callout.warn  { background: #fef3c7; border-left: 3px solid #d97706; color: #92400e; }
+
+table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 12px 0; break-inside: avoid; }
+th { text-align: left; padding: 7px 11px; background: #faf5ff; color: #6b7280; font-size: 8pt; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; border-bottom: 1.5px solid #ddd6fe; }
+td { padding: 8px 11px; border-bottom: 1px solid #e5e7eb; color: #374151; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td strong { color: #111827; }
+
+.chip { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 8pt; font-weight: 700; }
+.chip.green  { background: #dcfce7; color: #15803d; }
+.chip.yellow { background: #fef3c7; color: #92400e; }
+.chip.red    { background: #fee2e2; color: #b91c1c; }
+
+.field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 12px 0; }
+.field-card { background: #faf5ff; border: 1px solid #ddd6fe; border-radius: 6px; padding: 10px 12px; break-inside: avoid; }
+.field-card .fc-label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: #6b7280; margin-bottom: 3px; }
+.field-card .fc-desc  { font-size: 9pt; color: #374151; }
+
+.role-badge { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 7.5pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.role-badge.member  { background: #dcfce7; color: #166534; }
+.role-badge.manager { background: #fef3c7; color: #92400e; }
+.role-badge.admin   { background: #ede9fe; color: #5b21b6; }
+
+code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; background: #f5f3ff; padding: 1px 5px; border-radius: 3px; color: #7c3aed; }
+
+.section { break-inside: avoid-page; }
+
+@media print {
+  @page { margin: 0; size: A4; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cover { height: 297mm; }
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="org">NIET Group OKR System</div>
+  <h1>Admin Portal<br>User Guide</h1>
+  <p class="subtitle">Complete reference for configuring KRs, managing users, sending check-ins, and publishing reports</p>
+  <div class="meta">
+    <div class="meta-item"><div class="ml">Audience</div><div class="mv">Administrators</div></div>
+    <div class="meta-item"><div class="ml">Portal</div><div class="mv">Admin Portal</div></div>
+    <div class="meta-item"><div class="ml">Version</div><div class="mv">July 2026</div></div>
+  </div>
+</div>
+
+<div class="toc-page">
+  <h2>Contents</h2>
+  <ul class="toc-list">
+    <li>Overview</li>
+    <li>User Management</li>
+    <li>Company Overview Dashboard</li>
+    <li>Sending Check-in Emails</li>
+    <li>Departments &amp; KR Configuration</li>
+    <li>Leaderboard</li>
+    <li>OKR Period Types</li>
+    <li>OKR Reports</li>
+    <li>Email Templates</li>
+    <li></li>
+  </ul>
+</div>
+
+<div class="content-body">
+
+  <div class="section">
+    <div class="section-eyebrow">Getting Started</div>
+    <h3>Overview</h3>
+    <p>The Admin Portal gives you full control over the OKR system. Admins are the only role that can create or modify data — all other roles are read-only or limited to their own submissions.</p>
+    <table>
+      <thead><tr><th>Page</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Company Overview</strong></td><td>Real-time completion rate dashboard across all departments</td></tr>
+        <tr><td><strong>Departments</strong></td><td>Configure department KRs, teams, and individual member KR assignments</td></tr>
+        <tr><td><strong>Leaderboard</strong></td><td>Rank all staff by completion rate, filterable by period type and department</td></tr>
+        <tr><td><strong>Users</strong></td><td>Create, edit, and manage all portal accounts</td></tr>
+        <tr><td><strong>Send Check-ins</strong></td><td>Dispatch check-in emails to staff for a chosen period type</td></tr>
+        <tr><td><strong>Reports</strong></td><td>Publish and manage company-wide OKR snapshot reports</td></tr>
+        <tr><td><strong>Email Templates</strong></td><td>Customise the check-in email content per period type</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Access</div>
+    <h3>Signing In</h3>
+    <p>The portal is accessed through your NIET Group Microsoft account — the same credentials you use for Outlook and Office 365. No separate password is required.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Open the portal in your browser</strong><span>Navigate to the OKR portal address. The landing page shows a single sign-in button.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click "Sign in with Microsoft"</strong><span>You will be redirected to the Microsoft login page.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Enter your NIET Group credentials</strong><span>Use your NIET Group email address (e.g. firstname.lastname@niet.edu.au) and your usual Microsoft password.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>You are signed in</strong><span>Microsoft redirects you back to the portal and you land on the Admin Portal dashboard automatically.</span></div></li>
+    </ol>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Already signed in to Microsoft?</strong>If you are already logged in to your NIET Group Microsoft account on the device, clicking "Sign in with Microsoft" will authenticate you instantly without prompting for a password.</div>
+    </div>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>First-time setup</strong>Before other staff can sign in, you must create their accounts in the Users page and assign them the correct role and department. Users who sign in before their account is created will see an access error.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Dashboard</div>
+    <h3>Company Overview</h3>
+    <p>The Company Overview shows live KR completion rates for every department, ranked from highest to lowest. Use the three view buttons to change the scope of data displayed:</p>
+    <table>
+      <thead><tr><th>View</th><th>KR types included</th><th>Which check-ins count</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Weekly Overview</strong></td><td>Daily + Weekly</td><td>Check-ins sent in the current calendar week (Mon–Sun)</td></tr>
+        <tr><td><strong>Monthly Overview</strong></td><td>Daily + Weekly + Monthly</td><td>Check-ins sent in the current calendar month</td></tr>
+        <tr><td><strong>Annual Overview</strong></td><td>All period types</td><td>Check-ins sent in the current financial year (Jul–Jun)</td></tr>
+      </tbody>
+    </table>
+    <h4>How department completion rates are calculated</h4>
+    <p>Each department's rate is the average of its members' individual KR completion rates. A member is included in the average only if they have at least one answered or overdue check-in within the selected window. Members with no check-ins sent in the window are excluded entirely, so early-period gaps do not drag a department's rate down unfairly.</p>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>No data message</strong>If no check-ins have been sent in the selected window, the dashboard shows "No check-in submissions for this period yet." Switch to Annual Overview to see all available data, or send check-ins first.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>Departments &amp; KR Configuration</h3>
+    <p>The Departments page is where you build the KR structure that all staff are measured against. Each department has three levels of KRs:</p>
+    <ul>
+      <li><strong>Department-level KRs</strong> — apply to every member of the department</li>
+      <li><strong>Team KRs</strong> — apply to all members of a specific team within the department</li>
+      <li><strong>Member KRs</strong> — personal KRs assigned to a specific individual</li>
+    </ul>
+    <h4>Adding a new KR</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Open the department</strong><span>Select it from the sidebar or the Departments nav item.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click Add KR in the appropriate section</strong><span>Department-level, a specific team, or under a specific member.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Fill in the KR fields</strong><span>Label, target, unit, operator, and period type (see field descriptions below).</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Save</strong><span>The KR is active immediately and will be included in the next check-in send for its period type.</span></div></li>
+    </ol>
+    <h4>KR Fields</h4>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Label</div><div class="fc-desc">Description shown in emails and cards, e.g. "Complete 50 training hours"</div></div>
+      <div class="field-card"><div class="fc-label">Target</div><div class="fc-desc">The number the member must reach. Monthly KRs support a different target per month.</div></div>
+      <div class="field-card"><div class="fc-label">Unit</div><div class="fc-desc">Optional label shown after the number, e.g. "hours", "%", "calls"</div></div>
+      <div class="field-card"><div class="fc-label">Operator</div><div class="fc-desc">≥ means higher is better; ≤ means lower is better (e.g. complaint rate, error count)</div></div>
+      <div class="field-card"><div class="fc-label">Period Type</div><div class="fc-desc">How often this KR is checked: daily, weekly, monthly, quarterly, bi-annual, or annual</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>OKR Period Types</h3>
+    <p>Every KR has a period type that controls how frequently check-ins are sent, what date range each check-in covers, and how the period is labelled in emails and cards.</p>
+    <table>
+      <thead><tr><th>Period</th><th>Check-in covers</th><th>Label format</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Daily</strong></td><td>Yesterday</td><td>YYYY-MM-DD</td><td>2026-07-16</td></tr>
+        <tr><td><strong>Weekly</strong></td><td>Previous Mon–Sun</td><td>Wk N · D Mon – D Mon</td><td>Wk 1 · 7 Jul–13 Jul</td></tr>
+        <tr><td><strong>Monthly</strong></td><td>Previous calendar month</td><td>YYYY-MM</td><td>2026-06</td></tr>
+        <tr><td><strong>Quarterly</strong></td><td>Previous FY quarter</td><td>FYXX QN</td><td>FY26 Q1 (Jul–Sep)</td></tr>
+        <tr><td><strong>Bi-Annual</strong></td><td>Previous FY half</td><td>FYXX HN</td><td>FY26 H1 (Jul–Dec)</td></tr>
+        <tr><td><strong>Annual</strong></td><td>Previous calendar year</td><td>YYYY</td><td>2025</td></tr>
+      </tbody>
+    </table>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Australian Financial Year</strong>Quarterly and Bi-Annual periods follow the Australian FY calendar: Q1 = Jul–Sep, Q2 = Oct–Dec, Q3 = Jan–Mar, Q4 = Apr–Jun. H1 = Jul–Dec, H2 = Jan–Jun.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>User Management</h3>
+    <p>The Users page is where you create and manage all portal accounts across the organisation.</p>
+    <h4>Creating a new user</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click Add User</strong><span>The new-user form opens.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Enter name, email address, role, and department</strong><span>The email address is where all check-in emails will be sent for this user.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Assign to a team (optional)</strong><span>Team membership determines which team-level KRs the user receives check-ins for.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Save</strong><span>The user account is active immediately and will be included in future check-in sends.</span></div></li>
+    </ol>
+    <table>
+      <thead><tr><th>Role</th><th>Portal access &amp; capabilities</th></tr></thead>
+      <tbody>
+        <tr><td><span class="role-badge member">Member</span></td><td>Member Portal only — submits own check-ins, views published reports</td></tr>
+        <tr><td><span class="role-badge manager">Manager</span></td><td>Manager Portal + Member Portal — approves team submissions and submits own check-ins</td></tr>
+        <tr><td><span class="role-badge admin">Admin</span></td><td>Admin Portal — full system access: all configuration, check-in sending, user management, and reporting</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Operations</div>
+    <h3>Sending Check-in Emails</h3>
+    <p>Sending a check-in is what triggers the entire submission-and-approval workflow. It creates submission records for all eligible staff and dispatches personalised emails to each of them.</p>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Select the period type</strong><span>Choose Daily, Weekly, Monthly, Quarterly, Bi-Annual, or Annual. Only staff who have KRs of that type will receive check-ins.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Optionally select a specific user</strong><span>Leave blank to send to all eligible staff. Select a user for a targeted re-send to one individual.</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Click Send Check-in</strong><span>Emails are dispatched and submission records are created. A confirmation banner shows how many submissions were created.</span></div></li>
+    </ol>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><strong>Duplicate prevention</strong>If you send the same period type twice in the same period window, only staff who did not receive a submission the first time will get one. Existing check-ins are never duplicated.</div>
+    </div>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Check-ins always cover the previous period</strong>A weekly check-in sent today asks staff to review last week, not the current week. Both the email and the submission card show the exact date range so staff know which period they are reporting on.</div>
+    </div>
+    <h4>The 24-hour rule</h4>
+    <p>If a staff member does not respond within 24 hours of a check-in being sent, that KR is automatically counted as 0% in all rate calculations — including their individual rate, their department's rate, and the Company Overview. The rate corrects itself as soon as the member responds and their manager approves.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Analytics</div>
+    <h3>Leaderboard</h3>
+    <p>The Leaderboard ranks all Members and Managers in the organisation by their KR completion rate. Use the filters at the top to narrow the view.</p>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">Period filter</div><div class="fc-desc">Filter to a specific KR type (Weekly, Monthly, etc.) to see rates for that type only</div></div>
+      <div class="field-card"><div class="fc-label">Department filter</div><div class="fc-desc">Narrow the leaderboard to a single department</div></div>
+      <div class="field-card"><div class="fc-label">Name search</div><div class="fc-desc">Find a specific staff member by name</div></div>
+    </div>
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">"All" in the period filter shows the overall completion rate. Selecting a specific type (e.g. Monthly) shows the rate calculated only from that type's check-ins — rankings may differ from the overall view.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Reporting</div>
+    <h3>OKR Reports</h3>
+    <p>Published reports are permanent snapshots of organisational performance at a point in time. All roles (Admin, Manager, Member) can read them, but only Admins can create, edit, or delete them.</p>
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><strong>Reports are frozen at publish time</strong>Once published, the data in a report does not update — even if more check-ins are approved afterward. Publish only when you are satisfied the period's data is complete.</div>
+    </div>
+
+    <h4>Publishing the current month's report</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Review the Current Data Preview</strong><span>This live banner shows what will be captured: company rate, top performers, submission rate, and staff needing attention.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Click "Publish [Month] Report"</strong><span>A snapshot is taken immediately and the report is visible to all roles straight away.</span></div></li>
+    </ol>
+
+    <h4>Generating a report for a custom period</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div class="step-body"><strong>Click "Generate for Period"</strong><span>An input panel expands above the report list.</span></div></li>
+      <li><div class="step-num">2</div><div class="step-body"><strong>Enter a Period Label</strong><span>The display name shown in the report card, e.g. "Q1 FY2026" or "Week 22".</span></div></li>
+      <li><div class="step-num">3</div><div class="step-body"><strong>Enter From and To dates</strong><span>Only check-in submissions with a send date within this range will be included in the stats.</span></div></li>
+      <li><div class="step-num">4</div><div class="step-body"><strong>Click "Generate &amp; Publish"</strong><span>The report is created and immediately visible to all roles.</span></div></li>
+    </ol>
+
+    <h4>Editing a published report</h4>
+    <p>Click <strong>Edit</strong> on any report card to update its Period Label or add Notes. The underlying data (rates, rankings) cannot be changed after publishing.</p>
+
+    <h4>What each report section contains</h4>
+    <table>
+      <thead><tr><th>Section</th><th>Data shown</th><th>How it is calculated</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Company Rate</strong></td><td>Overall completion %</td><td>Average of all department completion rates</td></tr>
+        <tr><td><strong>Department Rankings</strong></td><td>Each department's completion rate</td><td>KR actual ÷ target (not a simple yes/no count)</td></tr>
+        <tr><td><strong>Submission Rate</strong></td><td>% of check-ins answered "Yes"</td><td>Yes answers ÷ total answered submissions</td></tr>
+        <tr><td><strong>Top Performers</strong></td><td>Top 3 staff by completion rate</td><td>Only staff with at least one active check-in that period</td></tr>
+        <tr><td><strong>Action Required</strong></td><td>Staff below target pace</td><td>Staff with &lt;60% completion and at least one active check-in</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-eyebrow">Configuration</div>
+    <h3>Email Templates</h3>
+    <p>Customise the check-in email for each period type. Each period type (Weekly, Monthly, etc.) has its own independent template. Changes take effect on the next send.</p>
+    <table>
+      <thead><tr><th>Placeholder</th><th>Replaced with when email is sent</th></tr></thead>
+      <tbody>
+        <tr><td><code>{periodLabel}</code></td><td>The period type label, e.g. "Monthly"</td></tr>
+        <tr><td><code>{periodLower}</code></td><td>Lowercase label, e.g. "monthly"</td></tr>
+        <tr><td><code>{periodKey}</code></td><td>The specific period key, e.g. "2026-06" for June 2026</td></tr>
+      </tbody>
+    </table>
+    <h4>Template fields</h4>
+    <div class="field-grid">
+      <div class="field-card"><div class="fc-label">From Name</div><div class="fc-desc">Sender display name shown in the recipient's email client (default: "NIET Group OKR")</div></div>
+      <div class="field-card"><div class="fc-label">Subject</div><div class="fc-desc">Email subject line. Use placeholders to include the period dynamically.</div></div>
+      <div class="field-card"><div class="fc-label">Body</div><div class="fc-desc">Opening paragraph shown above the KR table in the email.</div></div>
+      <div class="field-card"><div class="fc-label">CTA Text</div><div class="fc-desc">Label on the submit button in the email, e.g. "Submit My Check-in →"</div></div>
+      <div class="field-card"><div class="fc-label">Footer</div><div class="fc-desc">Small-print text at the bottom of the email.</div></div>
+    </div>
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body"><strong>Always send a test before a bulk send</strong>Use the "Send Test Email" button on the Email Templates page to preview exactly how the email renders before dispatching it to all staff.</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

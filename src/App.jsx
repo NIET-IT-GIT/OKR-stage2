@@ -155,6 +155,7 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
   const memberSubs = (okrSubs || []).filter(s => s.memberId === memberId);
   const scores = [];
   for (const kr of (memberKrs || [])) {
+    if (kr.type === "tracker") continue;
     const krSubs = memberSubs.filter(s => s.krId === kr.id);
     if (!krSubs.length) continue; // no check-in sent → excluded
     const answered = krSubs.filter(s => s.answer !== null);
@@ -1537,16 +1538,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
   function addKr(deptId, teamId) {
     if (!newKr.label) return;
-    if (!newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
+    if (newKr.krType !== "tracker" && !newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
     const newId = `N${Date.now().toString(36).slice(-4).toUpperCase()}`;
     const baseKr = { id: newId, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
-    const kr = newKr.useMonthlyTargets
-      ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
-      : { ...baseKr, target: Number(newKr.target), actual: 0 };
+    const kr = newKr.krType === "tracker"
+      ? { ...baseKr, type: "tracker", target: 0, actual: 0 }
+      : newKr.useMonthlyTargets
+        ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
+        : { ...baseKr, target: Number(newKr.target), actual: 0 };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
     if (teamId) triggerSyncPrompt(deptId, teamId);
     if (newKr.useMonthlyTargets) setExpandedMonthlyKr(newId);
-    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false }); setAddTarget(null);
+    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); setAddTarget(null);
   }
   function startResize(key, e) {
     e.preventDefault();
@@ -1610,7 +1613,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
         : currentFYMonthKey();
       const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
-      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
+      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
       if (freshKrs.length && u.email) {
         const emailTemplates = settings?.emailTemplates || {};
         const template = { ...emailTemplates.default, ...(emailTemplates[period] || {}) };
@@ -1819,7 +1822,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           if (key === "id") return <span key="id" style={{ fontSize: 12, color: T.brand }}>NEW</span>;
                           if (key === "label") return <Input key="label" value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="KR description *" style={{ padding: "5px 8px", fontSize: 14 }} />;
                           if (key === "operator") return <span key="operator">{opSelect(newKr.operator, e => setNewKr(p => ({ ...p, operator: e.target.value })))}</span>;
-                          if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
+                          if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : newKr.krType === "tracker" ? <span key="target" style={{ fontSize: 11, color: T.textMuted, textAlign: "right", fontStyle: "italic" }}>N/A</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
                           if (key === "actual") return <span key="actual" />;
                           if (key === "unit") return <Input key="unit" value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />;
                           if (key === "dataSource") return <Input key="dataSource" value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />;
@@ -1828,7 +1831,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         {customCols.map(col => <span key={col.id} />)}
                         <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                       </div>
-                      {sectionPeriod === "monthly" && (
+                      {sectionPeriod === "monthly" && newKr.krType !== "tracker" && (
                         <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}` }}>
                           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: T.brand, fontWeight: 600 }}>
                             <input type="checkbox" checked={newKr.useMonthlyTargets} onChange={e => setNewKr(p => ({ ...p, useMonthlyTargets: e.target.checked, target: e.target.checked ? "" : p.target }))} style={{ accentColor: T.brand }} />
@@ -1846,10 +1849,16 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           )}
                         </div>
                       )}
+                      <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}` }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: "#7c3aed", fontWeight: 600 }}>
+                          <input type="checkbox" checked={newKr.krType === "tracker"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "tracker" : "", useMonthlyTargets: false }))} style={{ accentColor: "#7c3aed" }} />
+                          Tracker — record values only, does not affect completion rate
+                        </label>
+                      </div>
                     </div>
                   ) : (
                     <div style={{ padding: "10px 16px" }}>
-                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: sectionPeriod, useMonthlyTargets: false }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: sectionPeriod, useMonthlyTargets: false, krType: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
                     </div>
                   )}
                   {hiddenCols.size > 0 && (
@@ -2213,7 +2222,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           if (key === "period") return isWeeklyPage
                             ? <span key="period" style={{ fontSize: 12, color: T.brand, fontWeight: 700 }}>Weekly</span>
                             : <select key="period" value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Bi-Annual</option><option value="annual">Annual</option></select>;
-                          if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
+                          if (key === "target") return newKr.useMonthlyTargets ? <span key="target" style={{ fontSize: 11, color: T.brand, textAlign: "right" }}>Set per month ↓</span> : newKr.krType === "tracker" ? <span key="target" style={{ fontSize: 11, color: T.textMuted, textAlign: "right", fontStyle: "italic" }}>N/A</span> : <Input key="target" value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
                           if (key === "actual") return <span key="actual" />;
                           if (key === "unit") return <Input key="unit" value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit" style={{ padding: "5px 8px", fontSize: 13 }} />;
                           if (key === "dataSource") return <Input key="dataSource" value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ padding: "5px 8px", fontSize: 13 }} />;
@@ -2496,6 +2505,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   {depts.map(d => <Btn key={d.id} small primary={subDeptFilter === d.id} onClick={() => setSubDeptFilter(d.id)}>{d.name}</Btn>)}
                 </div>
               </div>
+              {(() => {
+                const pendingMgrSubs = periodSubs.filter(s => {
+                  const m = users.find(u => u.id === s.memberId);
+                  return m?.role === "manager" && s.answer !== null && s.approval === "pending";
+                });
+                return pendingMgrSubs.length > 0 ? (
+                  <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "#ede9fe", border: "1px solid #c4b5fd", color: "#6d28d9", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>⚑</span>
+                    <span>{pendingMgrSubs.length} manager submission{pendingMgrSubs.length !== 1 ? "s" : ""} awaiting your approval — these are not visible to any Manager and can only be approved here</span>
+                  </div>
+                ) : null;
+              })()}
               {filtered.length === 0 && <EmptyState text={periodSubs.length === 0 ? `No ${subPeriod} check-ins sent yet. Click "Send ${subPeriod.charAt(0).toUpperCase()+subPeriod.slice(1)} Check-in" to generate and email them.` : "No submissions match your filter."} />}
               {filtered.map(s => {
                 const mem = users.find(u => u.id === s.memberId);
@@ -2508,7 +2529,9 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                           <Avatar letters={mem?.av || "?"} size={26} />
                           <span style={{ fontWeight: 700, fontSize: 14 }}>{mem?.name || s.memberName || "Unknown"}</span>
+                          {mem?.role === "manager" && <span style={{ fontSize: 11, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "1px 6px", fontWeight: 700 }}>Manager</span>}
                           {dept && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "1px 6px" }}>{dept.name}</span>}
+                          {s.krType === "tracker" && <span style={{ fontSize: 11, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "1px 6px", fontWeight: 700 }}>Tracker</span>}
                         </div>
                         <div style={{ fontSize: 14, color: T.text, marginBottom: 4, fontWeight: 600 }}>{s.krLabel}</div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
@@ -2525,8 +2548,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                         {s.answer === null
-                          ? <span style={{ fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "3px 8px" }}>Awaiting answer</span>
-                          : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                          ? <span style={{ fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "3px 8px" }}>{s.krType === "tracker" ? "Awaiting record" : "Awaiting answer"}</span>
+                          : s.krType === "tracker"
+                            ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "3px 8px" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                         {s.answer !== null && s.approval === "pending"
                           ? <div style={{ display: "flex", gap: 6 }}>
                               <Btn danger small onClick={() => setRejectOkr({ id: s.id, actual: "" })}>Reject</Btn>
@@ -3203,6 +3228,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [okrPeriod, setOkrPeriod] = useState("monthly");
   const [noReason, setNoReason] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
+  const [trackerInput, setTrackerInput] = useState({});
 
   const { depts, memberData, weeklySubs, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
@@ -3511,16 +3537,26 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
                   {pending.map(s => (
-                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${noReason?.id === s.id ? T.bad : T.warn}` }}>
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+                            <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
+                            {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker</span>}
+                          </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            {s.krType !== "tracker" && <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                             <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
                         </div>
-                        {noReason?.id !== s.id && (
+                        {s.krType === "tracker" ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            <Input value={trackerInput[s.id] || ""} onChange={e => setTrackerInput(p => ({ ...p, [s.id]: e.target.value }))} placeholder="Enter value" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                            {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>Record</Btn>
+                          </div>
+                        ) : noReason?.id !== s.id ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                             <button onClick={() => setNoReason({ id: s.id, reason: "", actual: "" })}
                               style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
@@ -3531,9 +3567,9 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                               ✓ Yes
                             </button>
                           </div>
-                        )}
+                        ) : null}
                       </div>
-                      {noReason?.id === s.id && (
+                      {s.krType !== "tracker" && noReason?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
                           <TextArea value={noReason.reason} onChange={e => setNoReason(p => ({ ...p, reason: e.target.value }))} placeholder="Briefly explain why this target was not reached..." rows={2} />
@@ -3557,18 +3593,20 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                     <div style={{ marginTop: pending.length ? 10 : 0 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Answered</div>
                       {answered.slice(0, 10).map(s => (
-                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
+                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
                               <span style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</span>
                               <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 8 }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                              {s.krType === "tracker"
+                                ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                                : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                             </div>
                           </div>
-                          {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
+                          {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
                         </Card>
                       ))}
                     </div>
@@ -3605,15 +3643,18 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                             </div>
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</div>
                             <div style={{ fontSize: 11, color: T.textMuted }}>
-                              Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}
-                              {s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
-                              {s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                              {s.krType !== "tracker" && <>{`Target: ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
+                              {s.krType === "tracker" && s.actualValue != null && <span style={{ color: "#6d28d9", fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                              {s.krType !== "tracker" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                              {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                               <span style={{ marginLeft: 8 }}>· Answered: {s.answeredAt?.slice(0,10) || "—"}</span>
                             </div>
-                            {s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
+                            {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                            {s.krType === "tracker"
+                              ? <span style={{ fontSize: 11, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px" }}>Tracker</span>
+                              : <span style={{ fontSize: 13, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                             {s.approval === "pending"
                               ? <div style={{ display: "flex", gap: 6 }}>
                                   <Btn danger small onClick={() => setRejectOkr({ id: s.id, actual: "" })}>Reject</Btn>
@@ -3914,6 +3955,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [noReason, setNoReason] = useState(null);
+  const [trackerInput, setTrackerInput] = useState({});
 
   const { memberData, weeklySubs, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -4255,16 +4297,26 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
                   {pending.map(s => (
-                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${noReason?.id === s.id ? T.bad : T.warn}` }}>
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>{s.krLabel}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+                            <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
+                            {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker</span>}
+                          </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                            {s.krType !== "tracker" && <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                             <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
                         </div>
-                        {noReason?.id !== s.id && (
+                        {s.krType === "tracker" ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            <Input value={trackerInput[s.id] || ""} onChange={e => setTrackerInput(p => ({ ...p, [s.id]: e.target.value }))} placeholder="Enter value" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                            {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>Record</Btn>
+                          </div>
+                        ) : noReason?.id !== s.id ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                             <button onClick={() => setNoReason({ id: s.id, reason: "", actual: "" })}
                               style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
@@ -4275,9 +4327,9 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                               ✓ Yes
                             </button>
                           </div>
-                        )}
+                        ) : null}
                       </div>
-                      {noReason?.id === s.id && (
+                      {s.krType !== "tracker" && noReason?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
                           <TextArea value={noReason.reason} onChange={e => setNoReason(p => ({ ...p, reason: e.target.value }))} placeholder="Briefly explain why this target was not reached..." rows={2} />
@@ -4301,18 +4353,20 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                     <div style={{ marginTop: pending.length ? 10 : 0 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Answered</div>
                       {answered.slice(0, 10).map(s => (
-                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
+                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
                               <span style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</span>
                               <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 8 }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                              {s.krType === "tracker"
+                                ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                                : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                             </div>
                           </div>
-                          {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
+                          {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
                         </Card>
                       ))}
                     </div>
