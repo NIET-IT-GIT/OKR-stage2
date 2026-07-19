@@ -4693,7 +4693,8 @@ function appReducer(state, action) {
       if (actualToWrite === null) return { ...state, okrSubmissions: newSubs };
       const md = state.memberData[sub.memberId];
       if (!md) return { ...state, okrSubmissions: newSubs };
-      const updatedKrs = (md.krs || []).map(kr => {
+      // Update this member's personal KR
+      const updatedMemberKrs = (md.krs || []).map(kr => {
         if (kr.id !== sub.krId) return kr;
         if (kr.monthlyTargets) {
           const mk = (sub.periodKey || "").slice(0, 7);
@@ -4701,16 +4702,29 @@ function appReducer(state, action) {
         }
         return { ...kr, actual: actualToWrite };
       });
+      const newMemberData = { ...state.memberData, [sub.memberId]: { ...md, krs: updatedMemberKrs } };
+      // Average actual across all members with approved submissions for this KR
+      const approvedMemberIds = [...new Set(newSubs.filter(s => s.krId === sub.krId && s.approval === "approved").map(s => s.memberId))];
+      const isMonthly = !!(newMemberData[sub.memberId]?.krs?.find(k => k.id === sub.krId)?.monthlyTargets);
+      const mk = (sub.periodKey || "").slice(0, 7);
+      const memberVals = approvedMemberIds.map(mId => {
+        const kr = (newMemberData[mId]?.krs || []).find(k => k.id === sub.krId);
+        if (!kr) return null;
+        return isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : (kr.actual ?? null);
+      }).filter(v => v !== null);
+      const teamActual = memberVals.length > 0
+        ? Math.round(memberVals.reduce((a, b) => a + b, 0) / memberVals.length * 100) / 100
+        : actualToWrite;
       const updateDeptKr = kr => {
         if (kr.id !== sub.krId) return kr;
-        if (kr.monthlyTargets) { const mk = (sub.periodKey || "").slice(0, 7); return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: actualToWrite } }; }
-        return { ...kr, actual: actualToWrite };
+        if (kr.monthlyTargets) { return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: teamActual } }; }
+        return { ...kr, actual: teamActual };
       };
       const newDepts = state.depts.map(dept => {
         if (dept.id !== sub.deptId) return dept;
         return { ...dept, krs: dept.krs.map(updateDeptKr), teams: dept.teams.map(t => ({ ...t, krs: (t.krs || []).map(updateDeptKr) })) };
       });
-      return { ...state, okrSubmissions: newSubs, memberData: { ...state.memberData, [sub.memberId]: { ...md, krs: updatedKrs } }, depts: newDepts };
+      return { ...state, okrSubmissions: newSubs, memberData: newMemberData, depts: newDepts };
     }
     case "REMOVE_OKR_SUBMISSION":
       return { ...state, okrSubmissions: (state.okrSubmissions || []).filter(s => s.id !== action.id) };
