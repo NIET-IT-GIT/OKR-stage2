@@ -3019,11 +3019,14 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                                       return (
                                         <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
                                           <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
-                                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={kr.label}>{kr.label}</span>
-                                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
-                                          <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
-                                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>
-                                          <Bar value={pct} status={st} h={5} />
+                                          <div>
+                                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={kr.label}>{kr.label}</span>
+                                            {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                                          </div>
+                                          {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
+                                          {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span> : <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
+                                          {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
+                                          {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
                                           <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
                                             title="Delete this OKR"
                                             style={{ background: "none", border: `1px solid ${T.badBorder || T.bad}`, borderRadius: 5, padding: "3px 6px", cursor: "pointer", color: T.bad, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
