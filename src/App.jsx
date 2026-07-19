@@ -3302,7 +3302,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [mgrSelTeam, setMgrSelTeam] = useState(null);
-  const [okrPeriod, setOkrPeriod] = useState("monthly");
+  const [okrPeriod, setOkrPeriod] = useState("all");
   const [noReason, setNoReason] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
@@ -3365,8 +3365,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
         {page === "okr-overview" && (() => {
           if (!dept) return (<><Header title="OKR Overview" sub="Your department's key results by period" /><Pane><EmptyState text="No department assigned to your account." /></Pane></>);
-          const PERIODS = [{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
-          const filterP = krs => krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
+          const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
           const KCOL = "50px 1fr 100px 110px 150px 55px 130px 65px";
           const renderRows = (krs, deptId, teamId) => krs.map((kr, i) => {
             const pct = krCompletion(kr); const st = getStatus(pct);
@@ -3997,7 +3997,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const [myKpiPeriod, setMyKpiPeriod] = useState("all");
-  const [okrPeriod, setOkrPeriod] = useState("monthly");
+  const [okrPeriod, setOkrPeriod] = useState("all");
   const [reportSubTab, setReportSubTab] = useState("monthly");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [noReason, setNoReason] = useState(null);
@@ -4225,8 +4225,8 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
 
         {page === "okr-overview" && (() => {
           if (!myDept) return (<><Header title="OKR Overview" sub="" /><Pane><EmptyState text="No department assigned." /></Pane></>);
-          const PERIODS = [{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
-          const filterP = krs => krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
+          const filterP = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
           const KCOL = "50px 1fr 100px 110px 55px 130px 65px";
           const renderKrRows = (krs) => krs.map((kr, i) => {
             const pct = krCompletion(kr); const s = getStatus(pct);
