@@ -3309,8 +3309,9 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 
   const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
-  const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId);
-  const myTeamMemberIds = users.filter(u => u.role === "member" && u.deptId === user.deptId).map(u => u.id);
+  const overseeFilter = u => !user.teamIds?.length || (u.teamId && user.teamIds.includes(u.teamId)) || (u.secondTeamId && user.teamIds.includes(u.secondTeamId));
+  const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && overseeFilter(u));
+  const myTeamMemberIds = users.filter(u => u.role === "member" && u.deptId === user.deptId && overseeFilter(u)).map(u => u.id);
   const myOkrSubs = allOkrSubs.filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId));
