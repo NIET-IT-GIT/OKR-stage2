@@ -1726,8 +1726,6 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         ) : (() => {
           const dept = depts.find(d => d.id === selDept);
           if (!dept) return null;
-          const isFinance = dept.name.toLowerCase().includes("finance");
-
           const COLS_DEF = [
             { key: "id",         label: "ID" },
             { key: "label",      label: "Key Result" },
@@ -2051,7 +2049,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 {depts.map(d => <Btn key={d.id} primary={d.id === selDept} small onClick={() => { setSelDept(d.id); setSelTeam(null); setAddTarget(null); }}>{d.name}</Btn>)}
               </div>
               {sections.map(({ period, label, color }) => renderSection(period, label, color))}
-              {isFinance && renderPersonalSection()}
+              {renderPersonalSection()}
             </Pane>
           </>);
         })())}
