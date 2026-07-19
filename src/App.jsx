@@ -1822,6 +1822,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
             const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
+            const _pkAdmin = adminOkrPeriod === "weekly" ? prevPeriodKey(adminOkrPeriod) : currentPeriodKey(adminOkrPeriod);
+            const hasSub = adminOkrPeriod === "all" || okrSubmissions.some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkAdmin && s.answer !== null);
             return (
               <Fragment key={kr.id}>
               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -1840,11 +1842,11 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   ? <Input value={curActual} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: Number(e.target.value) || 0 }); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                   : <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                 <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
-                {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
+                {kr.type === "tracker" ? <span /> : hasSub ? <Bar value={pct} status={st} h={5} /> : <span />}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
                   {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="View all months" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 11, fontWeight: 700 }}>📅</button>}
-                  {kr.type === "tracker" ? null : <Tag type={st} small />}
+                  {kr.type === "tracker" ? null : hasSub ? <Tag type={st} small /> : null}
                 </div>
               </div>
               {isMonthly && expandedMonthlyKr === kr.id && (
@@ -3252,6 +3254,8 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
             const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
             const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
+            const _pkMgr = okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod);
+            const hasSub = okrPeriod === "all" || allOkrSubs.some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMgr && s.answer !== null);
             return (
               <Fragment key={kr.id}>
               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -3270,11 +3274,11 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                   ? <Input value={curActual} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: Number(e.target.value) || 0 }); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                   : <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) mgrTriggerSync(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                 <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
-                {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
+                {kr.type === "tracker" ? <span /> : hasSub ? <Bar value={pct} status={st} h={5} /> : <span />}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
                   {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="View all months" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 11, fontWeight: 700 }}>📅</button>}
-                  {kr.type === "tracker" ? null : <Tag type={st} small />}
+                  {kr.type === "tracker" ? null : hasSub ? <Tag type={st} small /> : null}
                 </div>
               </div>
               {isMonthly && expandedMonthlyKr === kr.id && (
@@ -4111,6 +4115,8 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             const annVsSum = annSumTarget > 0 ? Math.min((annActual / annSumTarget) * 100, 100) : 0;
             const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
+            const _pkMem = okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod);
+            const hasSub = okrPeriod === "all" || (state.okrSubmissions || []).some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMem && s.answer !== null);
             return (
               <Fragment key={kr.id}>
               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -4124,11 +4130,11 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                 </div>
                 {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)}` : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
                 {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? fmt(curActual) : fmt(kr.actual)}</span>}
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span>}
-                {kr.type === "tracker" ? <span /> : <Bar value={pct} status={s} h={5} />}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
+                {kr.type === "tracker" ? <span /> : hasSub ? <Bar value={pct} status={s} h={5} /> : <span />}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
                   {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="View all months" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 11, fontWeight: 700 }}>📅</button>}
-                  {kr.type === "tracker" ? null : <Tag type={s} small />}
+                  {kr.type === "tracker" ? null : hasSub ? <Tag type={s} small /> : null}
                 </div>
               </div>
               {isMonthly && expandedMonthlyKr === kr.id && (
