@@ -4061,7 +4061,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ submit: thisWeekSub ? 0 : 1, checkin: myPendingCheckins.length }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "mykpis" && (<>
@@ -4070,7 +4070,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Metric label="My Completion"  value={`${rate.toFixed(1)}%`} status={st} sub={`Time: ${TP}%`} />
               <Metric label="KRs Tracked"    value={kd.krs.length} />
-              <Metric label="This Week"      value={thisWeekSub ? "Submitted" : "Due"} status={thisWeekSub ? "green" : "red"} />
+              <Metric label="Check-ins" value={myPendingCheckins.length === 0 ? "All Done" : `${myPendingCheckins.length} Pending`} status={myPendingCheckins.length === 0 ? "green" : "yellow"} />
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
