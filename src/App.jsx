@@ -1412,8 +1412,8 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     { id: "email-templates",  icon: "✦", label: "Email Templates"   },
   ];
   const deptSubItems = [
-    { id: "__all__", label: "All Departments", icon: "⊕" },
-    ...depts.map(d => ({ id: d.id, label: d.name })),
+    { id: "__all__",   label: "All Departments", icon: "⊕" },
+    { id: "__setup__", label: "Set Up OKRs",      icon: "◈" },
   ];
 
   const OV_TYPES = { weekly: ["daily","weekly"], monthly: ["daily","weekly","monthly"], annual: ["daily","weekly","monthly","quarterly","biannual","annual"] };
@@ -1710,7 +1710,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         </div>
       )}
       <Side items={navItems} active={page} onSelect={p => { setPage(p); setSelDept(null); }} user={user} onLogout={onLogout}
-        subItems={deptSubItems} subItemsFor="departments" activeSubItem={selDept || "__all__"} onSelectSubItem={id => { setPage("departments"); setSelDept(id === "__all__" ? null : id); setSelTeam(null); setAddTarget(null); }} />
+        subItems={deptSubItems} subItemsFor="departments" activeSubItem={selDept ? "__setup__" : "__all__"} onSelectSubItem={id => { setPage("departments"); if (id === "__setup__") { setSelDept(depts[0]?.id || null); } else { setSelDept(null); } setSelTeam(null); setAddTarget(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} />}
