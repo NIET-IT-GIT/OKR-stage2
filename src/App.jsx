@@ -1415,6 +1415,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [sendingCheckin, setSendingCheckin] = useState(false);
   const [checkinResult, setCheckinResult] = useState(null);
   const [selCheckinUser, setSelCheckinUser] = useState("");
+  const [checkinPreview, setCheckinPreview] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [tmplPeriod, setTmplPeriod] = useState("default");
   const [testEmailState, setTestEmailState] = useState({ status: "idle", msg: "" });
@@ -1590,6 +1591,29 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     setNewColName(""); setAddingCol(false);
   }
 
+  function previewCheckin(period, targetUserId = "") {
+    const periodKey = prevPeriodKey(period);
+    const dateRange = periodDateRange(period, periodKey);
+    const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
+    const userPool = targetUserId
+      ? users.filter(u => u.id === targetUserId)
+      : users.filter(u => u.role === "member" || u.role === "manager");
+    const recipients = [];
+    for (const u of userPool) {
+      const dept = depts.find(d => d.id === u.deptId);
+      if (!dept) continue;
+      const krList = [];
+      dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
+      (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+      if (!krList.length) continue;
+      const freshKrs = krList.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+      if (!freshKrs.length) continue;
+      recipients.push({ user: u, dept, krs: freshKrs });
+    }
+    setCheckinPreview({ period, targetUserId, periodKey, dateRange, recipients });
+  }
+
   async function sendCheckin(period, targetUserId = "") {
     setSendingCheckin(true);
     const periodKey = prevPeriodKey(period);
@@ -1630,6 +1654,53 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
+      {checkinPreview && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: T.surface, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "100%", maxWidth: 580, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>Confirm: Send {checkinPreview.period.charAt(0).toUpperCase() + checkinPreview.period.slice(1)} Check-in</div>
+              <div style={{ fontSize: 12, color: T.textDim, marginTop: 5 }}>
+                Period: <strong style={{ color: T.text }}>{checkinPreview.dateRange || checkinPreview.periodKey}</strong>
+                <span style={{ margin: "0 6px", color: T.border }}>·</span>
+                {checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}
+                <span style={{ margin: "0 6px", color: T.border }}>·</span>
+                {checkinPreview.recipients.reduce((n, r) => n + r.krs.length, 0)} KRs total
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "14px 24px" }}>
+              {checkinPreview.recipients.length === 0 ? (
+                <div style={{ padding: "28px 0", color: T.textDim, fontSize: 13, textAlign: "center" }}>
+                  No new check-ins to send — all KRs for this period already have submissions.
+                </div>
+              ) : checkinPreview.recipients.map(({ user: u, dept, krs }) => (
+                <div key={u.id} style={{ marginBottom: 10, padding: "10px 14px", borderRadius: 8, background: T.raised, border: `1px solid ${T.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
+                    <Avatar letters={u.av || "?"} size={26} />
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{u.name}</span>
+                    {u.role === "manager" && <span style={{ fontSize: 10, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Manager</span>}
+                    <span style={{ fontSize: 11, color: T.textMuted, background: T.surface, borderRadius: 5, padding: "1px 7px", border: `1px solid ${T.border}` }}>{dept.name}</span>
+                    {u.email && <span style={{ fontSize: 11, color: T.textDim }}>{u.email}</span>}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {krs.map(kr => (
+                      <span key={kr.id} style={{ fontSize: 11, background: kr.type === "tracker" ? "#ede9fe" : T.surface, color: kr.type === "tracker" ? "#7c3aed" : T.text, border: `1px solid ${kr.type === "tracker" ? "#c4b5fd" : T.border}`, borderRadius: 6, padding: "2px 8px" }}>
+                        {kr.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "14px 24px", borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <Btn onClick={() => setCheckinPreview(null)}>Cancel</Btn>
+              <Btn primary disabled={checkinPreview.recipients.length === 0}
+                onClick={() => { const { period, targetUserId } = checkinPreview; setCheckinPreview(null); sendCheckin(period, targetUserId); }}>
+                📨 Confirm &amp; Send to {checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
       <Side items={navItems} active={page} onSelect={p => { setPage(p); setSelDept(null); }} user={user} onLogout={onLogout}
         subItems={deptSubItems} subItemsFor="departments" activeSubItem={selDept || "__all__"} onSelectSubItem={id => { setPage("departments"); setSelDept(id === "__all__" ? null : id); setSelTeam(null); setAddTarget(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
@@ -2472,7 +2543,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                       <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
-                  <Btn primary onClick={() => sendCheckin(subPeriod, selCheckinUser)} disabled={sendingCheckin}>
+                  <Btn primary onClick={() => previewCheckin(subPeriod, selCheckinUser)} disabled={sendingCheckin}>
                     {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-in`}
                   </Btn>
                 </div>
