@@ -1075,9 +1075,8 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
     return d.getFullYear() === _dmNow.getFullYear() && d.getMonth() === _dmNow.getMonth();
   });
   const dmFiltKrs = krs => krs.filter(kr => _dmTypes.includes(kr.period || "monthly"));
-  const calcDeptRate = deptId => {
+  const _dmRateForMembers = members => {
     const nowMs = _dmNow.getTime();
-    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === deptId);
     const rates = members.map(u => {
       const kd = memberData[u.id] || { krs: [] };
       const krs = dmFiltKrs(kd.krs);
@@ -1092,6 +1091,15 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
       return calcMemberRate(u.id, krs, dmSubs);
     }).filter(r => r !== null);
     return rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+  };
+  const calcDeptRate = deptId => {
+    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === deptId);
+    return _dmRateForMembers(members);
+  };
+  const calcTeamRate = (deptId, team) => {
+    const memberSet = new Set([...(team.members || []), ...users.filter(u => u.teamId === team.id || u.secondTeamId === team.id).map(u => u.id)]);
+    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === deptId && memberSet.has(u.id));
+    return _dmRateForMembers(members);
   };
 
   function handleAdd() {
@@ -1279,7 +1287,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
                       <div style={{ fontSize: 13, color: T.textMuted, padding: "8px 0 12px" }}>No teams yet. Add one above.</div>
                     )}
 
-                    {d.teams.map(t => { const tr = calcRate(t.krs); const ts = getStatus(tr);
+                    {d.teams.map(t => { const tr = calcTeamRate(d.id, t); const ts = getStatus(tr);
                       const isEditingTeam = editTeam?.deptId === d.id && editTeam?.teamId === t.id;
                       return (
                         <Card key={t.id} style={{ overflow: "hidden", marginBottom: 8 }}>
