@@ -1587,6 +1587,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     const dateRange = periodDateRange(period, periodKey);
     const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
     const newSubs = [];
+    const emailPromises = [];
     let ctr = Date.now();
     const userPool = resolveScopePool(scope);
     for (const u of userPool) {
@@ -1608,14 +1609,20 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         const emailTemplates = settings?.emailTemplates || {};
         const template = { ...emailTemplates.default, ...(emailTemplates[period] || {}) };
         const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr) }));
-        fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, dateRange, krs: krsForEmail, template }) }).catch(console.error);
+        emailPromises.push(
+          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, dateRange, krs: krsForEmail, template }) })
+            .then(res => res.ok ? null : { name: u.name, reason: `HTTP ${res.status}` })
+            .catch(err => ({ name: u.name, reason: err.message || "Network error" }))
+        );
       }
     }
     if (newSubs.length) dispatch({ type: "CREATE_OKR_SUBMISSIONS", submissions: newSubs });
     const memberCount = new Set(newSubs.map(s => s.memberId)).size;
-    setCheckinResult({ count: newSubs.length, memberCount, period, scope });
+    const emailOutcomes = await Promise.all(emailPromises);
+    const emailFailures = emailOutcomes.filter(Boolean);
+    setCheckinResult({ count: newSubs.length, memberCount, period, scope, emailFailures });
     setSendingCheckin(false);
-    setTimeout(() => setCheckinResult(null), 6000);
+    setTimeout(() => setCheckinResult(null), 8000);
   }
 
   return (
@@ -2146,11 +2153,18 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
               </div>
               {checkinResult && (
                 <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  background: checkinResult.count > 0 ? T.okDim : T.warnDim,
-                  border: `1px solid ${checkinResult.count > 0 ? T.okBorder : T.warnBorder}`,
-                  color: checkinResult.count > 0 ? T.ok : T.warn }}>
+                  background: checkinResult.emailFailures?.length > 0 ? T.warnDim : checkinResult.count > 0 ? T.okDim : T.warnDim,
+                  border: `1px solid ${checkinResult.emailFailures?.length > 0 ? T.warnBorder : checkinResult.count > 0 ? T.okBorder : T.warnBorder}`,
+                  color: checkinResult.emailFailures?.length > 0 ? T.warn : checkinResult.count > 0 ? T.ok : T.warn }}>
                   {checkinResult.count > 0
-                    ? `✓ Created ${checkinResult.count} check-in${checkinResult.count !== 1 ? "s" : ""} for ${checkinResult.memberCount} member${checkinResult.memberCount !== 1 ? "s" : ""} — ${scopeLabel(checkinResult.scope || {})}`
+                    ? <div>
+                        <div>{`✓ Created ${checkinResult.count} check-in${checkinResult.count !== 1 ? "s" : ""} for ${checkinResult.memberCount} member${checkinResult.memberCount !== 1 ? "s" : ""} — ${scopeLabel(checkinResult.scope || {})}`}</div>
+                        {checkinResult.emailFailures?.length > 0 && (
+                          <div style={{ marginTop: 5, fontWeight: 500 }}>
+                            {`⚠ ${checkinResult.emailFailures.length} email${checkinResult.emailFailures.length !== 1 ? "s" : ""} failed to send: ${checkinResult.emailFailures.map(f => f.name).join(", ")}`}
+                          </div>
+                        )}
+                      </div>
                     : `⚠ No submissions created — no KRs found for this period. Check that KRs are configured with the "${checkinResult.period}" period.`}
                 </div>
               )}
