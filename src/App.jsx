@@ -761,7 +761,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
 /* ─────────────────────────────────────────────────────────────
    USER MANAGEMENT PAGE
    ───────────────────────────────────────────────────────────── */
-const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [] };
+const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [] };
 
 function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -784,6 +784,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
       ...(form.deptId && { deptId: form.deptId }),
       ...((form.role === "member" || form.role === "manager") && form.teamId && { teamId: form.teamId }),
       ...(form.role === "manager" && form.teamIds?.length && { teamIds: form.teamIds }),
+      ...(form.role === "manager" && form.mgrDeptIds?.length && { mgrDeptIds: form.mgrDeptIds }),
     };
     dispatch({ type: "ADD_USER", user: newUser });
     setForm(BLANK_FORM); setFormErr(""); setShowAdd(false);
@@ -791,7 +792,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
 
   function startEdit(u) {
     setEditId(u.id);
-    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], secondTeamId: u.secondTeamId || "" });
+    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], mgrDeptIds: u.mgrDeptIds || [], secondTeamId: u.secondTeamId || "" });
   }
 
   function saveEdit() {
@@ -801,6 +802,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
       deptId: editForm.deptId || undefined,
       teamId: (editForm.role === "member" || editForm.role === "manager") ? (editForm.teamId || undefined) : undefined,
       teamIds: editForm.role === "manager" ? (editForm.teamIds?.length ? editForm.teamIds : undefined) : undefined,
+      mgrDeptIds: editForm.role === "manager" ? (editForm.mgrDeptIds?.length ? editForm.mgrDeptIds : undefined) : undefined,
       secondTeamId: editForm.role === "member" ? (editForm.secondTeamId || undefined) : undefined,
     }});
     setEditId(null);
@@ -871,6 +873,21 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
               </div>
             )}
           </div>
+          {form.role === "manager" && form.deptId && depts.filter(d => d.id !== form.deptId).length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>Additional Departments (optional)</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                {depts.filter(d => d.id !== form.deptId).map(d => (
+                  <label key={d.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, cursor: "pointer", color: T.text }}>
+                    <input type="checkbox" checked={(form.mgrDeptIds || []).includes(d.id)}
+                      onChange={e => setForm(p => ({ ...p, mgrDeptIds: e.target.checked ? [...(p.mgrDeptIds || []), d.id] : (p.mgrDeptIds || []).filter(id => id !== d.id) }))} />
+                    {d.name}
+                  </label>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: T.textDim, marginTop: 5 }}>Manager can view and approve submissions from these departments (full dept access).</div>
+            </div>
+          )}
           {formErr && <div style={{ padding: "8px 12px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, fontSize: 13, color: T.bad, marginBottom: 12 }}>{formErr}</div>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Btn small onClick={() => { setShowAdd(false); setForm(BLANK_FORM); setFormErr(""); }}>Cancel</Btn>
@@ -977,6 +994,21 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                     <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>Teams this manager can view and approve member submissions for.</div>
                   </div>
                 )}
+                {editForm.role === "manager" && editForm.deptId && depts.filter(d => d.id !== editForm.deptId).length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={lbl}>Additional Departments</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                      {depts.filter(d => d.id !== editForm.deptId).map(d => (
+                        <label key={d.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, cursor: "pointer", color: T.text }}>
+                          <input type="checkbox" checked={(editForm.mgrDeptIds || []).includes(d.id)}
+                            onChange={e => setEditForm(p => ({ ...p, mgrDeptIds: e.target.checked ? [...(p.mgrDeptIds || []), d.id] : (p.mgrDeptIds || []).filter(id => id !== d.id) }))} />
+                          {d.name}
+                        </label>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>Manager can view and approve submissions from these departments (full dept access, no team filter).</div>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <Btn small onClick={() => setEditId(null)}>Cancel</Btn>
                   <Btn primary small onClick={saveEdit}>Save</Btn>
@@ -994,7 +1026,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
               </div>
               <span style={{ fontSize: 13, color: T.textSoft }}>{u.title}</span>
               <RoleTag role={u.role} />
-              <span style={{ fontSize: 13, color: T.textMuted }}>{dept?.name || "—"}</span>
+              <span style={{ fontSize: 13, color: T.textMuted }}>{dept?.name || "—"}{u.mgrDeptIds?.length > 0 && <span style={{ fontSize: 11, color: T.brand, marginLeft: 5 }}>+{u.mgrDeptIds.length} dept{u.mgrDeptIds.length > 1 ? "s" : ""}</span>}</span>
               <span style={{ fontSize: 12, color: T.textMuted }}>
                 {u.role === "member" && team ? (() => { const st = u.secondTeamId ? dept?.teams.find(t => t.id === u.secondTeamId) : null; return st ? `${team.name} / ${st.name}` : team.name; })() : u.role === "manager" && managerTeams.length ? managerTeams.map(t => t.name).join(", ") : "—"}
               </span>
@@ -2899,8 +2931,13 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
   const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
   const overseeFilter = u => !user.teamIds?.length || (u.teamId && user.teamIds.includes(u.teamId)) || (u.secondTeamId && user.teamIds.includes(u.secondTeamId));
-  const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && overseeFilter(u));
-  const myTeamMemberIds = users.filter(u => u.role === "member" && u.deptId === user.deptId && overseeFilter(u)).map(u => u.id);
+  const extraDeptIds = user.mgrDeptIds || [];
+  const myMembers = users.filter(u => (u.role === "member" || u.role === "manager") && (
+    (u.deptId === user.deptId && overseeFilter(u)) || extraDeptIds.includes(u.deptId)
+  ));
+  const myTeamMemberIds = users.filter(u => u.role === "member" && (
+    (u.deptId === user.deptId && overseeFilter(u)) || extraDeptIds.includes(u.deptId)
+  )).map(u => u.id);
   const myOkrSubs = allOkrSubs.filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId));
