@@ -4108,9 +4108,10 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                       <div style={{ fontSize: 16, fontWeight: 700 }}>{kr.label}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Tracker · does not affect rate</span>}
                       {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Monthly Breakdown</span>}
                       <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{kr.period || "monthly"}</span>
-                      <Tag type={s} />
+                      {kr.type !== "tracker" && <Tag type={s} />}
                     </div>
                   </div>
                   {isMonthly ? (
@@ -4198,6 +4199,19 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                         </div>
                       )}
                     </>
+                  ) : kr.type === "tracker" ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                      <div>
+                        <div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: "#7c3aed" }}>
+                          {fmt(kr.actual)}{kr.unit ? <span style={{ fontSize: 16, fontWeight: 600, color: T.textMuted, marginLeft: 6 }}>{kr.unit}</span> : null}
+                        </div>
+                        <div style={{ fontSize: 12, color: T.textMuted }}>Last recorded value</div>
+                      </div>
+                      <div style={{ background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "6px 14px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#7c3aed" }}>N/A</div>
+                        <div style={{ fontSize: 11, color: "#7c3aed", opacity: 0.8 }}>does not affect rate</div>
+                      </div>
+                    </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
                       <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)} target{kr.unit ? ` (${kr.unit})` : ""}</div></div>
