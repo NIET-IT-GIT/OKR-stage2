@@ -3695,7 +3695,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
         })()}
 
         {page === "approvals" && (() => {
-          const totalPending = pendingOkrSubs.length + pendingSubs.length;
+          const totalPending = pendingOkrSubs.length;
           return (<>
             <Header title="Approve Member Submissions" sub={`${totalPending} pending review`} />
             <Pane>
