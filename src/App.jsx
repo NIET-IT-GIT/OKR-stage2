@@ -1936,18 +1936,16 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                 {(d.teams || []).length > 0 && (<>
                   <SectionLabel>Team Key Results<PChip /></SectionLabel>
                   {teamStats.map(t => (
-                    <Card key={t.id} style={{ padding: "14px 16px", marginBottom: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: t.krs.length > 0 ? 10 : 0 }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}</span>
-                        {t.lead && <span style={{ fontSize: 12, color: T.textMuted }}>Lead: {t.lead}</span>}
-                        {t.obj && <span style={{ fontSize: 12, color: T.textMuted, flex: 1 }}>Obj: {t.obj}</span>}
+                    <div key={t.id} style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, padding: "0 2px" }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{t.name}{t.lead && <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 400, marginLeft: 8 }}>Lead: {t.lead}</span>}{t.obj && <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 400, marginLeft: 8 }}>· {t.obj}</span>}</span>
                         <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate.toFixed(1)}%</span>
                         <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
                         <Tag type={t.status} small />
                         {t.krs.length > 0 && <Btn small onClick={() => doSync(d.id, t.id)}>⟳ Sync</Btn>}
                       </div>
-                      {t.krs.length > 0 ? renderSection(t.krs, d.id, t.id) : <div style={{ fontSize: 13, color: T.textMuted }}>No KRs for this period.</div>}
-                    </Card>
+                      {renderSection(t.krs, d.id, t.id)}
+                    </div>
                   ))}
                 </>)}
               </Pane>
