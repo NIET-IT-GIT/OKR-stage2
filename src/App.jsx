@@ -1066,6 +1066,34 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
   const [editTeamForm, setEditTeamForm] = useState({ name: "", lead: "", obj: "", members: [] });
   const [confirmDelTeam, setConfirmDelTeam] = useState(null);
 
+  // Month-windowed submission pool — mirrors Company Overview "Monthly" logic
+  const _dmNow = new Date();
+  const _dmTypes = ["daily", "weekly", "monthly"];
+  const dmSubs = okrSubmissions.filter(s => {
+    if (!_dmTypes.includes(s.period) || !s.sentAt) return false;
+    const d = new Date(s.sentAt);
+    return d.getFullYear() === _dmNow.getFullYear() && d.getMonth() === _dmNow.getMonth();
+  });
+  const dmFiltKrs = krs => krs.filter(kr => _dmTypes.includes(kr.period || "monthly"));
+  const calcDeptRate = deptId => {
+    const nowMs = _dmNow.getTime();
+    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === deptId);
+    const rates = members.map(u => {
+      const kd = memberData[u.id] || { krs: [] };
+      const krs = dmFiltKrs(kd.krs);
+      const hasEligible = krs.some(kr => {
+        const krSubs = dmSubs.filter(s => s.memberId === u.id && s.krId === kr.id);
+        if (!krSubs.length) return false;
+        if (krSubs.some(s => s.answer !== null)) return true;
+        const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
+        return latest && (nowMs - new Date(latest.sentAt).getTime()) >= 86400000;
+      });
+      if (!hasEligible) return null;
+      return calcMemberRate(u.id, krs, dmSubs);
+    }).filter(r => r !== null);
+    return rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+  };
+
   function handleAdd() {
     if (!addForm.name.trim()) { setAddErr("Department name is required."); return; }
     if (depts.some(d => d.name.toLowerCase() === addForm.name.trim().toLowerCase())) { setAddErr("A department with this name already exists."); return; }
@@ -1127,11 +1155,11 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
 
       <Card style={{ overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 200px 80px 80px 110px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-          <span>Department / Description</span><span>Head · College</span><span>Teams</span><span>Completion</span><span style={{ textAlign: "right" }}>Actions</span>
+          <span>Department / Description</span><span>Head · College</span><span>Teams</span><span>Completion (This Month)</span><span style={{ textAlign: "right" }}>Actions</span>
         </div>
         {depts.length === 0 && <EmptyState text="No departments yet. Add one above." />}
         {depts.map((d, i) => {
-          const r = calcRate(d.krs); const s = getStatus(r);
+          const r = calcDeptRate(d.id); const s = getStatus(r);
           if (editId === d.id) {
             return (
               <div key={d.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "14px 18px" }}>
@@ -1173,10 +1201,10 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
                 </div>
               </div>
               {isSelected && (() => {
-                const r2 = calcRate(d.krs); const s2 = getStatus(r2);
+                const r2 = calcDeptRate(d.id); const s2 = getStatus(r2);
                 const deptMembers = users
                   .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
-                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = calcMemberRate(u.id, kd.krs, okrSubmissions); return { ...u, rate: mr, status: getStatus(mr) }; })
+                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = calcMemberRate(u.id, dmFiltKrs(kd.krs), dmSubs); return { ...u, rate: mr, status: getStatus(mr) }; })
                   .sort((a, b) => b.rate - a.rate);
                 return (
                   <div style={{ background: T.bgSoft, borderBottom: `1px solid ${T.border}`, padding: "16px 18px" }}>
