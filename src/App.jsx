@@ -4067,18 +4067,18 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
         {page === "mykpis" && (<>
           <Header title="My OKRs" sub={`${user.title} · FY26 Q1`} right={<Tag type={st} />} />
           <Pane>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <Metric label="My Completion"  value={`${rate.toFixed(1)}%`} status={st} sub={`Time: ${TP}%`} />
+              <Metric label="KRs Tracked"    value={kd.krs.length} />
+              <Metric label="This Week"      value={thisWeekSub ? "Submitted" : "Due"} status={thisWeekSub ? "green" : "red"} />
+              <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
+            </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {["all", "weekly", "monthly", "quarterly", "biannual", "annual"].map(p => (
                 <Btn key={p} small primary={myKpiPeriod === p} onClick={() => setMyKpiPeriod(p)}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                 </Btn>
               ))}
-            </div>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="My Completion"  value={`${rate.toFixed(1)}%`} status={st} sub={`Time: ${TP}%`} />
-              <Metric label="KRs Tracked"    value={kd.krs.length} />
-              <Metric label="This Week"      value={thisWeekSub ? "Submitted" : "Due"} status={thisWeekSub ? "green" : "red"} />
-              <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
             </div>
             {kd.krs.length === 0 && (
               <div style={{ padding: "28px 20px", textAlign: "center", color: T.textMuted, background: T.raised, borderRadius: 10, border: `1px dashed ${T.border}` }}>
