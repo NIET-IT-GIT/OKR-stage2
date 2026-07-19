@@ -1359,7 +1359,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
   const [subPeriod, setSubPeriod] = useState("monthly");
   const [sendingCheckin, setSendingCheckin] = useState(false);
   const [checkinResult, setCheckinResult] = useState(null);
-  const [selCheckinUser, setSelCheckinUser] = useState("");
+  const [checkinScope, setCheckinScope] = useState({ deptId: "", teamId: "", userId: "" });
   const [checkinPreview, setCheckinPreview] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [tmplPeriod, setTmplPeriod] = useState("default");
@@ -1536,13 +1536,34 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     setNewColName(""); setAddingCol(false);
   }
 
-  function previewCheckin(period, targetUserId = "") {
+  function resolveScopePool(scope) {
+    let pool = users.filter(u => u.role === "member" || u.role === "manager");
+    if (scope.userId) return pool.filter(u => u.id === scope.userId);
+    if (scope.teamId) {
+      const team = depts.flatMap(d => d.teams).find(t => t.id === scope.teamId);
+      const set = new Set([...(team?.members || []), ...pool.filter(u => u.teamId === scope.teamId || u.secondTeamId === scope.teamId).map(u => u.id)]);
+      return pool.filter(u => set.has(u.id));
+    }
+    if (scope.deptId) return pool.filter(u => u.deptId === scope.deptId);
+    return pool;
+  }
+
+  function scopeLabel(scope) {
+    if (scope.userId) { const u = users.find(u => u.id === scope.userId); return u?.name || "Unknown"; }
+    if (scope.teamId) {
+      const d = depts.find(d => d.teams.some(t => t.id === scope.teamId));
+      const t = d?.teams.find(t => t.id === scope.teamId);
+      return d && t ? `${d.name} › ${t.name}` : "Unknown Team";
+    }
+    if (scope.deptId) { const d = depts.find(d => d.id === scope.deptId); return d?.name || "Unknown Dept"; }
+    return "All Departments";
+  }
+
+  function previewCheckin(period, scope = {}) {
     const periodKey = prevPeriodKey(period);
     const dateRange = periodDateRange(period, periodKey);
     const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
-    const userPool = targetUserId
-      ? users.filter(u => u.id === targetUserId)
-      : users.filter(u => u.role === "member" || u.role === "manager");
+    const userPool = resolveScopePool(scope);
     const recipients = [];
     for (const u of userPool) {
       const dept = depts.find(d => d.id === u.deptId);
@@ -1557,19 +1578,17 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
       if (!freshKrs.length) continue;
       recipients.push({ user: u, dept, krs: freshKrs });
     }
-    setCheckinPreview({ period, targetUserId, periodKey, dateRange, recipients });
+    setCheckinPreview({ period, scope, periodKey, dateRange, recipients });
   }
 
-  async function sendCheckin(period, targetUserId = "") {
+  async function sendCheckin(period, scope = {}) {
     setSendingCheckin(true);
     const periodKey = prevPeriodKey(period);
     const dateRange = periodDateRange(period, periodKey);
     const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
     const newSubs = [];
     let ctr = Date.now();
-    const userPool = targetUserId
-      ? users.filter(u => u.id === targetUserId)
-      : users.filter(u => u.role === "member" || u.role === "manager");
+    const userPool = resolveScopePool(scope);
     for (const u of userPool) {
       const dept = depts.find(d => d.id === u.deptId);
       if (!dept) continue;
@@ -1594,7 +1613,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     }
     if (newSubs.length) dispatch({ type: "CREATE_OKR_SUBMISSIONS", submissions: newSubs });
     const memberCount = new Set(newSubs.map(s => s.memberId)).size;
-    setCheckinResult({ count: newSubs.length, memberCount, period, targetUserId });
+    setCheckinResult({ count: newSubs.length, memberCount, period, scope });
     setSendingCheckin(false);
     setTimeout(() => setCheckinResult(null), 6000);
   }
@@ -1607,11 +1626,13 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${T.border}` }}>
               <div style={{ fontWeight: 800, fontSize: 17 }}>Confirm: Send {checkinPreview.period.charAt(0).toUpperCase() + checkinPreview.period.slice(1)} Check-in</div>
               <div style={{ fontSize: 12, color: T.textDim, marginTop: 5 }}>
-                Period: <strong style={{ color: T.text }}>{checkinPreview.dateRange || checkinPreview.periodKey}</strong>
+                <span>Period: <strong style={{ color: T.text }}>{checkinPreview.dateRange || checkinPreview.periodKey}</strong></span>
                 <span style={{ margin: "0 6px", color: T.border }}>·</span>
-                {checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}
+                <span>To: <strong style={{ color: T.text }}>{scopeLabel(checkinPreview.scope || {})}</strong></span>
                 <span style={{ margin: "0 6px", color: T.border }}>·</span>
-                {checkinPreview.recipients.reduce((n, r) => n + r.krs.length, 0)} KRs total
+                <span>{checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}</span>
+                <span style={{ margin: "0 6px", color: T.border }}>·</span>
+                <span>{checkinPreview.recipients.reduce((n, r) => n + r.krs.length, 0)} KRs total</span>
               </div>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 24px" }}>
@@ -1641,7 +1662,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             <div style={{ padding: "14px 24px", borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <Btn onClick={() => setCheckinPreview(null)}>Cancel</Btn>
               <Btn primary disabled={checkinPreview.recipients.length === 0}
-                onClick={() => { const { period, targetUserId } = checkinPreview; setCheckinPreview(null); sendCheckin(period, targetUserId); }}>
+                onClick={() => { const { period, scope } = checkinPreview; setCheckinPreview(null); sendCheckin(period, scope); }}>
                 📨 Confirm &amp; Send to {checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}
               </Btn>
             </div>
@@ -2082,15 +2103,45 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   <Metric label="No" value={periodSubs.filter(s => s.answer === "no").length} status="red" />
                   <Metric label="Approved" value={periodSubs.filter(s => s.approval === "approved").length} status="green" />
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <select value={selCheckinUser} onChange={e => setSelCheckinUser(e.target.value)}
-                    style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 200 }}>
-                    <option value="">All Members</option>
-                    {users.filter(u => u.role === "member" || u.role === "manager").sort((a,b) => a.name.localeCompare(b.name)).map(u => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  {/* Dept */}
+                  <select value={checkinScope.deptId}
+                    onChange={e => setCheckinScope({ deptId: e.target.value, teamId: "", userId: "" })}
+                    style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 180 }}>
+                    <option value="">All Departments</option>
+                    {depts.slice().sort((a,b) => a.name.localeCompare(b.name)).map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
-                  <Btn primary onClick={() => previewCheckin(subPeriod, selCheckinUser)} disabled={sendingCheckin}>
+                  {/* Team — only if dept selected */}
+                  {checkinScope.deptId && (() => {
+                    const scopeTeams = depts.find(d => d.id === checkinScope.deptId)?.teams || [];
+                    return scopeTeams.length > 0 ? (
+                      <select value={checkinScope.teamId}
+                        onChange={e => setCheckinScope(p => ({ ...p, teamId: e.target.value, userId: "" }))}
+                        style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 160 }}>
+                        <option value="">All Teams</option>
+                        {scopeTeams.slice().sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    ) : null;
+                  })()}
+                  {/* Member */}
+                  {(() => {
+                    const pool = resolveScopePool({ deptId: checkinScope.deptId, teamId: checkinScope.teamId });
+                    return (
+                      <select value={checkinScope.userId}
+                        onChange={e => setCheckinScope(p => ({ ...p, userId: e.target.value }))}
+                        style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 180 }}>
+                        <option value="">All Members</option>
+                        {pool.slice().sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                          <option key={u.id} value={u.id}>{u.name} {u.deptId !== checkinScope.deptId ? `(${depts.find(d=>d.id===u.deptId)?.name||""})` : ""}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+                  <Btn primary onClick={() => previewCheckin(subPeriod, checkinScope)} disabled={sendingCheckin}>
                     {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-in`}
                   </Btn>
                 </div>
@@ -2101,7 +2152,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                   border: `1px solid ${checkinResult.count > 0 ? T.okBorder : T.warnBorder}`,
                   color: checkinResult.count > 0 ? T.ok : T.warn }}>
                   {checkinResult.count > 0
-                    ? `✓ Created ${checkinResult.count} check-in${checkinResult.count !== 1 ? "s" : ""} for ${checkinResult.memberCount} member${checkinResult.memberCount !== 1 ? "s" : ""}${checkinResult.targetUserId ? " (individual send)" : ""}`
+                    ? `✓ Created ${checkinResult.count} check-in${checkinResult.count !== 1 ? "s" : ""} for ${checkinResult.memberCount} member${checkinResult.memberCount !== 1 ? "s" : ""} — ${scopeLabel(checkinResult.scope || {})}`
                     : `⚠ No submissions created — no KRs found for this period. Check that KRs are configured with the "${checkinResult.period}" period.`}
                 </div>
               )}
