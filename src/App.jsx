@@ -3180,15 +3180,24 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                       <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
                       <Tag type={t.status} small />
                     </div>
-                    {t.krs.map(kr => { const pct = krCompletion(kr); const st = getStatus(pct); return (
+                    {t.krs.map(kr => {
+                      const pct = krCompletion(kr); const st = getStatus(pct);
+                      const trackerVal = kr.type === "tracker"
+                        ? (allOkrSubs.some(s => s.krId === kr.id && s.answer !== null) || (kr.actual != null && kr.actual !== 0)
+                            ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null)
+                        : null;
+                      return (
                       <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
-                        {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Tracker</span>}
+                        {kr.type !== "tracker" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
-                        <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
-                        <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>
-                        <Tag type={st} small />
+                        {kr.type === "tracker"
+                          ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
+                          : <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>}
+                        {kr.type === "tracker" ? <span style={{ width: 100, flexShrink: 0 }} /> : <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>}
+                        {kr.type !== "tracker" && <Tag type={st} small />}
                       </div>
                     ); })}
                   </Card>
@@ -3969,15 +3978,24 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                       <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
                       <Tag type={t.status} small />
                     </div>
-                    {t.krs.map(kr => { const pct = krCompletion(kr); const st = getStatus(pct); return (
+                    {t.krs.map(kr => {
+                      const pct = krCompletion(kr); const st = getStatus(pct);
+                      const trackerVal = kr.type === "tracker"
+                        ? ((state.okrSubmissions || []).some(s => s.krId === kr.id && s.answer !== null) || (kr.actual != null && kr.actual !== 0)
+                            ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null)
+                        : null;
+                      return (
                       <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
-                        {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Tracker</span>}
+                        {kr.type !== "tracker" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
-                        <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
-                        <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>
-                        <Tag type={st} small />
+                        {kr.type === "tracker"
+                          ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
+                          : <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>}
+                        {kr.type === "tracker" ? <span style={{ width: 100, flexShrink: 0 }} /> : <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>}
+                        {kr.type !== "tracker" && <Tag type={st} small />}
                       </div>
                     ); })}
                   </Card>
