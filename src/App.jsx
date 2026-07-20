@@ -3180,7 +3180,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
 /* ─────────────────────────────────────────────────────────────
    MANAGER PORTAL
    ───────────────────────────────────────────────────────────── */
-function ManagerPortal({ user, onLogout, state, dispatch }) {
+function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
     return p[1] === 'manager' ? (p[2] || 'dashboard') : 'dashboard';
@@ -3527,7 +3527,10 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
           const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
           return (<>
             <Header title="OKR Check-In" sub="Answer your KPI check-ins sent by the system"
-              right={subRate !== null ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></div> : null} />
+              right={<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {subRate !== null && <><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></>}
+                <Btn small onClick={onReload}>⟳ Sync</Btn>
+              </div>} />
             <Pane>
               {myPendingCheckins.length > 0 && (
                 <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, fontSize: 13, color: T.warn, fontWeight: 600, marginBottom: 16 }}>
@@ -3892,7 +3895,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
 /* ─────────────────────────────────────────────────────────────
    MEMBER PORTAL
    ───────────────────────────────────────────────────────────── */
-function MemberPortal({ user, onLogout, state, dispatch }) {
+function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
     return p[1] === 'member' ? (p[2] || 'mykpis') : 'mykpis';
@@ -4301,7 +4304,10 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
           const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
           return (<>
             <Header title="OKR Check-In" sub="Answer your KPI check-ins sent by the system"
-              right={subRate !== null ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></div> : null} />
+              right={<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {subRate !== null && <><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></>}
+                <Btn small onClick={onReload}>⟳ Sync</Btn>
+              </div>} />
             <Pane>
               {myPendingCheckins.length > 0 && (
                 <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, fontSize: 13, color: T.warn, fontWeight: 600, marginBottom: 16 }}>
@@ -4850,6 +4856,27 @@ export default function App({ redirectAccount = null }) {
     });
   }, []); // eslint-disable-line
 
+  const reloadState = useCallback(async () => {
+    try {
+      const data = await dbGet();
+      if (data.users?.length) {
+        rawDispatch(() => ({
+          users: data.users,
+          depts: data.depts,
+          memberData: Object.fromEntries((data.memberData || []).map(m => [m.id, { krs: m.krs || [] }])),
+          weeklySubs: data.weeklySubs || [],
+          okrSubmissions: data.okrSubmissions || [],
+          mgrSprints: data.mgrSprints || [],
+          projects: data.projects || [],
+          monthlyReports: data.monthlyReports || [],
+          settings: data.settings?.[0] || { id: "settings", colOrder: ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"] },
+        }));
+      }
+    } catch (err) {
+      console.error("Reload failed:", err);
+    }
+  }, []); // eslint-disable-line
+
   // On mount: load all data from Supabase. Seed the DB with initial data if it is empty.
   useEffect(() => {
     dbGet()
@@ -4948,7 +4975,7 @@ export default function App({ redirectAccount = null }) {
     </div>
   ) : null;
 
-  if (activeUser.role === "admin")   return <>{offlineBanner}{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
-  if (activeUser.role === "manager") return <>{offlineBanner}{syncErrToast}<ManagerPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
-  return <>{offlineBanner}{syncErrToast}<MemberPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} /></>;
+  if (activeUser.role === "admin")   return <>{offlineBanner}{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
+  if (activeUser.role === "manager") return <>{offlineBanner}{syncErrToast}<ManagerPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
+  return <>{offlineBanner}{syncErrToast}<MemberPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
 }
