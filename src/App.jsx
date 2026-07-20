@@ -2491,6 +2491,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         </div>
                         <div style={{ fontSize: 14, color: T.text, marginBottom: 4, fontWeight: 600 }}>{s.krLabel}</div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
+                          {s.krType !== "tracker" && <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono, fontWeight: 600, alignSelf: "center" }}>{s.krOperator || ">="}</span>}
                           <span style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono, color: T.text, lineHeight: 1 }}>{s.krTarget ?? "—"}</span>
                           {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
                           <span style={{ fontSize: 11, color: T.textDim }}>target</span>
