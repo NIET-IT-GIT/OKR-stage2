@@ -2523,7 +2523,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                           <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
                           {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                          <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                          <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                         </div>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                           <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
@@ -3508,7 +3508,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            {s.krType !== "tracker" && <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType !== "tracker" && <span>Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                             <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
@@ -3541,7 +3541,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <Input value={noReason.actual} onChange={e => setNoReason(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                               {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
@@ -3606,7 +3606,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                             </div>
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</div>
                             <div style={{ fontSize: 11, color: T.textMuted }}>
-                              {s.krType !== "tracker" && <>{`Target: ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
+                              {s.krType !== "tracker" && <>{`Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
                               {s.krType === "tracker" && s.actualValue != null && <span style={{ color: "#6d28d9", fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                               {s.krType !== "tracker" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                               {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
@@ -3632,7 +3632,7 @@ function ManagerPortal({ user, onLogout, state, dispatch }) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                               <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
                               {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                             </div>
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                               <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
@@ -4282,7 +4282,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            {s.krType !== "tracker" && <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType !== "tracker" && <span>Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                             <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
@@ -4315,7 +4315,7 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <Input value={noReason.actual} onChange={e => setNoReason(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                               {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
@@ -4391,12 +4391,12 @@ function MemberPortal({ user, onLogout, state, dispatch }) {
                             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
                               Actual: <span style={{ fontFamily: F.mono, fontWeight: 700, color: T.bad }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                               <span style={{ margin: "0 6px" }}>·</span>
-                              Target: <span style={{ fontFamily: F.mono }}>{s.krTarget != null ? s.krTarget : "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                              Target: <span style={{ fontFamily: F.mono }}>{s.krOperator || ">="} {s.krTarget != null ? s.krTarget : "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                             </div>
                           )}
                           {s.answer === "yes" && s.krTarget != null && (
                             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
-                              Target: <span style={{ fontFamily: F.mono }}>{s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                              Target: <span style={{ fontFamily: F.mono }}>{s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                             </div>
                           )}
                           {s.answer === "submitted" && s.actualValue != null && (
