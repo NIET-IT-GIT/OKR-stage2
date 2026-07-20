@@ -3207,6 +3207,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [mgrSelTeam, setMgrSelTeam] = useState(null);
   const [okrPeriod, setOkrPeriod] = useState("all");
   const [noReason, setNoReason] = useState(null);
+  const [yesConfirm, setYesConfirm] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
 
@@ -3544,7 +3545,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
                   {pending.map(s => (
-                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : T.warn}` }}>
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
@@ -3563,19 +3564,33 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
                             <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>Record</Btn>
                           </div>
-                        ) : noReason?.id !== s.id ? (
+                        ) : (noReason?.id !== s.id && yesConfirm?.id !== s.id) ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                            <button onClick={() => setNoReason({ id: s.id, reason: "", actual: "" })}
+                            <button onClick={() => { setNoReason({ id: s.id, reason: "", actual: "" }); setYesConfirm(null); }}
                               style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
                               ✗ No
                             </button>
-                            <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: s.krTarget })}
+                            <button onClick={() => { setYesConfirm({ id: s.id, actual: String(s.krTarget ?? "") }); setNoReason(null); }}
                               style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.ok, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
                               ✓ Yes
                             </button>
                           </div>
                         ) : null}
                       </div>
+                      {s.krType !== "tracker" && yesConfirm?.id === s.id && (
+                        <div style={{ marginTop: 12, padding: "12px 14px", background: T.okDim, borderRadius: 8, border: `1px solid ${T.okBorder}` }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.ok, marginBottom: 8 }}>Enter your actual value</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                            <Input value={yesConfirm.actual} onChange={e => setYesConfirm(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} autoFocus />
+                            {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
+                            <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                            <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
+                          </div>
+                        </div>
+                      )}
                       {s.krType !== "tracker" && noReason?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
@@ -3914,6 +3929,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [okrPeriod, setOkrPeriod] = useState("all");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
   const [noReason, setNoReason] = useState(null);
+  const [yesConfirm, setYesConfirm] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
   const [expandedKrHistory, setExpandedKrHistory] = useState(null);
   const [histPeriod, setHistPeriod] = useState("all");
@@ -4321,7 +4337,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
                   {pending.map(s => (
-                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : T.warn}` }}>
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
@@ -4340,19 +4356,33 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
                             <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>Record</Btn>
                           </div>
-                        ) : noReason?.id !== s.id ? (
+                        ) : (noReason?.id !== s.id && yesConfirm?.id !== s.id) ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                            <button onClick={() => setNoReason({ id: s.id, reason: "", actual: "" })}
+                            <button onClick={() => { setNoReason({ id: s.id, reason: "", actual: "" }); setYesConfirm(null); }}
                               style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.bad, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
                               ✗ No
                             </button>
-                            <button onClick={() => dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: s.krTarget })}
+                            <button onClick={() => { setYesConfirm({ id: s.id, actual: String(s.krTarget ?? "") }); setNoReason(null); }}
                               style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 7, padding: "8px 18px", cursor: "pointer", color: T.ok, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
                               ✓ Yes
                             </button>
                           </div>
                         ) : null}
                       </div>
+                      {s.krType !== "tracker" && yesConfirm?.id === s.id && (
+                        <div style={{ marginTop: 12, padding: "12px 14px", background: T.okDim, borderRadius: 8, border: `1px solid ${T.okBorder}` }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.ok, marginBottom: 8 }}>Enter your actual value</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                            <Input value={yesConfirm.actual} onChange={e => setYesConfirm(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} autoFocus />
+                            {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
+                            <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                            <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
+                          </div>
+                        </div>
+                      )}
                       {s.krType !== "tracker" && noReason?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
