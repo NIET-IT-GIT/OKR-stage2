@@ -2497,7 +2497,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
                           <span style={{ fontSize: 11, color: T.textDim }}>target</span>
                           {s.answer === "no" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.bad, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.bad }}>actual</span></>}
-                          {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span></>}
+                          {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.actualValue ?? s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span></>}
                         </div>
                         <div style={{ fontSize: 12, color: T.textMuted }}>
                           {periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}
@@ -3668,7 +3668,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                               {s.krType !== "tracker" && <>{`Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
                               {s.krType === "tracker" && s.actualValue != null && <span style={{ color: "#6d28d9", fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                               {s.krType !== "tracker" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
-                              {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                              {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.actualValue ?? s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                               <span style={{ marginLeft: 8 }}>· Answered: {s.answeredAt?.slice(0,10) || "—"}</span>
                             </div>
                             {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
@@ -4644,7 +4644,7 @@ function appReducer(state, action) {
       const sub = (state.okrSubmissions || []).find(s => s.id === action.id);
       if (!sub) return { ...state, okrSubmissions: newSubs };
       const actualToWrite = action.status === "approved"
-        ? (sub.answer === "yes" ? sub.krTarget : (sub.actualValue ?? sub.krTarget))
+        ? (sub.actualValue ?? sub.krTarget)
         : (action.status === "rejected" && action.actualValue != null ? action.actualValue : null);
       if (actualToWrite === null) return { ...state, okrSubmissions: newSubs };
       const md = state.memberData[sub.memberId];
