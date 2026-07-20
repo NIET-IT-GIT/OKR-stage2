@@ -2548,14 +2548,12 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                               ✗ No
                             </button>
                           </div>
-                          {editingSub.answer === "no" && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                              <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
-                              <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
-                              {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
-                            </div>
-                          )}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                            <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
+                            <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                            {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                            <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                          </div>
                         </>) : (
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                             <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
@@ -2567,7 +2565,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                           <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
                           <Btn primary small onClick={() => {
                             const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer;
-                            const newActual = newAnswer === "yes" ? (s.krTarget ?? 0) : (Number(editingSub.actual) || 0);
+                            const newActual = Number(editingSub.actual) || 0;
                             dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual });
                             setEditingSub(null);
                           }}>Save Changes</Btn>
