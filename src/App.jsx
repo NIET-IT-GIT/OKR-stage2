@@ -4903,58 +4903,50 @@ export default function App({ redirectAccount = null }) {
     });
   }, []); // eslint-disable-line
 
+  // Shared data processor: resets actual: 0 → null for KRs with no approved submission,
+  // then dispatches the cleaned state. Used by both the mount effect and reloadState.
+  const applyLoadedData = useCallback((data) => {
+    const okrSubs = data.okrSubmissions || [];
+    const approvedKrIds = new Set(okrSubs.filter(s => s.approval === "approved").map(s => s.krId));
+    const fixActuals = krs => (krs || []).map(kr =>
+      kr.actual === 0 && !approvedKrIds.has(kr.id) ? { ...kr, actual: null } : kr
+    );
+    const fixedDepts = (data.depts || []).map(d => ({
+      ...d,
+      krs: fixActuals(d.krs),
+      teams: (d.teams || []).map(t => ({ ...t, krs: fixActuals(t.krs) })),
+    }));
+    const fixedMemberData = Object.fromEntries(
+      (data.memberData || []).map(m => [m.id, { krs: fixActuals(m.krs || []) }])
+    );
+    rawDispatch(() => ({
+      users: data.users,
+      depts: fixedDepts,
+      memberData: fixedMemberData,
+      weeklySubs: data.weeklySubs || [],
+      okrSubmissions: okrSubs,
+      mgrSprints: data.mgrSprints || [],
+      projects: data.projects || [],
+      monthlyReports: data.monthlyReports || [],
+      settings: data.settings?.[0] || { id: "settings", colOrder: ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"] },
+    }));
+  }, []); // eslint-disable-line
+
   const reloadState = useCallback(async () => {
     try {
       const data = await dbGet();
-      if (data.users?.length) {
-        const okrSubs = data.okrSubmissions || [];
-        // KR IDs that have at least one approved submission — only these have real actuals
-        const approvedKrIds = new Set(okrSubs.filter(s => s.approval === "approved").map(s => s.krId));
-        // Reset actual: 0 → null for any KR with no approved submission (0 was the initial default, not a real value)
-        const fixActuals = krs => (krs || []).map(kr =>
-          kr.actual === 0 && !approvedKrIds.has(kr.id) ? { ...kr, actual: null } : kr
-        );
-        const fixedDepts = (data.depts || []).map(d => ({
-          ...d,
-          krs: fixActuals(d.krs),
-          teams: (d.teams || []).map(t => ({ ...t, krs: fixActuals(t.krs) })),
-        }));
-        const fixedMemberData = Object.fromEntries(
-          (data.memberData || []).map(m => [m.id, { krs: fixActuals(m.krs || []) }])
-        );
-        rawDispatch(() => ({
-          users: data.users,
-          depts: fixedDepts,
-          memberData: fixedMemberData,
-          weeklySubs: data.weeklySubs || [],
-          okrSubmissions: okrSubs,
-          mgrSprints: data.mgrSprints || [],
-          projects: data.projects || [],
-          monthlyReports: data.monthlyReports || [],
-          settings: data.settings?.[0] || { id: "settings", colOrder: ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"] },
-        }));
-      }
+      if (data.users?.length) applyLoadedData(data);
     } catch (err) {
       console.error("Reload failed:", err);
     }
-  }, []); // eslint-disable-line
+  }, [applyLoadedData]);
 
   // On mount: load all data from Supabase. Seed the DB with initial data if it is empty.
   useEffect(() => {
     dbGet()
       .then(data => {
         if (data.users?.length) {
-          rawDispatch(() => ({
-            users: data.users,
-            depts: data.depts,
-            memberData: Object.fromEntries((data.memberData || []).map(m => [m.id, { krs: m.krs || [] }])),
-            weeklySubs: data.weeklySubs || [],
-            okrSubmissions: data.okrSubmissions || [],
-            mgrSprints: data.mgrSprints || [],
-            projects: data.projects || [],
-            monthlyReports: data.monthlyReports || [],
-            settings: data.settings?.[0] || { id: "settings", colOrder: ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"] },
-          }));
+          applyLoadedData(data);
         } else {
           // First run — seed the database with the built-in initial data.
           dbSeed({
