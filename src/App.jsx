@@ -1831,7 +1831,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
             const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
             const _pkAdmin = adminOkrPeriod === "weekly" ? prevPeriodKey(adminOkrPeriod) : currentPeriodKey(adminOkrPeriod);
-            const hasSub = adminOkrPeriod === "all" || okrSubmissions.some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkAdmin && s.answer !== null);
+            const hasSub = adminOkrPeriod === "all" ? (isMonthly ? Object.values(kr.monthlyActuals || {}).some(v => v != null) : kr.actual != null) : okrSubmissions.some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkAdmin && s.answer !== null);
             return (
               <Fragment key={kr.id}>
               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -3307,7 +3307,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
             const _pkMgr = okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod);
-            const hasSub = okrPeriod === "all" || allOkrSubs.some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMgr && s.answer !== null);
+            const hasSub = okrPeriod === "all" ? (isMonthly ? Object.values(kr.monthlyActuals || {}).some(v => v != null) : kr.actual != null) : allOkrSubs.some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMgr && s.answer !== null);
             return (
               <Fragment key={kr.id}>
               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -4189,7 +4189,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             const annVsDream = annDream > 0 ? Math.min((annActual / annDream) * 100, 100) : 0;
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
             const _pkMem = okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod);
-            const hasSub = okrPeriod === "all" || (state.okrSubmissions || []).some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMem && s.answer !== null);
+            const hasSub = okrPeriod === "all" ? (isMonthly ? Object.values(kr.monthlyActuals || {}).some(v => v != null) : kr.actual != null) : (state.okrSubmissions || []).some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMem && s.answer !== null);
             return (
               <Fragment key={kr.id}>
               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
