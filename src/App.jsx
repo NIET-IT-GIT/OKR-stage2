@@ -3195,6 +3195,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+  useEffect(() => { if (page === "checkin") onReload(); }, [page]); // eslint-disable-line
   const [newProj, setNewProj] = useState({ name: "", due: "" });
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
@@ -3925,6 +3926,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+  useEffect(() => { if (page === "checkin") onReload(); }, [page]); // eslint-disable-line
   const [myKpiPeriod, setMyKpiPeriod] = useState("all");
   const [okrPeriod, setOkrPeriod] = useState("all");
   const [expandedMonthlyKr, setExpandedMonthlyKr] = useState(null);
