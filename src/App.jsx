@@ -128,16 +128,23 @@ const INIT_MONTHLY_REPORTS = [
 /* ─── HELPERS ─── */
 function krCompletion(kr) {
   const op = kr.operator || ">=";
-  let actual, target;
+  let actual, target, hasData;
   if (kr.monthlyTargets) {
     const key = currentFYMonthKey();
     target = Number(kr.monthlyTargets[key]) || 0;
-    actual = Number((kr.monthlyActuals || {})[key]) || 0;
+    const rawActual = (kr.monthlyActuals || {})[key];
+    hasData = rawActual != null;
+    actual = hasData ? (Number(rawActual) || 0) : 0;
   } else {
-    actual = Number(kr.actual) || 0;
+    hasData = kr.actual != null;
+    actual = hasData ? (Number(kr.actual) || 0) : 0;
     target = Number(kr.target) || 0;
   }
-  if (target === 0) return 100;
+  if (!hasData) return 0;
+  if (target === 0) {
+    if (op === ">=" || op === ">") return 100;
+    return actual <= 0 ? 100 : Math.min((1 / (actual + 1)) * 100, 99);
+  }
   switch (op) {
     case ">=": return Math.min((actual / target) * 100, 100);
     case ">":  return actual > target ? 100 : Math.min((actual / target) * 100, 100);
@@ -4595,8 +4602,10 @@ function appReducer(state, action) {
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
         const existing = md.krs || [];
-        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); return dk ? { ...kr, ...dk } : kr; });
-        const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id));
+        // Update metadata only — preserve member's own actual/monthlyActuals
+        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); if (!dk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = dk; return { ...kr, ...meta }; });
+        // New KRs start with null actual so krCompletion correctly treats them as not yet measured
+        const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
       }
       return { ...state, memberData: newMemberData };
@@ -4615,8 +4624,10 @@ function appReducer(state, action) {
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
         const existing = md.krs || [];
-        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); return tk ? { ...kr, ...tk } : kr; });
-        const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id));
+        // Update metadata only — preserve member's own actual/monthlyActuals
+        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); if (!tk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = tk; return { ...kr, ...meta }; });
+        // New KRs start with null actual so krCompletion correctly treats them as not yet measured
+        const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
       }
       return { ...state, memberData: newMemberData };
