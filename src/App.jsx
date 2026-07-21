@@ -340,7 +340,7 @@ const supabase = createClient(
 );
 
 async function dbGet() {
-  const { data, error } = await supabase.from("app_data").select("collection, id, doc");
+  const { data, error } = await supabase.from("app_data").select("collection, id, doc").limit(10000);
   if (error) throw new Error(error.message);
   const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], okrSubmissions: [], settings: [] };
   for (const row of data) {
@@ -3211,6 +3211,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [yesConfirm, setYesConfirm] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
+  const [syncing, setSyncing] = useState(false);
+  const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
 
   const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
@@ -3529,7 +3531,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             <Header title="OKR Check-In" sub="Answer your KPI check-ins sent by the system"
               right={<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {subRate !== null && <><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></>}
-                <Btn small onClick={onReload}>⟳ Sync</Btn>
+                <Btn small onClick={handleSync} disabled={syncing}>{syncing ? "Syncing…" : "⟳ Sync"}</Btn>
               </div>} />
             <Pane>
               {myPendingCheckins.length > 0 && (
@@ -3935,6 +3937,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [trackerInput, setTrackerInput] = useState({});
   const [expandedKrHistory, setExpandedKrHistory] = useState(null);
   const [histPeriod, setHistPeriod] = useState("all");
+  const [syncing, setSyncing] = useState(false);
+  const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
 
   const { memberData, monthlyReports, depts } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -4322,7 +4326,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             <Header title="OKR Check-In" sub="Answer your KPI check-ins sent by the system"
               right={<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {subRate !== null && <><span style={{ fontSize: 12, color: T.textMuted }}>This month:</span><span style={{ fontWeight: 700, fontSize: 15, color: STATUS_THEME[getStatus(subRate)].color, fontFamily: F.mono }}>{subRate.toFixed(0)}%</span></>}
-                <Btn small onClick={onReload}>⟳ Sync</Btn>
+                <Btn small onClick={handleSync} disabled={syncing}>{syncing ? "Syncing…" : "⟳ Sync"}</Btn>
               </div>} />
             <Pane>
               {myPendingCheckins.length > 0 && (
@@ -4330,7 +4334,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   {myPendingCheckins.length} pending check-in{myPendingCheckins.length !== 1 ? "s" : ""} — please respond below
                 </div>
               )}
-              {grouped.length === 0 && <EmptyState text="No check-ins yet. Your manager will send them when due." />}
+              {grouped.length === 0 && <EmptyState text="No check-ins yet. Admin will send them when due." />}
               {grouped.map(({ period, pending, answered }) => (
                 <div key={period} style={{ marginBottom: 28 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
