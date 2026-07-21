@@ -3217,6 +3217,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [noReason, setNoReason] = useState(null);
   const [yesConfirm, setYesConfirm] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
+  const [editingSub, setEditingSub] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
   const [syncing, setSyncing] = useState(false);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
@@ -3689,7 +3690,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                               : <span style={{ fontSize: 13, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                             {s.approval === "pending"
                               ? <div style={{ display: "flex", gap: 6 }}>
-                                  <Btn danger small onClick={() => setRejectOkr({ id: s.id, actual: "" })}>Reject</Btn>
+                                  <Btn small onClick={() => { setEditingSub({ id: s.id, answer: s.answer, actual: s.actualValue != null ? String(s.actualValue) : "" }); setRejectOkr(null); }}>✎ Edit</Btn>
+                                  <Btn danger small onClick={() => { setRejectOkr({ id: s.id, actual: "" }); setEditingSub(null); }}>Reject</Btn>
                                   <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
                                 </div>
                               : <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
@@ -3706,6 +3708,44 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                               <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
                               <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(rejectOkr.actual) || 0 }); setRejectOkr(null); }}>Confirm Reject</Btn>
+                            </div>
+                          </div>
+                        )}
+                        {editingSub?.id === s.id && (
+                          <div style={{ marginTop: 10, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Submission</div>
+                            {s.krType !== "tracker" ? (<>
+                              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                                <button onClick={() => setEditingSub(p => ({ ...p, answer: "yes", actual: String(s.krTarget ?? "") }))}
+                                  style={{ background: editingSub.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingSub.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "yes" ? T.ok : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                                  ✓ Yes
+                                </button>
+                                <button onClick={() => setEditingSub(p => ({ ...p, answer: "no" }))}
+                                  style={{ background: editingSub.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingSub.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "no" ? T.bad : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
+                                  ✗ No
+                                </button>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
+                                <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                              </div>
+                            </>) : (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
+                                <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                              </div>
+                            )}
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                              <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
+                              <Btn primary small onClick={() => {
+                                const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer;
+                                const newActual = Number(editingSub.actual) || 0;
+                                dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual });
+                                setEditingSub(null);
+                              }}>Save Changes</Btn>
                             </div>
                           </div>
                         )}
