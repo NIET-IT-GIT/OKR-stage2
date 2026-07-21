@@ -1568,10 +1568,10 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
     const newId = `N${Date.now().toString(36).slice(-4).toUpperCase()}`;
     const baseKr = { id: newId, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
     const kr = newKr.krType === "tracker"
-      ? { ...baseKr, type: "tracker", target: 0, actual: 0 }
+      ? { ...baseKr, type: "tracker", target: 0, actual: null }
       : newKr.useMonthlyTargets
         ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
-        : { ...baseKr, target: Number(newKr.target), actual: 0 };
+        : { ...baseKr, target: Number(newKr.target), actual: null };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
     if (teamId) triggerSyncPrompt(deptId, teamId);
     if (newKr.useMonthlyTargets) setExpandedMonthlyKr(newId);
@@ -2302,7 +2302,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
                                   <Input value={addPersonalKr.label} onChange={e => setAddPersonalKr(p => ({...p, label: e.target.value}))} placeholder="KR description *" style={{ flex: 1, padding: "4px 8px", fontSize: 13 }} />
                                   <Input value={addPersonalKr.target} onChange={e => setAddPersonalKr(p => ({...p, target: e.target.value}))} placeholder="Target" style={{ width: 80, textAlign: "right", padding: "4px 6px", fontFamily: F.mono, fontSize: 13 }} />
                                   <Input value={addPersonalKr.unit} onChange={e => setAddPersonalKr(p => ({...p, unit: e.target.value}))} placeholder="Unit" style={{ width: 70, padding: "4px 6px", fontSize: 13 }} />
-                                  <button onClick={() => { if (!addPersonalKr.label.trim()) return; dispatch({ type: "ADD_MEMBER_KR", memberId: member.id, kr: { id: `P${Date.now().toString(36).slice(-4).toUpperCase()}`, label: addPersonalKr.label.trim(), target: Number(addPersonalKr.target) || 0, actual: 0, unit: addPersonalKr.unit.trim(), operator: ">=", period: "monthly" } }); setAddPersonalKr(null); }} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
+                                  <button onClick={() => { if (!addPersonalKr.label.trim()) return; dispatch({ type: "ADD_MEMBER_KR", memberId: member.id, kr: { id: `P${Date.now().toString(36).slice(-4).toUpperCase()}`, label: addPersonalKr.label.trim(), target: Number(addPersonalKr.target) || 0, actual: null, unit: addPersonalKr.unit.trim(), operator: ">=", period: "monthly" } }); setAddPersonalKr(null); }} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                                   <button onClick={() => setAddPersonalKr(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: T.text, fontSize: 12 }}>✕</button>
                                 </div>
                               ) : (
@@ -4602,8 +4602,9 @@ function appReducer(state, action) {
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
         const existing = md.krs || [];
-        // Update metadata only — preserve member's own actual/monthlyActuals
-        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); if (!dk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = dk; return { ...kr, ...meta }; });
+        // Update metadata only. Reset actual: 0 → null (initial default, not a real submission).
+        // Non-zero actuals from real approved check-ins are preserved.
+        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); if (!dk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = dk; return { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; });
         // New KRs start with null actual so krCompletion correctly treats them as not yet measured
         const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
@@ -4624,8 +4625,9 @@ function appReducer(state, action) {
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
         const existing = md.krs || [];
-        // Update metadata only — preserve member's own actual/monthlyActuals
-        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); if (!tk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = tk; return { ...kr, ...meta }; });
+        // Update metadata only. Reset actual: 0 → null (initial default, not a real submission).
+        // Non-zero actuals from real approved check-ins are preserved.
+        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); if (!tk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = tk; return { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; });
         // New KRs start with null actual so krCompletion correctly treats them as not yet measured
         const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
@@ -4705,11 +4707,11 @@ function appReducer(state, action) {
       if (!sub || sub.approval !== "approved") return { ...state, okrSubmissions: remaining };
       const isMonthly = !!(state.memberData[sub.memberId]?.krs?.find(k => k.id === sub.krId)?.monthlyTargets);
       const mk = (sub.periodKey || "").slice(0, 7);
-      // Revert member's personal KR to last remaining approved value, or 0
+      // Revert member's personal KR to last remaining approved value, or null (no submission)
       const memberOtherApproved = remaining.filter(s => s.memberId === sub.memberId && s.krId === sub.krId && s.approval === "approved");
       const memberNewActual = memberOtherApproved.length > 0
-        ? (memberOtherApproved[memberOtherApproved.length - 1].actualValue ?? memberOtherApproved[memberOtherApproved.length - 1].krTarget ?? 0)
-        : 0;
+        ? (memberOtherApproved[memberOtherApproved.length - 1].actualValue ?? memberOtherApproved[memberOtherApproved.length - 1].krTarget ?? null)
+        : null;
       const md = state.memberData[sub.memberId];
       let newMemberData = state.memberData;
       if (md) {
@@ -4731,7 +4733,7 @@ function appReducer(state, action) {
       }).filter(v => v !== null);
       const newTeamActual = teamVals.length > 0
         ? Math.round(teamVals.reduce((a, b) => a + b, 0) / teamVals.length * 100) / 100
-        : 0;
+        : null;
       const updateDeptKr = kr => {
         if (kr.id !== sub.krId) return kr;
         if (kr.monthlyTargets) return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: newTeamActual } };
@@ -4905,12 +4907,27 @@ export default function App({ redirectAccount = null }) {
     try {
       const data = await dbGet();
       if (data.users?.length) {
+        const okrSubs = data.okrSubmissions || [];
+        // KR IDs that have at least one approved submission — only these have real actuals
+        const approvedKrIds = new Set(okrSubs.filter(s => s.approval === "approved").map(s => s.krId));
+        // Reset actual: 0 → null for any KR with no approved submission (0 was the initial default, not a real value)
+        const fixActuals = krs => (krs || []).map(kr =>
+          kr.actual === 0 && !approvedKrIds.has(kr.id) ? { ...kr, actual: null } : kr
+        );
+        const fixedDepts = (data.depts || []).map(d => ({
+          ...d,
+          krs: fixActuals(d.krs),
+          teams: (d.teams || []).map(t => ({ ...t, krs: fixActuals(t.krs) })),
+        }));
+        const fixedMemberData = Object.fromEntries(
+          (data.memberData || []).map(m => [m.id, { krs: fixActuals(m.krs || []) }])
+        );
         rawDispatch(() => ({
           users: data.users,
-          depts: data.depts,
-          memberData: Object.fromEntries((data.memberData || []).map(m => [m.id, { krs: m.krs || [] }])),
+          depts: fixedDepts,
+          memberData: fixedMemberData,
           weeklySubs: data.weeklySubs || [],
-          okrSubmissions: data.okrSubmissions || [],
+          okrSubmissions: okrSubs,
           mgrSprints: data.mgrSprints || [],
           projects: data.projects || [],
           monthlyReports: data.monthlyReports || [],
