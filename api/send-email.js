@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     port: 587,
     secure: false,
     auth: { user: smtpUser, pass: smtpPass },
-    tls: { rejectUnauthorized: false },
+    tls: { ciphers: "SSLv3" },
   });
 
   const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", biannual: "Bi-Annual", annual: "Annual" };
@@ -88,12 +88,32 @@ export default async function handler(req, res) {
   </div>
 </body></html>`;
 
+  const plainText = [
+    `Hi ${name || "there"},`,
+    "",
+    bodyText.replace(/<[^>]+>/g, ""),
+    dateRange ? `Review period: ${dateRange}` : "",
+    "",
+    "YOUR KPI TARGETS",
+    "----------------",
+    krs.map(kr => `• ${kr.label || "—"}${kr.type !== "tracker" && kr.target != null ? `: ${kr.operator || ">="} ${kr.target}${kr.unit ? " " + kr.unit : ""}` : " (Tracker — record numbers only)"}`).join("\n"),
+    "",
+    `Submit your check-in at: ${appUrl}/member/checkin`,
+    "",
+    footerText.replace(/<br\/>/g, "\n").replace(/<[^>]+>/g, ""),
+  ].filter(l => l !== null).join("\n");
+
   try {
     await transporter.sendMail({
       from: `"${fromName}" <${smtpUser}>`,
       to,
       subject,
+      text: plainText,
       html,
+      headers: {
+        "List-Unsubscribe": `<mailto:${smtpUser}?subject=Unsubscribe>`,
+        "X-Mailer": "NIET Group OKR System",
+      },
     });
     res.status(200).json({ ok: true });
   } catch (err) {
