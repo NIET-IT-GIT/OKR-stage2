@@ -4903,13 +4903,13 @@ export default function App({ redirectAccount = null }) {
     });
   }, []); // eslint-disable-line
 
-  // Shared data processor: resets actual: 0 → null for KRs with no approved submission,
-  // then dispatches the cleaned state. Used by both the mount effect and reloadState.
+  // Shared data processor: resets actual: 0 → null on every load (0 is the legacy init default,
+  // not a real submitted value; approved submissions always write back a non-null actualValue).
+  // Used by both the mount effect and reloadState.
   const applyLoadedData = useCallback((data) => {
     const okrSubs = data.okrSubmissions || [];
-    const approvedKrIds = new Set(okrSubs.filter(s => s.approval === "approved").map(s => s.krId));
     const fixActuals = krs => (krs || []).map(kr =>
-      kr.actual === 0 && !approvedKrIds.has(kr.id) ? { ...kr, actual: null } : kr
+      kr.actual === 0 ? { ...kr, actual: null } : kr
     );
     const fixedDepts = (data.depts || []).map(d => ({
       ...d,
