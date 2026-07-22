@@ -5062,7 +5062,10 @@ export default function App({ redirectAccount = null }) {
   const onExitImpersonate = () => { setUser(originalAdmin); setOriginalAdmin(null); };
 
   // Always derive the active user from state.users so admin edits (role, title, dept, etc.) are reflected immediately.
-  const activeUser = state.users.find(u => u.id === user.id) ?? user;
+  // Email fallback handles the case where INIT_USERS matched by email before the DB loaded, but the DB user has a different ID.
+  const activeUser = state.users.find(u => u.id === user.id)
+    || state.users.find(u => u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase())
+    || user;
 
   const offlineBanner = dbError ? (
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: T.badDim, borderTop: `1px solid ${T.badBorder}`, color: T.bad, fontSize: 13, padding: "8px 20px", textAlign: "center", zIndex: 9999 }}>
