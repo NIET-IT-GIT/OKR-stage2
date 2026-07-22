@@ -771,7 +771,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
    ───────────────────────────────────────────────────────────── */
 const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [] };
 
-function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
+function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const [formErr, setFormErr] = useState("");
@@ -934,7 +934,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
       </div>
 
       <Card style={{ overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 90px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 140px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
           <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Actions</span>
         </div>
         {filteredUsers.length === 0 && <EmptyState text={`No users match "${search}".`} />}
@@ -1026,7 +1026,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
           }
 
           return (
-            <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 90px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+            <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 140px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
               <Avatar letters={u.av} size={26} />
               <div>
                 <div style={{ fontWeight: 600, color: T.text }}>{u.name}{isSelf && <span style={{ fontSize: 11, color: T.brand, marginLeft: 6 }}>you</span>}</div>
@@ -1039,6 +1039,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId }) {
                 {u.role === "member" && team ? (() => { const st = u.secondTeamId ? dept?.teams.find(t => t.id === u.secondTeamId) : null; return st ? `${team.name} / ${st.name}` : team.name; })() : u.role === "manager" && managerTeams.length ? managerTeams.map(t => t.name).join(", ") : "—"}
               </span>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                {!isSystem && u.role !== "admin" && (
+                  <button onClick={() => onImpersonate(u)} style={{ background: "#fff3e0", border: "1px solid #ffb74d", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#e65100", fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={`View portal as ${u.name}`}>👁</button>
+                )}
                 {!isSystem && (
                   <button onClick={() => startEdit(u)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
                 )}
@@ -1370,7 +1373,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
 /* ─────────────────────────────────────────────────────────────
    ADMIN PORTAL
    ───────────────────────────────────────────────────────────── */
-function AdminPortal({ user, onLogout, state, dispatch }) {
+function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
     return p[1] === 'admin' ? (p[2] || 'overview') : 'overview';
@@ -1760,7 +1763,7 @@ function AdminPortal({ user, onLogout, state, dispatch }) {
         subItems={deptSubItems} subItemsFor="departments" activeSubItem={selDept ? "__setup__" : "__all__"} onSelectSubItem={id => { setPage("departments"); if (id === "__setup__") { setSelDept(depts[0]?.id || null); } else { setSelDept(null); } setSelTeam(null); setAddTarget(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
-        {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} />}
+        {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} onImpersonate={onImpersonate} />}
 
         {page === "overview" && (<>
           <Header title="Company Overview" sub={(() => {
@@ -4911,6 +4914,7 @@ function appReducer(state, action) {
    ───────────────────────────────────────────────────────────── */
 export default function App({ redirectAccount = null }) {
   const [user, setUser] = useState(null);
+  const [originalAdmin, setOriginalAdmin] = useState(null);
   const [msalErr, setMsalErr] = useState("");
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState("");
@@ -5050,9 +5054,12 @@ export default function App({ redirectAccount = null }) {
   if (!user) return <LoginPage onLogin={setUser} users={state.users} msalErr={msalErr} onDismissErr={() => { setMsalErr(""); try { instance.clearCache(); } catch (_) {} }} />;
   const logout = () => {
     setUser(null);
+    setOriginalAdmin(null);
     setMsalErr("");
     try { instance.clearCache(); } catch (_) {}
   };
+  const onImpersonate = (targetUser) => { setOriginalAdmin(user); setUser(targetUser); };
+  const onExitImpersonate = () => { setUser(originalAdmin); setOriginalAdmin(null); };
 
   // Always derive the active user from state.users so admin edits (role, title, dept, etc.) are reflected immediately.
   const activeUser = state.users.find(u => u.id === user.id) ?? user;
@@ -5068,8 +5075,16 @@ export default function App({ redirectAccount = null }) {
       <span>{syncErr}</span>
     </div>
   ) : null;
+  const impersonationBanner = originalAdmin ? (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, background: "#c85a00", color: "#fff", fontSize: 13, fontWeight: 600, padding: "9px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 10000, boxShadow: "0 2px 8px rgba(0,0,0,0.25)" }}>
+      <span>👁 Viewing as <strong>{activeUser.name}</strong> ({activeUser.role}) — all actions apply to this user's account</span>
+      <button onClick={onExitImpersonate} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, color: "#fff", fontSize: 12, fontWeight: 700, padding: "4px 14px", cursor: "pointer", fontFamily: "inherit" }}>
+        ✕ Exit &amp; Return to Admin
+      </button>
+    </div>
+  ) : null;
 
-  if (activeUser.role === "admin")   return <>{offlineBanner}{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
-  if (activeUser.role === "manager") return <>{offlineBanner}{syncErrToast}<ManagerPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
-  return <>{offlineBanner}{syncErrToast}<MemberPortal user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
+  if (activeUser.role === "admin")   return <>{offlineBanner}{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} onImpersonate={onImpersonate} /></>;
+  if (activeUser.role === "manager") return <>{offlineBanner}{syncErrToast}{impersonationBanner}<ManagerPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
+  return <>{offlineBanner}{syncErrToast}{impersonationBanner}<MemberPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
 }
