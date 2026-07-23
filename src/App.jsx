@@ -2485,106 +2485,127 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 ) : null;
               })()}
               {filtered.length === 0 && <EmptyState text={periodSubs.length === 0 ? `No ${subPeriod} check-ins sent yet. Click "Send ${subPeriod.charAt(0).toUpperCase()+subPeriod.slice(1)} Check-In" to generate and email them.` : "No submissions match your filter."} />}
-              {filtered.map(s => {
-                const mem = users.find(u => u.id === s.memberId);
-                const dept = depts.find(d => d.id === s.deptId);
-                const accentColor = s.approval === "approved" ? T.ok : s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === null ? T.warn : T.border;
-                return (
-                  <Card key={s.id} style={{ padding: "14px 18px", borderLeft: `3px solid ${accentColor}`, marginBottom: 6 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <Avatar letters={mem?.av || "?"} size={26} />
-                          <span style={{ fontWeight: 700, fontSize: 14 }}>{mem?.name || s.memberName || "Unknown"}</span>
-                          {mem?.role === "manager" && <span style={{ fontSize: 11, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "1px 6px", fontWeight: 700 }}>Manager</span>}
-                          {dept && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "1px 6px" }}>{dept.name}</span>}
-                          {s.krType === "tracker" && <span style={{ fontSize: 11, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "1px 6px", fontWeight: 700 }}>Tracker · does not affect rate</span>}
-                        </div>
-                        <div style={{ fontSize: 14, color: T.text, marginBottom: 4, fontWeight: 600 }}>{s.krLabel}</div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
-                          {s.krType !== "tracker" && <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono, fontWeight: 600, alignSelf: "center" }}>{s.krOperator || ">="}</span>}
-                          <span style={{ fontSize: 22, fontWeight: 800, fontFamily: F.mono, color: T.text, lineHeight: 1 }}>{s.krTarget ?? "—"}</span>
-                          {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                          <span style={{ fontSize: 11, color: T.textDim }}>target</span>
-                          {s.answer === "no" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.bad, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.bad }}>actual</span></>}
-                          {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.actualValue ?? s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span></>}
-                        </div>
-                        <div style={{ fontSize: 12, color: T.textMuted }}>
-                          {periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}
-                        </div>
-                        {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.bad, marginTop: 3, fontStyle: "italic" }}>Reason: {s.reason}</div>}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        {s.answer === null
-                          ? <span style={{ fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "3px 8px" }}>{s.krType === "tracker" ? "Awaiting record" : "Awaiting answer"}</span>
-                          : s.krType === "tracker"
-                            ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "3px 8px" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
-                            : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
-                        {s.answer !== null && s.approval === "pending"
-                          ? <div style={{ display: "flex", gap: 6 }}>
-                              <Btn small onClick={() => { setEditingSub({ id: s.id, answer: s.answer, actual: s.actualValue != null ? String(s.actualValue) : "" }); setRejectOkr(null); }}>✎ Edit</Btn>
-                              <Btn danger small onClick={() => { setRejectOkr({ id: s.id, actual: "" }); setEditingSub(null); }}>Reject</Btn>
-                              <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
-                            </div>
-                          : s.approval !== "pending" && <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
-                        <button onClick={() => dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id })} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
-                      </div>
-                    </div>
-                    {rejectOkr?.id === s.id && (
-                      <div style={{ marginTop: 10, padding: "10px 12px", background: T.badDim, borderRadius: 7, border: `1px solid ${T.badBorder}` }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.bad, marginBottom: 6 }}>Enter actual value for rejection</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                          <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
-                          {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                          <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
-                        </div>
-                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
-                          <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(rejectOkr.actual) || 0 }); setRejectOkr(null); }}>Confirm Reject</Btn>
-                        </div>
-                      </div>
-                    )}
-                    {editingSub?.id === s.id && (
-                      <div style={{ marginTop: 10, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Submission</div>
-                        {s.krType !== "tracker" ? (<>
-                          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                            <button onClick={() => setEditingSub(p => ({ ...p, answer: "yes", actual: String(s.krTarget ?? "") }))}
-                              style={{ background: editingSub.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingSub.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "yes" ? T.ok : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
-                              ✓ Yes
-                            </button>
-                            <button onClick={() => setEditingSub(p => ({ ...p, answer: "no" }))}
-                              style={{ background: editingSub.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingSub.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "no" ? T.bad : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
-                              ✗ No
-                            </button>
+              {(() => {
+                const order = [];
+                const groups = {};
+                filtered.forEach(s => {
+                  if (!groups[s.memberId]) { groups[s.memberId] = []; order.push(s.memberId); }
+                  groups[s.memberId].push(s);
+                });
+                return order.map(memberId => {
+                  const subs = groups[memberId];
+                  const mem = users.find(u => u.id === memberId);
+                  const dept = depts.find(d => d.id === subs[0]?.deptId);
+                  const pendingCount = subs.filter(s => s.answer !== null && s.approval === "pending").length;
+                  return (
+                    <Card key={memberId} style={{ marginBottom: 10, overflow: "hidden" }}>
+                      {/* Person header */}
+                      <div style={{ padding: "11px 18px", background: T.raised, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+                        <Avatar letters={mem?.av || "?"} size={30} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{mem?.name || subs[0]?.memberName || "Unknown"}</span>
+                            {mem?.role === "manager" && <span style={{ fontSize: 10, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Manager</span>}
+                            {dept && <span style={{ fontSize: 11, color: T.textMuted, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: "1px 6px" }}>{dept.name}</span>}
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                            <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
-                            <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
-                            {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                            <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
-                          </div>
-                        </>) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                            <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
-                            <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
-                            {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                          <div style={{ fontSize: 11, color: T.textDim, marginTop: 1 }}>{subs.length} KR{subs.length !== 1 ? "s" : ""}</div>
+                        </div>
+                        {pendingCount > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            <span style={{ background: T.warnDim, color: T.warn, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{pendingCount} pending</span>
+                            <Btn primary small onClick={() => subs.filter(s => s.answer !== null && s.approval === "pending").forEach(s => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id }))}>Approve All</Btn>
                           </div>
                         )}
-                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
-                          <Btn primary small onClick={() => {
-                            const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer;
-                            const newActual = Number(editingSub.actual) || 0;
-                            dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual });
-                            setEditingSub(null);
-                          }}>Save Changes</Btn>
-                        </div>
                       </div>
-                    )}
-                  </Card>
-                );
-              })}
+                      {/* KR rows */}
+                      {subs.map((s, idx) => {
+                        const accentColor = s.approval === "approved" ? T.ok : s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === null ? T.warn : T.border;
+                        const isLast = idx === subs.length - 1 && rejectOkr?.id !== s.id && editingSub?.id !== s.id;
+                        return (
+                          <div key={s.id} style={{ borderBottom: isLast ? "none" : `1px solid ${T.border}` }}>
+                            <div style={{ padding: "11px 18px 11px 21px", borderLeft: `3px solid ${accentColor}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                  <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{s.krLabel}</span>
+                                  {s.krType === "tracker" && <span style={{ fontSize: 10, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Tracker · no rate impact</span>}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
+                                  {s.krType !== "tracker" && <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono, fontWeight: 600, alignSelf: "center" }}>{s.krOperator || ">="}</span>}
+                                  <span style={{ fontSize: 20, fontWeight: 800, fontFamily: F.mono, color: T.text, lineHeight: 1 }}>{s.krTarget ?? "—"}</span>
+                                  {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
+                                  <span style={{ fontSize: 11, color: T.textDim }}>target</span>
+                                  {s.answer === "no" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.bad, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.bad }}>actual</span></>}
+                                  {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.actualValue ?? s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span></>}
+                                </div>
+                                <div style={{ fontSize: 12, color: T.textMuted }}>{periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}</div>
+                                {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.bad, marginTop: 3, fontStyle: "italic" }}>Reason: {s.reason}</div>}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                {s.answer === null
+                                  ? <span style={{ fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "3px 8px" }}>{s.krType === "tracker" ? "Awaiting record" : "Awaiting answer"}</span>
+                                  : s.krType === "tracker"
+                                    ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "3px 8px" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                                    : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                {s.answer !== null && s.approval === "pending"
+                                  ? <div style={{ display: "flex", gap: 6 }}>
+                                      <Btn small onClick={() => { setEditingSub({ id: s.id, answer: s.answer, actual: s.actualValue != null ? String(s.actualValue) : "" }); setRejectOkr(null); }}>✎ Edit</Btn>
+                                      <Btn danger small onClick={() => { setRejectOkr({ id: s.id, actual: "" }); setEditingSub(null); }}>Reject</Btn>
+                                      <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
+                                    </div>
+                                  : s.approval !== "pending" && <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
+                                <button onClick={() => dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id })} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
+                              </div>
+                            </div>
+                            {rejectOkr?.id === s.id && (
+                              <div style={{ margin: "0 18px 10px 21px", padding: "10px 12px", background: T.badDim, borderRadius: 7, border: `1px solid ${T.badBorder}` }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: T.bad, marginBottom: 6 }}>Enter actual value for rejection</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                  <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
+                                  {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                  <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                </div>
+                                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                  <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
+                                  <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(rejectOkr.actual) || 0 }); setRejectOkr(null); }}>Confirm Reject</Btn>
+                                </div>
+                              </div>
+                            )}
+                            {editingSub?.id === s.id && (
+                              <div style={{ margin: "0 18px 10px 21px", padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Submission</div>
+                                {s.krType !== "tracker" ? (<>
+                                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                                    <button onClick={() => setEditingSub(p => ({ ...p, answer: "yes", actual: String(s.krTarget ?? "") }))}
+                                      style={{ background: editingSub.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingSub.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "yes" ? T.ok : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
+                                    <button onClick={() => setEditingSub(p => ({ ...p, answer: "no" }))}
+                                      style={{ background: editingSub.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingSub.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "no" ? T.bad : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>✗ No</button>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                    <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
+                                    <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                    {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                    <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                  </div>
+                                </>) : (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                    <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
+                                    <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                    {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                  </div>
+                                )}
+                                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                  <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
+                                  <Btn primary small onClick={() => { const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </Card>
+                  );
+                });
+              })()}
             </Pane>
           </>);
         })()}
@@ -3665,96 +3686,117 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     OKR Check-Ins
                     {pendingOkrSubs.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pendingOkrSubs.length} pending</span>}
                   </div>
-                  {myOkrSubsForApproval.filter(s => s.answer !== null).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||(b.answeredAt||"").localeCompare(a.answeredAt||""); }).map(s => {
-                    const mem = users.find(u => u.id === s.memberId);
-                    return (
-                      <Card key={s.id} style={{ padding: "12px 16px", marginBottom: 6, borderLeft: `3px solid ${s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : T.warn}` }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
-                              <Avatar letters={mem?.av || "?"} size={24} />
-                              <span style={{ fontWeight: 700, fontSize: 13 }}>{mem?.name || s.memberName}</span>
-                              <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 5, padding: "1px 5px" }}>{s.period}</span>
-                              <span style={{ fontSize: 11, color: T.textMuted }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
+                  {(() => {
+                    const answeredSubs = myOkrSubsForApproval.filter(s => s.answer !== null).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||(b.answeredAt||"").localeCompare(a.answeredAt||""); });
+                    const order = [];
+                    const groups = {};
+                    answeredSubs.forEach(s => {
+                      if (!groups[s.memberId]) { groups[s.memberId] = []; order.push(s.memberId); }
+                      groups[s.memberId].push(s);
+                    });
+                    return order.map(memberId => {
+                      const subs = groups[memberId];
+                      const mem = users.find(u => u.id === memberId);
+                      const pendingCount = subs.filter(s => s.approval === "pending").length;
+                      return (
+                        <Card key={memberId} style={{ marginBottom: 10, overflow: "hidden" }}>
+                          {/* Person header */}
+                          <div style={{ padding: "11px 16px", background: T.raised, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+                            <Avatar letters={mem?.av || "?"} size={28} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{mem?.name || subs[0]?.memberName || "Unknown"}</span>
+                              <div style={{ fontSize: 11, color: T.textDim, marginTop: 1 }}>{subs.length} KR{subs.length !== 1 ? "s" : ""}</div>
                             </div>
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</div>
-                            <div style={{ fontSize: 11, color: T.textMuted }}>
-                              {s.krType !== "tracker" && <>{`Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
-                              {s.krType === "tracker" && s.actualValue != null && <span style={{ color: "#6d28d9", fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
-                              {s.krType !== "tracker" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
-                              {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.actualValue ?? s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
-                              <span style={{ marginLeft: 8 }}>· Answered: {s.answeredAt?.slice(0,10) || "—"}</span>
-                            </div>
-                            {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                            {s.krType === "tracker"
-                              ? <span style={{ fontSize: 11, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px" }}>Tracker · does not affect rate</span>
-                              : <span style={{ fontSize: 13, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
-                            {s.approval === "pending"
-                              ? <div style={{ display: "flex", gap: 6 }}>
-                                  <Btn small onClick={() => { setEditingSub({ id: s.id, answer: s.answer, actual: s.actualValue != null ? String(s.actualValue) : "" }); setRejectOkr(null); }}>✎ Edit</Btn>
-                                  <Btn danger small onClick={() => { setRejectOkr({ id: s.id, actual: "" }); setEditingSub(null); }}>Reject</Btn>
-                                  <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
-                                </div>
-                              : <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
-                          </div>
-                        </div>
-                        {rejectOkr?.id === s.id && (
-                          <div style={{ marginTop: 10, padding: "10px 12px", background: T.badDim, borderRadius: 7, border: `1px solid ${T.badBorder}` }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: T.bad, marginBottom: 6 }}>Enter actual value for rejection</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                              <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
-                              {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
-                            </div>
-                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                              <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
-                              <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(rejectOkr.actual) || 0 }); setRejectOkr(null); }}>Confirm Reject</Btn>
-                            </div>
-                          </div>
-                        )}
-                        {editingSub?.id === s.id && (
-                          <div style={{ marginTop: 10, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Submission</div>
-                            {s.krType !== "tracker" ? (<>
-                              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                                <button onClick={() => setEditingSub(p => ({ ...p, answer: "yes", actual: String(s.krTarget ?? "") }))}
-                                  style={{ background: editingSub.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingSub.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "yes" ? T.ok : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
-                                  ✓ Yes
-                                </button>
-                                <button onClick={() => setEditingSub(p => ({ ...p, answer: "no" }))}
-                                  style={{ background: editingSub.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingSub.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "no" ? T.bad : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>
-                                  ✗ No
-                                </button>
-                              </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                                <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
-                                <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
-                                {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
-                              </div>
-                            </>) : (
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                                <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
-                                <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
-                                {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                            {pendingCount > 0 && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                <span style={{ background: T.warnDim, color: T.warn, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{pendingCount} pending</span>
+                                <Btn primary small onClick={() => subs.filter(s => s.approval === "pending").forEach(s => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id }))}>Approve All</Btn>
                               </div>
                             )}
-                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                              <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
-                              <Btn primary small onClick={() => {
-                                const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer;
-                                const newActual = Number(editingSub.actual) || 0;
-                                dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual });
-                                setEditingSub(null);
-                              }}>Save Changes</Btn>
-                            </div>
                           </div>
-                        )}
-                      </Card>
-                    );
-                  })}
+                          {/* KR rows */}
+                          {subs.map((s, idx) => {
+                            const accentColor = s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : T.warn;
+                            const isLast = idx === subs.length - 1 && rejectOkr?.id !== s.id && editingSub?.id !== s.id;
+                            return (
+                              <div key={s.id} style={{ borderBottom: isLast ? "none" : `1px solid ${T.border}` }}>
+                                <div style={{ padding: "10px 16px 10px 19px", borderLeft: `3px solid ${accentColor}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                                      <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{s.krLabel}</span>
+                                      {s.krType === "tracker" && <span style={{ fontSize: 10, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Tracker · no rate impact</span>}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: T.textMuted }}>
+                                      <span style={{ fontSize: 11, color: T.textMuted, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "0px 5px", marginRight: 6 }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
+                                      {s.krType !== "tracker" && <>{`Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
+                                      {s.krType === "tracker" && s.actualValue != null && <span style={{ color: "#6d28d9", fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                      {s.krType !== "tracker" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                      {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.actualValue ?? s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                      <span style={{ marginLeft: 8 }}>· Answered: {s.answeredAt?.slice(0,10) || "—"}</span>
+                                    </div>
+                                    {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                    {s.krType === "tracker"
+                                      ? <span style={{ fontSize: 11, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px" }}>Tracker</span>
+                                      : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                    {s.approval === "pending"
+                                      ? <div style={{ display: "flex", gap: 6 }}>
+                                          <Btn small onClick={() => { setEditingSub({ id: s.id, answer: s.answer, actual: s.actualValue != null ? String(s.actualValue) : "" }); setRejectOkr(null); }}>✎ Edit</Btn>
+                                          <Btn danger small onClick={() => { setRejectOkr({ id: s.id, actual: "" }); setEditingSub(null); }}>Reject</Btn>
+                                          <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
+                                        </div>
+                                      : <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
+                                  </div>
+                                </div>
+                                {rejectOkr?.id === s.id && (
+                                  <div style={{ margin: "0 16px 10px 19px", padding: "10px 12px", background: T.badDim, borderRadius: 7, border: `1px solid ${T.badBorder}` }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: T.bad, marginBottom: 6 }}>Enter actual value for rejection</div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                      <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
+                                      {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                      <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                      <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
+                                      <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(rejectOkr.actual) || 0 }); setRejectOkr(null); }}>Confirm Reject</Btn>
+                                    </div>
+                                  </div>
+                                )}
+                                {editingSub?.id === s.id && (
+                                  <div style={{ margin: "0 16px 10px 19px", padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Submission</div>
+                                    {s.krType !== "tracker" ? (<>
+                                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                                        <button onClick={() => setEditingSub(p => ({ ...p, answer: "yes", actual: String(s.krTarget ?? "") }))} style={{ background: editingSub.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingSub.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "yes" ? T.ok : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
+                                        <button onClick={() => setEditingSub(p => ({ ...p, answer: "no" }))} style={{ background: editingSub.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingSub.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "no" ? T.bad : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>✗ No</button>
+                                      </div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                        <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
+                                        <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                        {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                        <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                      </div>
+                                    </>) : (
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                        <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
+                                        <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                        {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                      </div>
+                                    )}
+                                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                      <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
+                                      <Btn primary small onClick={() => { const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </Card>
+                      );
+                    });
+                  })()}
                   {myOkrSubsForApproval.filter(s => s.answer === null).length > 0 && (
                     <div style={{ fontSize: 12, color: T.textMuted, padding: "6px 10px", background: T.raised, borderRadius: 6 }}>
                       {myOkrSubsForApproval.filter(s => s.answer === null).length} check-in(s) awaiting staff response
