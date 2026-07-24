@@ -1832,6 +1832,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 const ptPct = cfg.pt > 0 ? selCum / cfg.pt : 0;
                 const dtPct = cfg.dt > 0 ? selCum / cfg.dt : 0;
                 const divCums = REV_DIVS.map(d => (cfg.divisions[d] || Array(12).fill(0)).slice(0, revMonth + 1).reduce((a, b) => a + b, 0));
+                const divAnnuals = REV_DIVS.map(d => (cfg.divisions[d] || Array(12).fill(0)).reduce((a, b) => a + b, 0));
                 const CPad = { t: 28, r: 40, b: 38, l: 72 };
                 const CW = 720, CH = 230;
                 const PW = CW - CPad.l - CPad.r, PH = CH - CPad.t - CPad.b;
@@ -1880,6 +1881,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                               <tr>
                                 <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, minWidth: 85 }}>Division</td>
                                 {FY_MONTHS.map((m, mi) => <td key={m} style={{ padding: "4px 3px", fontWeight: 700, color: mi <= nowFYMonth ? T.text : T.textDim, textAlign: "center", minWidth: 65, fontSize: 11 }}>{m}</td>)}
+                                <td style={{ padding: "4px 6px 4px 12px", fontWeight: 700, color: T.text, textAlign: "right", minWidth: 90, fontSize: 11, borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>Annual Total</td>
                               </tr>
                             </thead>
                             <tbody>
@@ -1896,6 +1898,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                         style={{ width: 62, textAlign: "right", fontFamily: F.mono, fontSize: 11, padding: "3px 5px" }} />
                                     </td>
                                   ))}
+                                  {(() => { const annTot = (draft.divisions?.[div] || Array(12).fill(0)).reduce((a, b) => a + b, 0); return <td style={{ padding: "3px 6px 3px 12px", fontFamily: F.mono, fontSize: 12, fontWeight: 700, color: annTot > 0 ? T.brand : T.textDim, textAlign: "right", borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>{annTot > 0 ? fmtMoney(annTot) : "—"}</td>; })()}
                                 </tr>
                               ))}
                               <tr style={{ borderTop: `2px solid ${T.border}` }}>
@@ -1904,6 +1907,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                   const tot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d]?.[mi] || 0), 0);
                                   return <td key={mi} style={{ padding: "4px 3px", textAlign: "right", fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: tot > 0 ? T.text : T.textDim }}>{tot > 0 ? fmtMoney(tot) : "—"}</td>;
                                 })}
+                                {(() => { const grandTot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d] || Array(12).fill(0)).reduce((a, b) => a + b, 0), 0); return <td style={{ padding: "4px 6px 4px 12px", textAlign: "right", fontFamily: F.mono, fontSize: 12, fontWeight: 900, color: grandTot > 0 ? T.brand : T.textDim, borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>{grandTot > 0 ? fmtMoney(grandTot) : "—"}</td>; })()}
                               </tr>
                             </tbody>
                           </table>
@@ -2016,8 +2020,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                           return (
                             <div key={div} style={{ background: T.raised, borderRadius: 8, padding: "12px 14px", borderLeft: `3px solid ${DIV_COLORS[div]}` }}>
                               <div style={{ fontSize: 12, fontWeight: 700, color: DIV_COLORS[div], marginBottom: 4 }}>{div}</div>
+                              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Cumulative to {FY_MONTHS[revMonth]}</div>
                               <div style={{ fontSize: 19, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(divCums[i])}</div>
                               <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{pct > 0 ? `${pct.toFixed(1)}% of group` : "No data"}</div>
+                              {divAnnuals[i] > 0 && <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}><div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Annual Total</div><div style={{ fontSize: 14, fontWeight: 800, fontFamily: F.mono, color: T.textMuted, marginTop: 1 }}>{fmtMoney(divAnnuals[i])}</div></div>}
                             </div>
                           );
                         })}
