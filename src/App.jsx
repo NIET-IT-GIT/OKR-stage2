@@ -1450,6 +1450,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [revMonth, setRevMonth] = useState(() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; });
   const [revEditMode, setRevEditMode] = useState(false);
   const [revDraft, setRevDraft] = useState(null);
+  const [npEditMode, setNpEditMode] = useState(false);
+  const [npDraft, setNpDraft] = useState(null);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
@@ -1812,110 +1814,224 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               ))}
             </div>
 
-            {/* ── Company Revenue Progress ─────────────────────────── */}
+            {/* ── Financial Performance Progress ──────────────────────── */}
             {(() => {
               const REV_DIVS = ["NIET", "CB", "Rhodes", "Educare"];
               const FY_MONTHS = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
               const DIV_COLORS = { NIET: "#0071e3", CB: "#7c3aed", Rhodes: "#f97316", Educare: "#06b6d4" };
               const fmtMoney = v => v >= 1_000_000 ? `$${(v/1_000_000).toFixed(2)}M` : v >= 1_000 ? `$${(v/1_000).toFixed(1)}K` : `$${Math.round(v).toLocaleString()}`;
-              const DEFAULT_REV = { pt: 5000000, dt: 7000000, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) };
-              const revCfg = state.settings?.revenue ?? DEFAULT_REV;
-              const draft = revDraft ?? revCfg;
               const nowFYMonth = (() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; })();
+              const mkDefault = (pt, dt) => ({ pt, dt, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
 
-              // Rolling cumulative calculations
-              const monthlyGroup = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (revCfg.divisions[d]?.[i] || 0), 0));
-              const cumulative = monthlyGroup.map((_, i) => monthlyGroup.slice(0, i + 1).reduce((a, b) => a + b, 0));
-              const selCum = cumulative[revMonth] || 0;
-              const ptPct = revCfg.pt > 0 ? selCum / revCfg.pt : 0;
-              const dtPct = revCfg.dt > 0 ? selCum / revCfg.dt : 0;
-              const divCums = REV_DIVS.map(d => (revCfg.divisions[d] || Array(12).fill(0)).slice(0, revMonth + 1).reduce((a, b) => a + b, 0));
+              const renderModule = (cfgKey, title, gradId, editMode, setEditMode, moduleDraft, setModuleDraft, defaultPt, defaultDt) => {
+                const cfg = state.settings?.[cfgKey] ?? mkDefault(defaultPt, defaultDt);
+                const draft = moduleDraft ?? cfg;
+                const monthlyGroup = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (cfg.divisions[d]?.[i] || 0), 0));
+                const cumulative = monthlyGroup.map((_, i) => monthlyGroup.slice(0, i + 1).reduce((a, b) => a + b, 0));
+                const selCum = cumulative[revMonth] || 0;
+                const ptPct = cfg.pt > 0 ? selCum / cfg.pt : 0;
+                const dtPct = cfg.dt > 0 ? selCum / cfg.dt : 0;
+                const divCums = REV_DIVS.map(d => (cfg.divisions[d] || Array(12).fill(0)).slice(0, revMonth + 1).reduce((a, b) => a + b, 0));
+                const CPad = { t: 28, r: 40, b: 38, l: 72 };
+                const CW = 720, CH = 230;
+                const PW = CW - CPad.l - CPad.r, PH = CH - CPad.t - CPad.b;
+                const maxY = Math.max(cfg.dt * 1.08, ...cumulative.slice(0, revMonth + 1), 100) * 1.05;
+                const xAt = i => CPad.l + (i / 11) * PW;
+                const yAt = v => CPad.t + PH - Math.min(v / maxY, 1) * PH;
+                const plotData = cumulative.slice(0, revMonth + 1);
+                const areaD = plotData.length > 0 ? [`M ${xAt(0)} ${yAt(plotData[0])}`, ...plotData.slice(1).map((v, i) => `L ${xAt(i+1)} ${yAt(v)}`), `L ${xAt(plotData.length-1)} ${CPad.t+PH}`, `L ${xAt(0)} ${CPad.t+PH}`, 'Z'].join(' ') : '';
+                const lineD = plotData.length > 0 ? [`M ${xAt(0)} ${yAt(plotData[0])}`, ...plotData.slice(1).map((v, i) => `L ${xAt(i+1)} ${yAt(v)}`)].join(' ') : '';
+                const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => ({ v: maxY * t, y: yAt(maxY * t) }));
 
-              // SVG chart config
-              const CPad = { t: 28, r: 40, b: 38, l: 72 };
-              const CW = 720, CH = 230;
-              const PW = CW - CPad.l - CPad.r, PH = CH - CPad.t - CPad.b;
-              const maxY = Math.max(revCfg.dt * 1.08, ...cumulative.slice(0, revMonth + 1), 100) * 1.05;
-              const xAt = i => CPad.l + (i / 11) * PW;
-              const yAt = v => CPad.t + PH - Math.min(v / maxY, 1) * PH;
-              const plotData = cumulative.slice(0, revMonth + 1);
-              const areaD = plotData.length > 0 ? [`M ${xAt(0)} ${yAt(plotData[0])}`, ...plotData.slice(1).map((v, i) => `L ${xAt(i+1)} ${yAt(v)}`), `L ${xAt(plotData.length-1)} ${CPad.t+PH}`, `L ${xAt(0)} ${CPad.t+PH}`, 'Z'].join(' ') : '';
-              const lineD = plotData.length > 0 ? [`M ${xAt(0)} ${yAt(plotData[0])}`, ...plotData.slice(1).map((v, i) => `L ${xAt(i+1)} ${yAt(v)}`)].join(' ') : '';
-              const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => ({ v: maxY * t, y: yAt(maxY * t) }));
+                return (
+                  <div key={cfgKey} style={{ marginBottom: 20, paddingTop: 18, borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{title} · Jul – {FY_MONTHS[revMonth]} FY2027</div>
+                      <Btn small onClick={() => {
+                        if (editMode) {
+                          if (moduleDraft) dispatch({ type: "SET_SETTINGS", updates: { [cfgKey]: moduleDraft } });
+                          setEditMode(false); setModuleDraft(null);
+                        } else {
+                          setModuleDraft(JSON.parse(JSON.stringify(cfg)));
+                          setEditMode(true);
+                        }
+                      }}>{editMode ? "✓ Save Data" : "✎ Edit Data"}</Btn>
+                    </div>
 
-              return (
-                <div style={{ marginTop: 24 }}>
-                  {/* Section header */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                    <SectionLabel>Company Revenue Progress · FY2027</SectionLabel>
-                    <Btn small onClick={() => {
-                      if (revEditMode) {
-                        if (revDraft) dispatch({ type: "SET_SETTINGS", updates: { revenue: revDraft } });
-                        setRevEditMode(false); setRevDraft(null);
-                      } else {
-                        setRevDraft(JSON.parse(JSON.stringify(revCfg)));
-                        setRevEditMode(true);
-                      }
-                    }}>{revEditMode ? "✓ Save Data" : "✎ Edit Data"}</Btn>
-                  </div>
-
-                  {/* Edit panel */}
-                  {revEditMode && (
-                    <Card style={{ padding: 16, marginBottom: 14 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14, color: T.text }}>Revenue Configuration</div>
-                      <div style={{ display: "flex", gap: 20, marginBottom: 18, flexWrap: "wrap" }}>
-                        {[["Annual Performance Target (PT)", "pt"], ["Annual Dream Target (DT)", "dt"]].map(([label, key]) => (
-                          <div key={key}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>{label}</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontSize: 14, color: T.textMuted, fontFamily: F.mono }}>$</span>
-                              <Input value={draft[key] || ""} onChange={e => setRevDraft(p => ({ ...p, [key]: Number(String(e.target.value).replace(/,/g,"")) || 0 }))} placeholder="0" style={{ width: 140, textAlign: "right", fontFamily: F.mono }} />
+                    {editMode && (
+                      <Card style={{ padding: 16, marginBottom: 14 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14, color: T.text }}>{title} Configuration</div>
+                        <div style={{ display: "flex", gap: 20, marginBottom: 18, flexWrap: "wrap" }}>
+                          {[["Annual " + title + " Performance Target (PT)", "pt"], ["Annual " + title + " Dream Target (DT)", "dt"]].map(([lbl, key]) => (
+                            <div key={key}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>{lbl}</div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                <span style={{ fontSize: 14, color: T.textMuted, fontFamily: F.mono }}>$</span>
+                                <Input value={draft[key] || ""} onChange={e => setModuleDraft(p => ({ ...p, [key]: Number(String(e.target.value).replace(/,/g,"")) || 0 }))} placeholder="0" style={{ width: 140, textAlign: "right", fontFamily: F.mono }} />
+                              </div>
+                              <div style={{ fontSize: 11, color: T.textDim, marginTop: 3 }}>{fmtMoney(draft[key] || 0)}</div>
                             </div>
-                            <div style={{ fontSize: 11, color: T.textDim, marginTop: 3 }}>{fmtMoney(draft[key] || 0)}</div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Monthly {title} by Division ($)</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 780 }}>
+                            <thead>
+                              <tr>
+                                <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, minWidth: 85 }}>Division</td>
+                                {FY_MONTHS.map((m, mi) => <td key={m} style={{ padding: "4px 3px", fontWeight: 700, color: mi <= nowFYMonth ? T.text : T.textDim, textAlign: "center", minWidth: 65, fontSize: 11 }}>{m}</td>)}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {REV_DIVS.map((div, di) => (
+                                <tr key={div} style={{ background: di % 2 ? T.raised : "transparent" }}>
+                                  <td style={{ padding: "3px 10px 3px 4px", fontWeight: 700, color: DIV_COLORS[div], fontSize: 12 }}>{div}</td>
+                                  {FY_MONTHS.map((_, mi) => (
+                                    <td key={mi} style={{ padding: "2px 3px" }}>
+                                      <Input value={draft.divisions?.[div]?.[mi] || ""} placeholder="0"
+                                        onChange={e => {
+                                          const val = Number(String(e.target.value).replace(/,/g,"")) || 0;
+                                          setModuleDraft(p => ({ ...p, divisions: { ...p.divisions, [div]: (p.divisions?.[div] || Array(12).fill(0)).map((v, j) => j === mi ? val : v) } }));
+                                        }}
+                                        style={{ width: 62, textAlign: "right", fontFamily: F.mono, fontSize: 11, padding: "3px 5px" }} />
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                              <tr style={{ borderTop: `2px solid ${T.border}` }}>
+                                <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, fontSize: 11 }}>Group Total</td>
+                                {FY_MONTHS.map((_, mi) => {
+                                  const tot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d]?.[mi] || 0), 0);
+                                  return <td key={mi} style={{ padding: "4px 3px", textAlign: "right", fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: tot > 0 ? T.text : T.textDim }}>{tot > 0 ? fmtMoney(tot) : "—"}</td>;
+                                })}
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                    )}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+                      <Card style={{ padding: "16px 20px" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Cumulative {title}</div>
+                        <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(selCum)}</div>
+                        <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Jul – {FY_MONTHS[revMonth]} FY2027</div>
+                      </Card>
+                      {[["vs Performance Target (PT)", ptPct, cfg.pt, "#F59E0B"], ["vs Dream Target (DT)", dtPct, cfg.dt, "#10B981"]].map(([lbl, pct, target, lineColor]) => {
+                        const st = pct >= 1 ? "green" : pct >= 0.7 ? "yellow" : "red";
+                        return (
+                          <Card key={lbl} style={{ padding: "16px 20px" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{lbl}</div>
+                            <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[st].color, lineHeight: 1.1 }}>{(pct * 100).toFixed(1)}%</div>
+                            <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, marginBottom: 8 }}>of {fmtMoney(target)}</div>
+                            <div style={{ height: 8, background: T.raised, borderRadius: 4, overflow: "hidden", position: "relative" }}>
+                              <div style={{ position: "absolute", inset: 0, width: `${Math.min(pct * 100, 100)}%`, background: lineColor, borderRadius: 4, transition: "width 0.5s ease" }} />
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+
+                    <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>Cumulative {title} Trend</div>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Rolling cumulative from July — PT and DT shown as reference lines</div>
+                      <svg viewBox={`0 0 ${CW} ${CH}`} width="100%" style={{ display: "block", overflow: "visible" }}>
+                        <defs>
+                          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={T.brand} stopOpacity="0.3" />
+                            <stop offset="100%" stopColor={T.brand} stopOpacity="0.03" />
+                          </linearGradient>
+                        </defs>
+                        {yTicks.map(({ v, y }, i) => (
+                          <g key={i}>
+                            <line x1={CPad.l} y1={y} x2={CW - CPad.r} y2={y} stroke={T.border} strokeWidth="1" strokeDasharray={i === 0 ? "none" : "3 4"} opacity="0.7" />
+                            <text x={CPad.l - 6} y={y + 4} textAnchor="end" fontSize="10" fill={T.textMuted} fontFamily="monospace">{fmtMoney(v)}</text>
+                          </g>
+                        ))}
+                        {areaD && <path d={areaD} fill={`url(#${gradId})`} />}
+                        {lineD && <path d={lineD} fill="none" stroke={T.brand} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
+                        {cfg.pt > 0 && yAt(cfg.pt) >= CPad.t && (
+                          <g>
+                            <line x1={CPad.l} y1={yAt(cfg.pt)} x2={CW - CPad.r} y2={yAt(cfg.pt)} stroke="#F59E0B" strokeWidth="1.5" strokeDasharray="7 4" />
+                            <rect x={CW - CPad.r + 2} y={yAt(cfg.pt) - 8} width={28} height={16} rx="3" fill="#FEF3C7" />
+                            <text x={CW - CPad.r + 16} y={yAt(cfg.pt) + 4} textAnchor="middle" fontSize="10" fill="#B45309" fontWeight="700" fontFamily="sans-serif">PT</text>
+                          </g>
+                        )}
+                        {cfg.dt > 0 && yAt(cfg.dt) >= CPad.t && (
+                          <g>
+                            <line x1={CPad.l} y1={yAt(cfg.dt)} x2={CW - CPad.r} y2={yAt(cfg.dt)} stroke="#10B981" strokeWidth="1.5" strokeDasharray="7 4" />
+                            <rect x={CW - CPad.r + 2} y={yAt(cfg.dt) - 8} width={28} height={16} rx="3" fill="#D1FAE5" />
+                            <text x={CW - CPad.r + 16} y={yAt(cfg.dt) + 4} textAnchor="middle" fontSize="10" fill="#065F46" fontWeight="700" fontFamily="sans-serif">DT</text>
+                          </g>
+                        )}
+                        <line x1={xAt(revMonth)} y1={CPad.t} x2={xAt(revMonth)} y2={CPad.t + PH} stroke={T.brand} strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
+                        {plotData.map((v, i) => (
+                          <circle key={i} cx={xAt(i)} cy={yAt(v)} r={i === revMonth ? 5.5 : 3} fill={i === revMonth ? T.brand : T.surface} stroke={T.brand} strokeWidth={i === revMonth ? 0 : 1.5} />
+                        ))}
+                        {plotData.length > 0 && (() => {
+                          const lx = xAt(revMonth), ly = yAt(plotData[revMonth]);
+                          const lgtxt = fmtMoney(plotData[revMonth]);
+                          const boxW = lgtxt.length * 7.5 + 12;
+                          const boxX = Math.min(Math.max(lx - boxW / 2, CPad.l), CW - CPad.r - boxW);
+                          return (
+                            <g>
+                              <rect x={boxX} y={ly - 26} width={boxW} height={18} rx="4" fill={T.brand} />
+                              <text x={boxX + boxW / 2} y={ly - 13} textAnchor="middle" fontSize="10" fill="#fff" fontWeight="700" fontFamily="monospace">{lgtxt}</text>
+                            </g>
+                          );
+                        })()}
+                        {FY_MONTHS.map((m, i) => (
+                          <text key={m} x={xAt(i)} y={CH - CPad.b + 16} textAnchor="middle" fontSize="11" fill={i === revMonth ? T.brand : i < revMonth ? T.text : T.textDim} fontWeight={i === revMonth ? 700 : 400} fontFamily="sans-serif" opacity={i > nowFYMonth ? 0.45 : 1}>{m}</text>
+                        ))}
+                      </svg>
+                      <div style={{ display: "flex", gap: 18, marginTop: 6, fontSize: 12, flexWrap: "wrap" }}>
+                        {[
+                          { color: T.brand, dash: false, lgtxt: `Cumulative ${title}` },
+                          { color: "#F59E0B", dash: true, lgtxt: `PT (${fmtMoney(cfg.pt)})` },
+                          { color: "#10B981", dash: true, lgtxt: `DT (${fmtMoney(cfg.dt)})` },
+                        ].map(({ color, dash, lgtxt }) => (
+                          <div key={lgtxt} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <svg width="24" height="12"><line x1="0" y1="6" x2="24" y2="6" stroke={color} strokeWidth={dash ? 1.5 : 2.5} strokeDasharray={dash ? "5 3" : "none"} /></svg>
+                            <span style={{ color: T.textMuted }}>{lgtxt}</span>
                           </div>
                         ))}
                       </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Monthly Revenue by Division ($)</div>
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 780 }}>
-                          <thead>
-                            <tr>
-                              <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, minWidth: 85 }}>Division</td>
-                              {FY_MONTHS.map((m, mi) => <td key={m} style={{ padding: "4px 3px", fontWeight: 700, color: mi <= nowFYMonth ? T.text : T.textDim, textAlign: "center", minWidth: 65, fontSize: 11 }}>{m}</td>)}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {REV_DIVS.map((div, di) => (
-                              <tr key={div} style={{ background: di % 2 ? T.raised : "transparent" }}>
-                                <td style={{ padding: "3px 10px 3px 4px", fontWeight: 700, color: DIV_COLORS[div], fontSize: 12 }}>{div}</td>
-                                {FY_MONTHS.map((_, mi) => (
-                                  <td key={mi} style={{ padding: "2px 3px" }}>
-                                    <Input value={draft.divisions?.[div]?.[mi] || ""} placeholder="0"
-                                      onChange={e => {
-                                        const val = Number(String(e.target.value).replace(/,/g,"")) || 0;
-                                        setRevDraft(p => ({ ...p, divisions: { ...p.divisions, [div]: (p.divisions?.[div] || Array(12).fill(0)).map((v, j) => j === mi ? val : v) } }));
-                                      }}
-                                      style={{ width: 62, textAlign: "right", fontFamily: F.mono, fontSize: 11, padding: "3px 5px" }} />
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                            <tr style={{ borderTop: `2px solid ${T.border}` }}>
-                              <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, fontSize: 11 }}>Group Total</td>
-                              {FY_MONTHS.map((_, mi) => {
-                                const tot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d]?.[mi] || 0), 0);
-                                return <td key={mi} style={{ padding: "4px 3px", textAlign: "right", fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: tot > 0 ? T.text : T.textDim }}>{tot > 0 ? fmtMoney(tot) : "—"}</td>;
-                              })}
-                            </tr>
-                          </tbody>
-                        </table>
+                    </Card>
+
+                    <Card style={{ padding: "16px 20px" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12 }}>Division Contribution · Jul – {FY_MONTHS[revMonth]}</div>
+                      {selCum > 0 ? (
+                        <div style={{ height: 20, borderRadius: 6, overflow: "hidden", display: "flex", marginBottom: 16 }}>
+                          {REV_DIVS.map((div, i) => {
+                            const pct = selCum > 0 ? (divCums[i] / selCum) * 100 : 0;
+                            return pct > 0 ? <div key={div} title={`${div}: ${fmtMoney(divCums[i])} (${pct.toFixed(1)}%)`} style={{ width: `${pct}%`, background: DIV_COLORS[div], transition: "width 0.4s" }} /> : null;
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 16, fontStyle: "italic" }}>No data entered yet — click "✎ Edit Data" to add monthly figures.</div>
+                      )}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+                        {REV_DIVS.map((div, i) => {
+                          const pct = selCum > 0 ? (divCums[i] / selCum) * 100 : 0;
+                          return (
+                            <div key={div} style={{ background: T.raised, borderRadius: 8, padding: "12px 14px", borderLeft: `3px solid ${DIV_COLORS[div]}` }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: DIV_COLORS[div], marginBottom: 4 }}>{div}</div>
+                              <div style={{ fontSize: 19, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(divCums[i])}</div>
+                              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{pct > 0 ? `${pct.toFixed(1)}% of group` : "No data"}</div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </Card>
-                  )}
+                  </div>
+                );
+              };
 
-                  {/* Month selector */}
+              return (
+                <div style={{ marginTop: 24 }}>
+                  <SectionLabel>Financial Performance · FY2027</SectionLabel>
                   <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>View through month</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>View through month — applies to all modules below</div>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {FY_MONTHS.map((m, i) => {
                         const isFuture = i > nowFYMonth;
@@ -1929,132 +2045,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       })}
                     </div>
                   </div>
-
-                  {/* KPI tiles */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
-                    <Card style={{ padding: "16px 20px" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Cumulative Revenue</div>
-                      <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(selCum)}</div>
-                      <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Jul – {FY_MONTHS[revMonth]} FY2027</div>
-                    </Card>
-                    {[["vs Performance Target (PT)", ptPct, revCfg.pt, "#F59E0B"], ["vs Dream Target (DT)", dtPct, revCfg.dt, "#10B981"]].map(([label, pct, target, lineColor]) => {
-                      const st = pct >= 1 ? "green" : pct >= 0.7 ? "yellow" : "red";
-                      return (
-                        <Card key={label} style={{ padding: "16px 20px" }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
-                          <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[st].color, lineHeight: 1.1 }}>{(pct * 100).toFixed(1)}%</div>
-                          <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, marginBottom: 8 }}>of {fmtMoney(target)}</div>
-                          <div style={{ height: 8, background: T.raised, borderRadius: 4, overflow: "hidden", position: "relative" }}>
-                            <div style={{ position: "absolute", inset: 0, width: `${Math.min(pct * 100, 100)}%`, background: lineColor, borderRadius: 4, transition: "width 0.5s ease" }} />
-                          </div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-
-                  {/* SVG Trend Chart */}
-                  <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>Cumulative Revenue Trend</div>
-                    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Rolling cumulative from July — targets shown as horizontal reference lines</div>
-                    <svg viewBox={`0 0 ${CW} ${CH}`} width="100%" style={{ display: "block", overflow: "visible" }}>
-                      <defs>
-                        <linearGradient id="revAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={T.brand} stopOpacity="0.3" />
-                          <stop offset="100%" stopColor={T.brand} stopOpacity="0.03" />
-                        </linearGradient>
-                      </defs>
-                      {/* Grid + Y-axis */}
-                      {yTicks.map(({ v, y }, i) => (
-                        <g key={i}>
-                          <line x1={CPad.l} y1={y} x2={CW - CPad.r} y2={y} stroke={T.border} strokeWidth="1" strokeDasharray={i === 0 ? "none" : "3 4"} opacity="0.7" />
-                          <text x={CPad.l - 6} y={y + 4} textAnchor="end" fontSize="10" fill={T.textMuted} fontFamily="monospace">{fmtMoney(v)}</text>
-                        </g>
-                      ))}
-                      {/* Area fill */}
-                      {areaD && <path d={areaD} fill="url(#revAreaGrad)" />}
-                      {/* Line */}
-                      {lineD && <path d={lineD} fill="none" stroke={T.brand} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
-                      {/* PT reference line */}
-                      {revCfg.pt > 0 && yAt(revCfg.pt) >= CPad.t && (
-                        <g>
-                          <line x1={CPad.l} y1={yAt(revCfg.pt)} x2={CW - CPad.r} y2={yAt(revCfg.pt)} stroke="#F59E0B" strokeWidth="1.5" strokeDasharray="7 4" />
-                          <rect x={CW - CPad.r + 2} y={yAt(revCfg.pt) - 8} width={28} height={16} rx="3" fill="#FEF3C7" />
-                          <text x={CW - CPad.r + 16} y={yAt(revCfg.pt) + 4} textAnchor="middle" fontSize="10" fill="#B45309" fontWeight="700" fontFamily="sans-serif">PT</text>
-                        </g>
-                      )}
-                      {/* DT reference line */}
-                      {revCfg.dt > 0 && yAt(revCfg.dt) >= CPad.t && (
-                        <g>
-                          <line x1={CPad.l} y1={yAt(revCfg.dt)} x2={CW - CPad.r} y2={yAt(revCfg.dt)} stroke="#10B981" strokeWidth="1.5" strokeDasharray="7 4" />
-                          <rect x={CW - CPad.r + 2} y={yAt(revCfg.dt) - 8} width={28} height={16} rx="3" fill="#D1FAE5" />
-                          <text x={CW - CPad.r + 16} y={yAt(revCfg.dt) + 4} textAnchor="middle" fontSize="10" fill="#065F46" fontWeight="700" fontFamily="sans-serif">DT</text>
-                        </g>
-                      )}
-                      {/* Selected month vertical */}
-                      <line x1={xAt(revMonth)} y1={CPad.t} x2={xAt(revMonth)} y2={CPad.t + PH} stroke={T.brand} strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
-                      {/* Data dots */}
-                      {plotData.map((v, i) => (
-                        <circle key={i} cx={xAt(i)} cy={yAt(v)} r={i === revMonth ? 5.5 : 3} fill={i === revMonth ? T.brand : T.surface} stroke={T.brand} strokeWidth={i === revMonth ? 0 : 1.5} />
-                      ))}
-                      {/* Selected month callout */}
-                      {plotData.length > 0 && (() => {
-                        const lx = xAt(revMonth), ly = yAt(plotData[revMonth]);
-                        const label = fmtMoney(plotData[revMonth]);
-                        const boxW = label.length * 7.5 + 12;
-                        const boxX = Math.min(Math.max(lx - boxW / 2, CPad.l), CW - CPad.r - boxW);
-                        return (
-                          <g>
-                            <rect x={boxX} y={ly - 26} width={boxW} height={18} rx="4" fill={T.brand} />
-                            <text x={boxX + boxW / 2} y={ly - 13} textAnchor="middle" fontSize="10" fill="#fff" fontWeight="700" fontFamily="monospace">{label}</text>
-                          </g>
-                        );
-                      })()}
-                      {/* X-axis labels */}
-                      {FY_MONTHS.map((m, i) => (
-                        <text key={m} x={xAt(i)} y={CH - CPad.b + 16} textAnchor="middle" fontSize="11" fill={i === revMonth ? T.brand : i < revMonth ? T.text : T.textDim} fontWeight={i === revMonth ? 700 : 400} fontFamily="sans-serif" opacity={i > nowFYMonth ? 0.45 : 1}>{m}</text>
-                      ))}
-                    </svg>
-                    {/* Legend */}
-                    <div style={{ display: "flex", gap: 18, marginTop: 6, fontSize: 12, flexWrap: "wrap" }}>
-                      {[
-                        { color: T.brand, dash: false, label: "Cumulative Revenue" },
-                        { color: "#F59E0B", dash: true, label: `PT (${fmtMoney(revCfg.pt)})` },
-                        { color: "#10B981", dash: true, label: `DT (${fmtMoney(revCfg.dt)})` },
-                      ].map(({ color, dash, label }) => (
-                        <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <svg width="24" height="12"><line x1="0" y1="6" x2="24" y2="6" stroke={color} strokeWidth={dash ? 1.5 : 2.5} strokeDasharray={dash ? "5 3" : "none"} /></svg>
-                          <span style={{ color: T.textMuted }}>{label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-
-                  {/* Division breakdown */}
-                  <Card style={{ padding: "16px 20px" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12 }}>Division Contribution · Jul – {FY_MONTHS[revMonth]}</div>
-                    {selCum > 0 ? (
-                      <div style={{ height: 20, borderRadius: 6, overflow: "hidden", display: "flex", marginBottom: 16 }}>
-                        {REV_DIVS.map((div, i) => {
-                          const pct = selCum > 0 ? (divCums[i] / selCum) * 100 : 0;
-                          return pct > 0 ? <div key={div} title={`${div}: ${fmtMoney(divCums[i])} (${pct.toFixed(1)}%)`} style={{ width: `${pct}%`, background: DIV_COLORS[div], transition: "width 0.4s" }} /> : null;
-                        })}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 16, fontStyle: "italic" }}>No revenue data entered yet — click "✎ Edit Data" to add monthly figures.</div>
-                    )}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-                      {REV_DIVS.map((div, i) => {
-                        const pct = selCum > 0 ? (divCums[i] / selCum) * 100 : 0;
-                        return (
-                          <div key={div} style={{ background: T.raised, borderRadius: 8, padding: "12px 14px", borderLeft: `3px solid ${DIV_COLORS[div]}` }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: DIV_COLORS[div], marginBottom: 4 }}>{div}</div>
-                            <div style={{ fontSize: 19, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(divCums[i])}</div>
-                            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{pct > 0 ? `${pct.toFixed(1)}% of group` : "No data"}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Card>
+                  {renderModule("revenue", "Revenue", "revAreaGrad", revEditMode, setRevEditMode, revDraft, setRevDraft, 5000000, 7000000)}
+                  {renderModule("netProfit", "Net Profit", "npAreaGrad", npEditMode, setNpEditMode, npDraft, setNpDraft, 2000000, 3000000)}
                 </div>
               );
             })()}
