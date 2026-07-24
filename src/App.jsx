@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment, Component } from "react";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
@@ -637,6 +637,22 @@ function Header({ title, sub, right }) {
 
 function Pane({ children }) {
   return <div style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: 20 }}>{children}</div>;
+}
+
+class FinErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(err) { return { error: err }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, color: T.bad, fontFamily: F.body }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Financial Performance failed to render</div>
+          <pre style={{ fontSize: 12, whiteSpace: "pre-wrap", color: T.textMuted }}>{String(this.state.error)}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -4913,7 +4929,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
         {page === "financial" && user.financeAccess && (<>
           <Header title="Financial Performance" sub="Revenue, Net Profit and Expense tracking — FY2027" />
           <Pane>
-            <FinancialPerformancePage state={state} dispatch={dispatch} />
+            <FinErrorBoundary>
+              <FinancialPerformancePage state={state} dispatch={dispatch} />
+            </FinErrorBoundary>
           </Pane>
         </>)}
 
