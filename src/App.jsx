@@ -1040,7 +1040,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
               </span>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
                 {!isSystem && u.role === "manager" && (
-                  <button onClick={() => dispatch({ type: "UPDATE_USER", user: { ...u, financeAccess: !u.financeAccess } })} style={{ background: u.financeAccess ? "#d1fae5" : T.raised, border: `1px solid ${u.financeAccess ? "#6ee7b7" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.financeAccess ? "#065f46" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Financial Performance access">$</button>
+                  <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { financeAccess: !u.financeAccess } })} style={{ background: u.financeAccess ? "#d1fae5" : T.raised, border: `1px solid ${u.financeAccess ? "#6ee7b7" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.financeAccess ? "#065f46" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Financial Performance access">$</button>
                 )}
                 {!isSystem && u.role !== "admin" && (
                   <button onClick={() => onImpersonate(u)} style={{ background: "#fff3e0", border: "1px solid #ffb74d", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#e65100", fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={`View portal as ${u.name}`}>👁</button>
