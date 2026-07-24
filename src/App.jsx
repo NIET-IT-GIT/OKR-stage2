@@ -1452,6 +1452,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [revDraft, setRevDraft] = useState(null);
   const [npEditMode, setNpEditMode] = useState(false);
   const [npDraft, setNpDraft] = useState(null);
+  const [expEditMode, setExpEditMode] = useState(false);
+  const [expDraft, setExpDraft] = useState(null);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
@@ -1823,12 +1825,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               const nowFYMonth = (() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; })();
               const mkDefault = (pt, dt) => ({ pt, dt, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
 
-              const renderModule = (cfgKey, title, gradId, editMode, setEditMode, moduleDraft, setModuleDraft, defaultPt, defaultDt) => {
+              const renderModule = (cfgKey, title, gradId, editMode, setEditMode, moduleDraft, setModuleDraft, defaultPt, defaultDt, noTargets) => {
                 const cfg = state.settings?.[cfgKey] ?? mkDefault(defaultPt, defaultDt);
                 const draft = moduleDraft ?? cfg;
                 const monthlyGroup = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (cfg.divisions[d]?.[i] || 0), 0));
                 const cumulative = monthlyGroup.map((_, i) => monthlyGroup.slice(0, i + 1).reduce((a, b) => a + b, 0));
                 const selCum = cumulative[revMonth] || 0;
+                const thisMonthTotal = monthlyGroup[revMonth] || 0;
                 const ptPct = cfg.pt > 0 ? selCum / cfg.pt : 0;
                 const dtPct = cfg.dt > 0 ? selCum / cfg.dt : 0;
                 const divCums = REV_DIVS.map(d => (cfg.divisions[d] || Array(12).fill(0)).slice(0, revMonth + 1).reduce((a, b) => a + b, 0));
@@ -1836,7 +1839,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 const CPad = { t: 28, r: 40, b: 38, l: 72 };
                 const CW = 720, CH = 230;
                 const PW = CW - CPad.l - CPad.r, PH = CH - CPad.t - CPad.b;
-                const maxY = Math.max(cfg.dt * 1.08, ...cumulative.slice(0, revMonth + 1), 100) * 1.05;
+                const maxY = (noTargets
+                  ? Math.max(...cumulative.slice(0, revMonth + 1), ...monthlyGroup, 100) * 1.1
+                  : Math.max(cfg.dt * 1.08, ...cumulative.slice(0, revMonth + 1), 100) * 1.05);
                 const xAt = i => CPad.l + (i / 11) * PW;
                 const yAt = v => CPad.t + PH - Math.min(v / maxY, 1) * PH;
                 const plotData = cumulative.slice(0, revMonth + 1);
@@ -1862,6 +1867,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     {editMode && (
                       <Card style={{ padding: 16, marginBottom: 14 }}>
                         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14, color: T.text }}>{title} Configuration</div>
+                        {!noTargets && (
                         <div style={{ display: "flex", gap: 20, marginBottom: 18, flexWrap: "wrap" }}>
                           {[["Annual " + title + " Performance Target (PT)", "pt"], ["Annual " + title + " Dream Target (DT)", "dt"]].map(([lbl, key]) => (
                             <div key={key}>
@@ -1874,6 +1880,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                             </div>
                           ))}
                         </div>
+                        )}
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Monthly {title} by Division ($)</div>
                         <div style={{ overflowX: "auto" }}>
                           <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 780 }}>
@@ -1915,13 +1922,20 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       </Card>
                     )}
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: noTargets ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+                      {noTargets && (
+                        <Card style={{ padding: "16px 20px" }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{title} — {FY_MONTHS[revMonth]} Only</div>
+                          <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(thisMonthTotal)}</div>
+                          <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Single month · {FY_MONTHS[revMonth]} FY2027</div>
+                        </Card>
+                      )}
                       <Card style={{ padding: "16px 20px" }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Cumulative {title}</div>
                         <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(selCum)}</div>
                         <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Jul – {FY_MONTHS[revMonth]} FY2027</div>
                       </Card>
-                      {[["vs Performance Target (PT)", ptPct, cfg.pt, "#F59E0B"], ["vs Dream Target (DT)", dtPct, cfg.dt, "#10B981"]].map(([lbl, pct, target, lineColor]) => {
+                      {!noTargets && [["vs Performance Target (PT)", ptPct, cfg.pt, "#F59E0B"], ["vs Dream Target (DT)", dtPct, cfg.dt, "#10B981"]].map(([lbl, pct, target, lineColor]) => {
                         const st = pct >= 1 ? "green" : pct >= 0.7 ? "yellow" : "red";
                         return (
                           <Card key={lbl} style={{ padding: "16px 20px" }}>
@@ -1938,7 +1952,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
 
                     <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>Cumulative {title} Trend</div>
-                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Rolling cumulative from July — PT and DT shown as reference lines</div>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>{noTargets ? "Rolling cumulative from July" : "Rolling cumulative from July — PT and DT shown as reference lines"}</div>
                       <svg viewBox={`0 0 ${CW} ${CH}`} width="100%" style={{ display: "block", overflow: "visible" }}>
                         <defs>
                           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -1954,14 +1968,14 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                         ))}
                         {areaD && <path d={areaD} fill={`url(#${gradId})`} />}
                         {lineD && <path d={lineD} fill="none" stroke={T.brand} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
-                        {cfg.pt > 0 && yAt(cfg.pt) >= CPad.t && (
+                        {!noTargets && cfg.pt > 0 && yAt(cfg.pt) >= CPad.t && (
                           <g>
                             <line x1={CPad.l} y1={yAt(cfg.pt)} x2={CW - CPad.r} y2={yAt(cfg.pt)} stroke="#F59E0B" strokeWidth="1.5" strokeDasharray="7 4" />
                             <rect x={CW - CPad.r + 2} y={yAt(cfg.pt) - 8} width={28} height={16} rx="3" fill="#FEF3C7" />
                             <text x={CW - CPad.r + 16} y={yAt(cfg.pt) + 4} textAnchor="middle" fontSize="10" fill="#B45309" fontWeight="700" fontFamily="sans-serif">PT</text>
                           </g>
                         )}
-                        {cfg.dt > 0 && yAt(cfg.dt) >= CPad.t && (
+                        {!noTargets && cfg.dt > 0 && yAt(cfg.dt) >= CPad.t && (
                           <g>
                             <line x1={CPad.l} y1={yAt(cfg.dt)} x2={CW - CPad.r} y2={yAt(cfg.dt)} stroke="#10B981" strokeWidth="1.5" strokeDasharray="7 4" />
                             <rect x={CW - CPad.r + 2} y={yAt(cfg.dt) - 8} width={28} height={16} rx="3" fill="#D1FAE5" />
@@ -1989,11 +2003,14 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                         ))}
                       </svg>
                       <div style={{ display: "flex", gap: 18, marginTop: 6, fontSize: 12, flexWrap: "wrap" }}>
-                        {[
-                          { color: T.brand, dash: false, lgtxt: `Cumulative ${title}` },
-                          { color: "#F59E0B", dash: true, lgtxt: `PT (${fmtMoney(cfg.pt)})` },
-                          { color: "#10B981", dash: true, lgtxt: `DT (${fmtMoney(cfg.dt)})` },
-                        ].map(({ color, dash, lgtxt }) => (
+                        {(noTargets
+                          ? [{ color: T.brand, dash: false, lgtxt: `Cumulative ${title}` }]
+                          : [
+                              { color: T.brand, dash: false, lgtxt: `Cumulative ${title}` },
+                              { color: "#F59E0B", dash: true, lgtxt: `PT (${fmtMoney(cfg.pt)})` },
+                              { color: "#10B981", dash: true, lgtxt: `DT (${fmtMoney(cfg.dt)})` },
+                            ]
+                        ).map(({ color, dash, lgtxt }) => (
                           <div key={lgtxt} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <svg width="24" height="12"><line x1="0" y1="6" x2="24" y2="6" stroke={color} strokeWidth={dash ? 1.5 : 2.5} strokeDasharray={dash ? "5 3" : "none"} /></svg>
                             <span style={{ color: T.textMuted }}>{lgtxt}</span>
@@ -2053,6 +2070,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   </div>
                   {renderModule("revenue", "Revenue", "revAreaGrad", revEditMode, setRevEditMode, revDraft, setRevDraft, 5000000, 7000000)}
                   {renderModule("netProfit", "Net Profit", "npAreaGrad", npEditMode, setNpEditMode, npDraft, setNpDraft, 2000000, 3000000)}
+                  {renderModule("expense", "Expense", "expAreaGrad", expEditMode, setExpEditMode, expDraft, setExpDraft, 0, 0, true)}
                 </div>
               );
             })()}
