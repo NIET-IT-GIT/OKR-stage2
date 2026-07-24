@@ -4259,6 +4259,15 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           </Pane>
         </>)}
 
+        {page === "financial" && user.financeAccess && (<>
+          <Header title="Financial Performance" sub="Revenue, Net Profit and Expense tracking — FY2027" />
+          <Pane>
+            <FinErrorBoundary>
+              <FinancialPerformancePage state={state} dispatch={dispatch} />
+            </FinErrorBoundary>
+          </Pane>
+        </>)}
+
         {page === "reports" && (<>
           <Header title="OKR Reports" sub="Published company-wide reports — visible to all teams" />
           <Pane>
@@ -4923,15 +4932,6 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 })}
               </>);
             })()}
-          </Pane>
-        </>)}
-
-        {page === "financial" && user.financeAccess && (<>
-          <Header title="Financial Performance" sub="Revenue, Net Profit and Expense tracking — FY2027" />
-          <Pane>
-            <FinErrorBoundary>
-              <FinancialPerformancePage state={state} dispatch={dispatch} />
-            </FinErrorBoundary>
           </Pane>
         </>)}
 
