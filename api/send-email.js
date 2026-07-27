@@ -74,7 +74,7 @@ export default async function handler(req, res) {
         <thead>
           <tr style="background:#f5f5f7">
             <th style="padding:8px 14px;text-align:left;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Key Result</th>
-            <th style="padding:8px 14px;text-align:right;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Target</th>
+            <th style="padding:8px 14px;text-align:right;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Performance Target</th>
           </tr>
         </thead>
         <tbody>${krRows}</tbody>

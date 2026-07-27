@@ -2242,7 +2242,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             return (
               <Card style={{ overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                  <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                  <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                 </div>
                 {renderRows(krs, deptId, teamId)}
               </Card>
@@ -2356,7 +2356,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             { key: "label",      label: "Key Result" },
             { key: "operator",   label: "Op" },
             { key: "period",     label: "Period" },
-            { key: "target",     label: "Target" },
+            { key: "target",     label: "Performance Target" },
             { key: "actual",     label: "Actual" },
             { key: "unit",       label: "Unit" },
             { key: "dataSource", label: "Data Source" },
@@ -2618,7 +2618,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                               {personalKrs.length > 0 && (
                                 <div style={{ marginBottom: 10 }}>
                                   <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 80px 28px", gap: 8, padding: "5px 0 6px", fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${T.border}` }}>
-                                    <span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span />
+                                    <span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span />
                                   </div>
                                   {personalKrs.map((kr, i) => {
                                     const pct = krCompletion(kr); const st2 = getStatus(pct);
@@ -2867,7 +2867,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                   {s.krType !== "tracker" && <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono, fontWeight: 600, alignSelf: "center" }}>{s.krOperator || ">="}</span>}
                                   <span style={{ fontSize: 20, fontWeight: 800, fontFamily: F.mono, color: T.text, lineHeight: 1 }}>{s.krTarget ?? "—"}</span>
                                   {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                                  <span style={{ fontSize: 11, color: T.textDim }}>target</span>
+                                  <span style={{ fontSize: 11, color: T.textDim }}>performance target</span>
                                   {s.answer === "no" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.bad, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.bad }}>actual</span></>}
                                   {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.actualValue ?? s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span></>}
                                 </div>
@@ -2899,7 +2899,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                   <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
                                   {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                  <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                  <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                                 </div>
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
@@ -2921,7 +2921,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                     <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                     <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                     {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                    <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                    <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                                   </div>
                                 </>) : (
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -2943,7 +2943,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                   <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                   <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                   {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                  {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                  {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                 </div>
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
@@ -3318,7 +3318,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                   <div key={key} style={{ marginBottom: 14 }}>
                                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>{label} ({group.length})</div>
                                     <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
-                                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span></span>
+                                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span></span>
                                     </div>
                                     {group.map((kr, ki) => {
                                       const pct = krCompletion(kr); const st = getStatus(pct);
@@ -3463,7 +3463,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                             <thead>
                               <tr style={{ background: "#f5f5f7" }}>
                                 <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#6e6e73", textTransform: "uppercase", letterSpacing: "0.06em" }}>Key Result</th>
-                                <th style={{ padding: "6px 10px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "#6e6e73", textTransform: "uppercase", letterSpacing: "0.06em" }}>Target</th>
+                                <th style={{ padding: "6px 10px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "#6e6e73", textTransform: "uppercase", letterSpacing: "0.06em" }}>Performance Target</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -3796,7 +3796,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             return (
               <Card style={{ overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                  <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                  <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                 </div>
                 {renderRows(krs, deptId, teamId)}
               </Card>
@@ -3942,7 +3942,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            {s.krType !== "tracker" && <span>Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType !== "tracker" && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                             <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
@@ -3972,7 +3972,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                             <Input value={yesConfirm.actual} onChange={e => setYesConfirm(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} autoFocus />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                            <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                            <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
@@ -3989,7 +3989,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <Input value={noReason.actual} onChange={e => setNoReason(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                               {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                              <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
@@ -4083,7 +4083,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     </div>
                                     <div style={{ fontSize: 11, color: T.textMuted }}>
                                       <span style={{ fontSize: 11, color: T.textMuted, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "0px 5px", marginRight: 6 }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
-                                      {s.krType !== "tracker" && <>{`Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
+                                      {s.krType !== "tracker" && <>{`Performance Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
                                       {s.krType === "tracker" && s.actualValue != null && <span style={{ color: "#6d28d9", fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                                       {s.krType !== "tracker" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                                       {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.actualValue ?? s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
@@ -4113,7 +4113,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                       <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
                                       {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                      <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                      <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                                     </div>
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
@@ -4133,7 +4133,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                         <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                         <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                         {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                        <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                        <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                                       </div>
                                     </>) : (
                                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -4155,7 +4155,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                       <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                       <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                       {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                      {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                      {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                     </div>
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
@@ -4720,7 +4720,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             return (
               <Card style={{ overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                  <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
+                  <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                 </div>
                 {renderKrRows(filtered)}
               </Card>
@@ -4826,7 +4826,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            {s.krType !== "tracker" && <span>Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType !== "tracker" && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                             <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
@@ -4856,7 +4856,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                             <Input value={yesConfirm.actual} onChange={e => setYesConfirm(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} autoFocus />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                            <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                            <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
@@ -4873,7 +4873,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <Input value={noReason.actual} onChange={e => setNoReason(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                               {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                              <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                              <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
@@ -4950,12 +4950,12 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
                               Actual: <span style={{ fontFamily: F.mono, fontWeight: 700, color: T.bad }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                               <span style={{ margin: "0 6px" }}>·</span>
-                              Target: <span style={{ fontFamily: F.mono }}>{s.krOperator || ">="} {s.krTarget != null ? s.krTarget : "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                              Performance Target: <span style={{ fontFamily: F.mono }}>{s.krOperator || ">="} {s.krTarget != null ? s.krTarget : "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                             </div>
                           )}
                           {s.answer === "yes" && s.krTarget != null && (
                             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
-                              Target: <span style={{ fontFamily: F.mono }}>{s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                              Performance Target: <span style={{ fontFamily: F.mono }}>{s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                             </div>
                           )}
                           {s.answer === "submitted" && s.actualValue != null && (
