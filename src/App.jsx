@@ -2018,8 +2018,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         const emailTemplates = settings?.emailTemplates || {};
         const template = { ...emailTemplates.default, ...(emailTemplates[period] || {}) };
         const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr) }));
+        const userOverdue = (okrSubmissions || []).filter(s => s.memberId === u.id && s.answer === null && s.periodKey !== periodKey)
+          .map(s => ({ krLabel: s.krLabel, period: s.period, dateRange: s.dateRange, periodKey: s.periodKey }));
         emailPromises.push(
-          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, dateRange, krs: krsForEmail, template }) })
+          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, dateRange, krs: krsForEmail, template, overdueSubs: userOverdue }) })
             .then(res => res.ok ? null : { name: u.name, reason: `HTTP ${res.status}` })
             .catch(err => ({ name: u.name, reason: err.message || "Network error" }))
         );

@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 
-  const { to, name, period, periodKey, dateRange, krs, template = {} } = req.body || {};
+  const { to, name, period, periodKey, dateRange, krs, template = {}, overdueSubs = [] } = req.body || {};
   if (!to || !krs?.length) { res.status(400).json({ error: "Missing required fields" }); return; }
 
   const smtpUser = process.env.SMTP_USER;
@@ -79,6 +79,19 @@ export default async function handler(req, res) {
         </thead>
         <tbody>${krRows}</tbody>
       </table>
+      ${overdueSubs.length > 0 ? `
+      <div style="background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin:0 0 20px">
+        <div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px">
+          &#9888; ${overdueSubs.length} Overdue Check-In${overdueSubs.length !== 1 ? "s" : ""} — Please respond
+        </div>
+        <div style="font-size:13px;color:#6e6e73;margin-bottom:10px">You also have unanswered check-ins from previous periods:</div>
+        <table style="width:100%;border-collapse:collapse">
+          ${overdueSubs.map(s => `<tr>
+            <td style="padding:5px 0;font-size:13px;color:#1d1d1f;border-bottom:1px solid #fed7aa">${s.krLabel || "—"}</td>
+            <td style="padding:5px 0;font-size:12px;color:#b45309;text-align:right;white-space:nowrap;border-bottom:1px solid #fed7aa">${(PERIOD_LABELS[s.period] || s.period) + (s.dateRange ? " · " + s.dateRange : "")}</td>
+          </tr>`).join("")}
+        </table>
+      </div>` : ""}
       <a href="${appUrl}/member/checkin"
          style="display:inline-block;padding:12px 28px;background:#0071e3;color:#fff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600;letter-spacing:-0.01em">
         ${ctaText}
@@ -98,6 +111,12 @@ export default async function handler(req, res) {
     "----------------",
     krs.map(kr => `• ${kr.label || "—"}${kr.type !== "tracker" && kr.target != null ? `: ${kr.operator || ">="} ${kr.target}${kr.unit ? " " + kr.unit : ""}` : " (Tracker — record numbers only)"}`).join("\n"),
     "",
+    ...(overdueSubs.length > 0 ? [
+      `⚠ OVERDUE CHECK-INS (${overdueSubs.length})`,
+      "--------------------------------",
+      overdueSubs.map(s => `• ${s.krLabel || "—"} · ${PERIOD_LABELS[s.period] || s.period}${s.dateRange ? " · " + s.dateRange : ""}`).join("\n"),
+      "",
+    ] : []),
     `Submit your check-in at: ${appUrl}/member/checkin`,
     "",
     footerText.replace(/<br\/>/g, "\n").replace(/<[^>]+>/g, ""),
