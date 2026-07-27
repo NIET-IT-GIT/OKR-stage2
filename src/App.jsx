@@ -1768,6 +1768,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [checkinPreview, setCheckinPreview] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [editingSub, setEditingSub] = useState(null);
+  const [editingApproved, setEditingApproved] = useState(null);
   const [tmplPeriod, setTmplPeriod] = useState("default");
   const [testEmailState, setTestEmailState] = useState({ status: "idle", msg: "" });
   const [testEmailTo, setTestEmailTo] = useState(user?.email || "");
@@ -2853,7 +2854,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       {/* KR rows */}
                       {subs.map((s, idx) => {
                         const accentColor = s.approval === "approved" ? T.ok : s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === null ? T.warn : T.border;
-                        const isLast = idx === subs.length - 1 && rejectOkr?.id !== s.id && editingSub?.id !== s.id;
+                        const isLast = idx === subs.length - 1 && rejectOkr?.id !== s.id && editingSub?.id !== s.id && editingApproved?.id !== s.id;
                         return (
                           <div key={s.id} style={{ borderBottom: isLast ? "none" : `1px solid ${T.border}` }}>
                             <div style={{ padding: "11px 18px 11px 21px", borderLeft: `3px solid ${accentColor}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -2885,7 +2886,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                       <Btn danger small onClick={() => { setRejectOkr({ id: s.id, actual: "" }); setEditingSub(null); }}>Reject</Btn>
                                       <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
                                     </div>
-                                  : s.approval !== "pending" && <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
+                                  : s.approval !== "pending" && <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />
+                                      <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "" }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
+                                    </div>}
                                 <button onClick={() => dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id })} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
                               </div>
                             </div>
@@ -2929,6 +2933,21 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
                                   <Btn primary small onClick={() => { const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                </div>
+                              </div>
+                            )}
+                            {editingApproved?.id === s.id && (
+                              <div style={{ margin: "0 18px 10px 21px", padding: "10px 12px", background: T.raised, borderRadius: 7, border: `1px solid ${T.border}` }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Actual Value — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                  <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
+                                  <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                  {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                  {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                </div>
+                                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                  <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
+                                  <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0 }); setEditingApproved(null); }}>Save</Btn>
                                 </div>
                               </div>
                             )}
@@ -3575,6 +3594,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [yesConfirm, setYesConfirm] = useState(null);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [editingSub, setEditingSub] = useState(null);
+  const [editingApproved, setEditingApproved] = useState(null);
   const [trackerInput, setTrackerInput] = useState({});
   const [syncing, setSyncing] = useState(false);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
@@ -4052,7 +4072,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           {/* KR rows */}
                           {subs.map((s, idx) => {
                             const accentColor = s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : T.warn;
-                            const isLast = idx === subs.length - 1 && rejectOkr?.id !== s.id && editingSub?.id !== s.id;
+                            const isLast = idx === subs.length - 1 && rejectOkr?.id !== s.id && editingSub?.id !== s.id && editingApproved?.id !== s.id;
                             return (
                               <div key={s.id} style={{ borderBottom: isLast ? "none" : `1px solid ${T.border}` }}>
                                 <div style={{ padding: "10px 16px 10px 19px", borderLeft: `3px solid ${accentColor}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
@@ -4081,7 +4101,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                           <Btn danger small onClick={() => { setRejectOkr({ id: s.id, actual: "" }); setEditingSub(null); }}>Reject</Btn>
                                           <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
                                         </div>
-                                      : <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
+                                      : <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                          <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />
+                                          <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "" }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
+                                        </div>}
                                   </div>
                                 </div>
                                 {rejectOkr?.id === s.id && (
@@ -4122,6 +4145,21 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
                                       <Btn primary small onClick={() => { const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                    </div>
+                                  </div>
+                                )}
+                                {editingApproved?.id === s.id && (
+                                  <div style={{ margin: "0 16px 10px 19px", padding: "10px 12px", background: T.raised, borderRadius: 7, border: `1px solid ${T.border}` }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Actual Value — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                      <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
+                                      <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
+                                      {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                      {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                      <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
+                                      <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0 }); setEditingApproved(null); }}>Save</Btn>
                                     </div>
                                   </div>
                                 )}
@@ -5166,6 +5204,42 @@ function appReducer(state, action) {
       const updateDeptKr = kr => {
         if (kr.id !== sub.krId) return kr;
         if (kr.monthlyTargets) { return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: teamActual } }; }
+        return { ...kr, actual: teamActual };
+      };
+      const newDepts = state.depts.map(dept => {
+        if (dept.id !== sub.deptId) return dept;
+        return { ...dept, krs: dept.krs.map(updateDeptKr), teams: dept.teams.map(t => ({ ...t, krs: (t.krs || []).map(updateDeptKr) })) };
+      });
+      return { ...state, okrSubmissions: newSubs, memberData: newMemberData, depts: newDepts };
+    }
+    case "EDIT_APPROVED_SUBMISSION": {
+      const sub = (state.okrSubmissions || []).find(s => s.id === action.id);
+      if (!sub) return state;
+      const newActual = action.actualValue;
+      const newSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, actualValue: newActual } : s);
+      if (sub.approval !== "approved") return { ...state, okrSubmissions: newSubs };
+      const md = state.memberData[sub.memberId];
+      if (!md) return { ...state, okrSubmissions: newSubs };
+      const mk = (sub.periodKey || "").slice(0, 7);
+      const updatedMemberKrs = (md.krs || []).map(kr => {
+        if (kr.id !== sub.krId) return kr;
+        if (kr.monthlyTargets) return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: newActual } };
+        return { ...kr, actual: newActual };
+      });
+      const newMemberData = { ...state.memberData, [sub.memberId]: { ...md, krs: updatedMemberKrs } };
+      const approvedMemberIds = [...new Set(newSubs.filter(s => s.krId === sub.krId && s.approval === "approved" && s.periodKey === sub.periodKey && s.deptId === sub.deptId).map(s => s.memberId))];
+      const isMonthly = !!(newMemberData[sub.memberId]?.krs?.find(k => k.id === sub.krId)?.monthlyTargets);
+      const memberVals = approvedMemberIds.map(mId => {
+        const kr = (newMemberData[mId]?.krs || []).find(k => k.id === sub.krId);
+        if (!kr) return null;
+        return isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : (kr.actual ?? null);
+      }).filter(v => v !== null);
+      const teamActual = memberVals.length > 0
+        ? Math.round(memberVals.reduce((a, b) => a + b, 0) / memberVals.length * 100) / 100
+        : newActual;
+      const updateDeptKr = kr => {
+        if (kr.id !== sub.krId) return kr;
+        if (kr.monthlyTargets) return { ...kr, monthlyActuals: { ...(kr.monthlyActuals || {}), [mk]: teamActual } };
         return { ...kr, actual: teamActual };
       };
       const newDepts = state.depts.map(dept => {
