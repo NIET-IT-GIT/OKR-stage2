@@ -2419,7 +2419,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       <div style={{ display: "grid", gridTemplateColumns: COL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                         {visibleBuiltIn.map(({ key }) => {
                           if (key === "id") return <span key="id" style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>;
-                          if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{kr.type === "tracker" && <><span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Tracker · does not affect rate</span><label style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, cursor: "pointer", userSelect: "none" }}><input type="checkbox" checked={kr.showInOverview !== false} onChange={e => onTeamChange(kr.id, "showInOverview", e.target.checked)} style={{ accentColor: "#7c3aed" }} /><span style={{ fontSize: 10, color: "#7c3aed" }}>Show in portals' OKR Overview</span></label></>}{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}</div>;
+                          if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{kr.type === "tracker" && <><span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Tracker · does not affect rate</span><label style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, cursor: "pointer", userSelect: "none" }}><input type="checkbox" checked={kr.showInOverview !== false} onChange={e => onTeamChange(kr.id, "showInOverview", e.target.checked)} style={{ accentColor: "#7c3aed" }} /><span style={{ fontSize: 10, color: "#7c3aed" }}>Show in portals' OKR Overview</span></label></>}{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}{kr.type !== "tracker" && <label style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, cursor: "pointer", userSelect: "none" }}><input type="checkbox" checked={!!kr.autoApprove} onChange={e => onTeamChange(kr.id, "autoApprove", e.target.checked)} style={{ accentColor: T.ok }} /><span style={{ fontSize: 10, color: kr.autoApprove ? T.ok : T.textDim }}>Auto-approve ✓ Yes</span></label>}</div>;
                           if (key === "operator") return <span key="operator">{opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}</span>;
                           if (key === "period") return <span key="period"><select value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Biannual</option><option value="annual">Annual</option></select></span>;
                           if (key === "target") return kr.type === "tracker" ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : isMonthly ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(curTarget)} <span style={{ color: T.textDim }}>this mo.</span></span> : <Input key="target" value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
@@ -3993,6 +3993,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                                 : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                              {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
                             </div>
                           </div>
                           {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
@@ -4577,6 +4578,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                   <span style={{ fontWeight: 700, color: ansCol, minWidth: 90, textAlign: "right" }}>{ansLabel}</span>
                                   {(s.answer === "no" || s.answer === "submitted") && s.actualValue != null && <span style={{ fontFamily: F.mono, fontSize: 12, color: s.answer === "submitted" ? "#7c3aed" : T.textMuted }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                                   <Tag type={s.approval} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                                  {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
                                 </div>
                               );
                             })}
@@ -4857,6 +4859,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                                 : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                              {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
                             </div>
                           </div>
                           {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
@@ -4923,6 +4926,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
                           <Tag type={s.approval} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
+                          {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
                           <span style={{ fontSize: 11, color: T.textDim }}>Sent {s.sentAt?.slice(0, 10) || "—"}</span>
                           {s.answeredAt && <span style={{ fontSize: 11, color: T.textDim }}>Answered {s.answeredAt.slice(0, 10)}</span>}
                         </div>
@@ -5082,8 +5086,49 @@ function appReducer(state, action) {
       const fresh = action.submissions.filter(s => !seen.has(`${s.memberId}:${s.krId}:${s.periodKey}`));
       return { ...state, okrSubmissions: [...(state.okrSubmissions || []), ...fresh] };
     }
-    case "ANSWER_OKR_SUBMISSION":
-      return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, answer: action.answer, answeredAt: new Date().toISOString(), reason: action.reason || null, actualValue: action.actualValue ?? null } : s) };
+    case "ANSWER_OKR_SUBMISSION": {
+      const answerSub = (state.okrSubmissions || []).find(s => s.id === action.id);
+      const answered = { ...answerSub, answer: action.answer, answeredAt: new Date().toISOString(), reason: action.reason || null, actualValue: action.actualValue ?? null };
+      if (!answerSub || action.answer !== "yes") {
+        return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? answered : s) };
+      }
+      const aDept = state.depts.find(d => d.id === answerSub.deptId);
+      const aKr = aDept ? (aDept.krs.find(k => k.id === answerSub.krId) || aDept.teams.flatMap(t => t.krs || []).find(k => k.id === answerSub.krId)) : null;
+      if (!aKr?.autoApprove) {
+        return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? answered : s) };
+      }
+      const autoSub = { ...answered, approval: "approved", approvedBy: "auto" };
+      const newAutoSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? autoSub : s);
+      const autoActual = autoSub.actualValue ?? autoSub.krTarget;
+      if (autoActual == null) return { ...state, okrSubmissions: newAutoSubs };
+      const autoMd = state.memberData[answerSub.memberId];
+      if (!autoMd) return { ...state, okrSubmissions: newAutoSubs };
+      const autoMk = (answerSub.periodKey || "").slice(0, 7);
+      const autoMemberKrs = (autoMd.krs || []).map(k => {
+        if (k.id !== answerSub.krId) return k;
+        if (k.monthlyTargets) return { ...k, monthlyActuals: { ...(k.monthlyActuals || {}), [autoMk]: autoActual } };
+        return { ...k, actual: autoActual };
+      });
+      const autoMemberData = { ...state.memberData, [answerSub.memberId]: { ...autoMd, krs: autoMemberKrs } };
+      const autoApprovedIds = [...new Set(newAutoSubs.filter(s => s.krId === answerSub.krId && s.approval === "approved" && s.periodKey === answerSub.periodKey && s.deptId === answerSub.deptId).map(s => s.memberId))];
+      const autoIsMonthly = !!(autoMemberData[answerSub.memberId]?.krs?.find(k => k.id === answerSub.krId)?.monthlyTargets);
+      const autoMemberVals = autoApprovedIds.map(mId => {
+        const k = (autoMemberData[mId]?.krs || []).find(k => k.id === answerSub.krId);
+        if (!k) return null;
+        return autoIsMonthly ? ((k.monthlyActuals || {})[autoMk] ?? null) : (k.actual ?? null);
+      }).filter(v => v !== null);
+      const autoTeamActual = autoMemberVals.length > 0 ? Math.round(autoMemberVals.reduce((a, b) => a + b, 0) / autoMemberVals.length * 100) / 100 : autoActual;
+      const autoUpdateKr = k => {
+        if (k.id !== answerSub.krId) return k;
+        if (k.monthlyTargets) return { ...k, monthlyActuals: { ...(k.monthlyActuals || {}), [autoMk]: autoTeamActual } };
+        return { ...k, actual: autoTeamActual };
+      };
+      const autoDepts = state.depts.map(d => {
+        if (d.id !== answerSub.deptId) return d;
+        return { ...d, krs: d.krs.map(autoUpdateKr), teams: d.teams.map(t => ({ ...t, krs: (t.krs || []).map(autoUpdateKr) })) };
+      });
+      return { ...state, okrSubmissions: newAutoSubs, memberData: autoMemberData, depts: autoDepts };
+    }
     case "APPROVE_OKR_SUBMISSION": {
       const newSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, approval: action.status, approvedBy: action.approvedBy } : s);
       const sub = (state.okrSubmissions || []).find(s => s.id === action.id);
