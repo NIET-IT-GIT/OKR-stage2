@@ -5129,6 +5129,9 @@ function appReducer(state, action) {
     case "ANSWER_OKR_SUBMISSION": {
       const answerSub = (state.okrSubmissions || []).find(s => s.id === action.id);
       const answered = { ...answerSub, answer: action.answer, answeredAt: new Date().toISOString(), reason: action.reason || null, actualValue: action.actualValue ?? null };
+      if (answerSub?.krType === "tracker") {
+        return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...answered, approval: "approved", approvedBy: "auto" } : s) };
+      }
       if (!answerSub || action.answer !== "yes") {
         return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? answered : s) };
       }
