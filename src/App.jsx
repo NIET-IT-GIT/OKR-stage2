@@ -378,7 +378,7 @@ const supabase = createClient(
 async function dbGet() {
   const { data, error } = await supabase.from("app_data").select("collection, id, doc").limit(10000);
   if (error) throw new Error(error.message);
-  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], okrSubmissions: [], settings: [] };
+  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], okrSubmissions: [], emailLogs: [], settings: [] };
   for (const row of data) {
     if (result[row.collection]) result[row.collection].push(row.doc);
   }
@@ -412,7 +412,7 @@ async function syncChanges(prev, next) {
   if (JSON.stringify(prev.settings) !== JSON.stringify(next.settings)) {
     tasks.push(dbUpsert("settings", next.settings));
   }
-  for (const col of ["users", "depts", "weeklySubs", "mgrSprints", "projects", "monthlyReports", "okrSubmissions"]) {
+  for (const col of ["users", "depts", "weeklySubs", "mgrSprints", "projects", "monthlyReports", "okrSubmissions", "emailLogs"]) {
     const prevArr = prev[col] || [];
     const nextArr = next[col] || [];
     for (const item of nextArr) {
@@ -1802,9 +1802,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [testEmailState, setTestEmailState] = useState({ status: "idle", msg: "" });
   const [testEmailTo, setTestEmailTo] = useState(user?.email || "");
   const [adminOkrPeriod, setAdminOkrPeriod] = useState("all");
+  const [expandedLog, setExpandedLog] = useState(null);
   const [adminSelDept, setAdminSelDept] = useState(null);
 
-  const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], users, settings } = state;
+  const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], emailLogs = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
     { id: "overview",         icon: "◎", label: "Company Overview"  },
@@ -2052,15 +2053,29 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           .map(s => ({ krLabel: s.krLabel, period: s.period, dateRange: s.dateRange, periodKey: s.periodKey }));
         emailPromises.push(
           fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, dateRange, krs: krsForEmail, template, overdueSubs: userOverdue }) })
-            .then(res => res.ok ? null : { name: u.name, reason: `HTTP ${res.status}` })
-            .catch(err => ({ name: u.name, reason: err.message || "Network error" }))
+            .then(res => res.ok
+              ? { name: u.name, email: u.email, krCount: freshKrs.length, success: true }
+              : { name: u.name, email: u.email, krCount: freshKrs.length, success: false, reason: `HTTP ${res.status}` })
+            .catch(err => ({ name: u.name, email: u.email, krCount: freshKrs.length, success: false, reason: err.message || "Network error" }))
         );
       }
     }
     if (newSubs.length) dispatch({ type: "CREATE_OKR_SUBMISSIONS", submissions: newSubs });
     const memberCount = new Set(newSubs.map(s => s.memberId)).size;
     const emailOutcomes = await Promise.all(emailPromises);
-    const emailFailures = emailOutcomes.filter(Boolean);
+    const emailFailures = emailOutcomes.filter(o => !o.success);
+    if (emailOutcomes.length > 0 || newSubs.length > 0) {
+      dispatch({ type: "LOG_EMAIL_SEND", log: {
+        id: `el_${Date.now().toString(36)}`,
+        sentAt: new Date().toISOString(),
+        period, periodKey, dateRange,
+        scope,
+        submissionsCreated: newSubs.length,
+        recipientCount: emailOutcomes.length,
+        recipients: emailOutcomes,
+        failureCount: emailFailures.length,
+      }});
+    }
     setCheckinResult({ count: newSubs.length, memberCount, period, scope, emailFailures });
     setSendingCheckin(false);
     setTimeout(() => setCheckinResult(null), 8000);
@@ -3004,6 +3019,51 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   );
                 });
               })()}
+              {/* Email Send Log */}
+              {emailLogs.length > 0 && (
+                <div style={{ marginTop: 32 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, paddingBottom: 10, borderBottom: `2px solid ${T.border}` }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Email Send Log</div>
+                    <div style={{ fontSize: 12, color: T.textMuted }}>{emailLogs.length} send event{emailLogs.length !== 1 ? "s" : ""} (last 100)</div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "160px 80px 1fr 1fr 70px 70px 60px", gap: 8, padding: "5px 0 6px", fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${T.border}` }}>
+                    <span>Date / Time</span><span>Period</span><span>Date Range</span><span>Scope</span><span style={{ textAlign: "right" }}>Emails</span><span style={{ textAlign: "right" }}>Created</span><span style={{ textAlign: "right" }}>Fails</span>
+                  </div>
+                  {emailLogs.map((log, i) => {
+                    const isOpen = expandedLog === log.id;
+                    const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", biannual: "Bi-Annual", annual: "Annual" };
+                    return (
+                      <div key={log.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                        <div onClick={() => setExpandedLog(isOpen ? null : log.id)} style={{ display: "grid", gridTemplateColumns: "160px 80px 1fr 1fr 70px 70px 60px", gap: 8, padding: "8px 0", alignItems: "center", fontSize: 13, cursor: "pointer", background: i % 2 ? T.raised : "transparent", userSelect: "none" }}>
+                          <span style={{ fontFamily: F.mono, fontSize: 12 }}>{new Date(log.sentAt).toLocaleString("en-AU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                          <span style={{ fontWeight: 600 }}>{PERIOD_LABELS[log.period] || log.period}</span>
+                          <span style={{ color: T.textMuted, fontSize: 12 }}>{log.dateRange || log.periodKey}</span>
+                          <span style={{ color: T.textMuted, fontSize: 12 }}>{scopeLabel(log.scope || {})}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono }}>{log.recipientCount}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono }}>{log.submissionsCreated}</span>
+                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: log.failureCount > 0 ? T.bad : T.ok }}>{log.failureCount > 0 ? log.failureCount : "—"}</span>
+                        </div>
+                        {isOpen && (
+                          <div style={{ padding: "6px 14px 12px", background: T.surface, borderRadius: 6, margin: "0 0 4px" }}>
+                            {(log.recipients || []).length === 0
+                              ? <div style={{ fontSize: 12, color: T.textMuted }}>No emails were sent (no valid email addresses in scope).</div>
+                              : (log.recipients || []).map((r, j) => (
+                                <div key={j} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, borderBottom: `1px solid ${T.border}` }}>
+                                  <span style={{ width: 14, textAlign: "center", color: r.success ? T.ok : T.bad, fontWeight: 700 }}>{r.success ? "✓" : "✗"}</span>
+                                  <span style={{ flex: 1 }}>{r.name}</span>
+                                  <span style={{ color: T.textMuted, fontSize: 12 }}>{r.email}</span>
+                                  <span style={{ color: T.textMuted, fontSize: 12 }}>{r.krCount} KR{r.krCount !== 1 ? "s" : ""}</span>
+                                  {!r.success && <span style={{ color: T.bad, fontSize: 12 }}>{r.reason}</span>}
+                                </div>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </Pane>
           </>);
         })()}
@@ -5170,6 +5230,10 @@ function appReducer(state, action) {
       if (!md) return state;
       return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).filter(kr => kr.id !== action.krId) } } };
     }
+    case "LOG_EMAIL_SEND": {
+      const logs = [action.log, ...(state.emailLogs || [])].slice(0, 100);
+      return { ...state, emailLogs: logs };
+    }
     case "CREATE_OKR_SUBMISSIONS": {
       const seen = new Set((state.okrSubmissions || []).map(s => `${s.memberId}:${s.krId}:${s.periodKey}`));
       const fresh = action.submissions.filter(s => !seen.has(`${s.memberId}:${s.krId}:${s.periodKey}`));
@@ -5483,6 +5547,7 @@ export default function App({ redirectAccount = null }) {
     memberData: INIT_MEMBER_DATA,
     weeklySubs: INIT_WEEKLY_SUBS,
     okrSubmissions: [],
+    emailLogs: [],
     mgrSprints: INIT_MGR_SPRINTS,
     projects: INIT_PROJECTS,
     monthlyReports: INIT_MONTHLY_REPORTS,
@@ -5525,6 +5590,7 @@ export default function App({ redirectAccount = null }) {
       memberData: fixedMemberData,
       weeklySubs: data.weeklySubs || [],
       okrSubmissions: okrSubs,
+      emailLogs: data.emailLogs || [],
       mgrSprints: data.mgrSprints || [],
       projects: data.projects || [],
       monthlyReports: data.monthlyReports || [],
