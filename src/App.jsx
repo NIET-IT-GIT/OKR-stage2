@@ -3464,11 +3464,12 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                               <tr style={{ background: "#f5f5f7" }}>
                                 <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#6e6e73", textTransform: "uppercase", letterSpacing: "0.06em" }}>Key Result</th>
                                 <th style={{ padding: "6px 10px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "#6e6e73", textTransform: "uppercase", letterSpacing: "0.06em" }}>Performance Target</th>
+                                <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#6e6e73", textTransform: "uppercase", letterSpacing: "0.06em" }}>Unit</th>
                               </tr>
                             </thead>
                             <tbody>
                               {[{ label: "Complete 3 coaching sessions", target: "3", unit: "sessions" }, { label: "Customer satisfaction score", target: "≥ 90", unit: "%" }].map((kr, i) => (
-                                <tr key={i}><td style={{ padding: "7px 10px", borderBottom: "1px solid #e5e7eb", fontSize: 13 }}>{kr.label}{kr.unit && <span style={{ display: "inline-block", fontSize: 10, fontWeight: 700, color: "#0071e3", background: "#f0f7ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "1px 6px", marginLeft: 6, verticalAlign: "middle" }}>{kr.unit}</span>}</td><td style={{ padding: "7px 10px", borderBottom: "1px solid #e5e7eb", textAlign: "right", fontFamily: "monospace", fontSize: 13 }}>{kr.target} {kr.unit}</td></tr>
+                                <tr key={i}><td style={{ padding: "7px 10px", borderBottom: "1px solid #e5e7eb", fontSize: 13 }}>{kr.label}</td><td style={{ padding: "7px 10px", borderBottom: "1px solid #e5e7eb", textAlign: "right", fontFamily: "monospace", fontSize: 13 }}>{kr.target}</td><td style={{ padding: "7px 10px", borderBottom: "1px solid #e5e7eb", fontSize: 12, color: "#6e6e73" }}>{kr.unit}</td></tr>
                               ))}
                             </tbody>
                           </table>
