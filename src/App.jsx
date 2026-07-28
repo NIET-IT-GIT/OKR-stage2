@@ -1803,6 +1803,30 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [testEmailTo, setTestEmailTo] = useState(user?.email || "");
   const [adminOkrPeriod, setAdminOkrPeriod] = useState("all");
   const [expandedLog, setExpandedLog] = useState(null);
+  const [resendingEmail, setResendingEmail] = useState(null); // `${logId}:${email}`
+
+  async function resendEmail(log, recipient) {
+    const key = `${log.id}:${recipient.email}`;
+    setResendingEmail(key);
+    const member = users.find(u => u.email === recipient.email);
+    const subs = (okrSubmissions || []).filter(s =>
+      s.memberId === member?.id && s.period === log.period && s.periodKey === log.periodKey
+    );
+    const krs = subs.map(s => ({ id: s.krId, label: s.krLabel, target: s.krTarget, unit: s.krUnit, type: s.krType, operator: s.krOperator }));
+    const emailTemplates = settings?.emailTemplates || {};
+    const template = { ...emailTemplates.default, ...(emailTemplates[log.period] || {}) };
+    try {
+      const res = await fetch("/api/send-email", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: recipient.email, name: recipient.name, period: log.period, periodKey: log.periodKey, dateRange: log.dateRange, krs, template }),
+      });
+      const data = await res.json();
+      dispatch({ type: "UPDATE_EMAIL_LOG_RECIPIENT", logId: log.id, email: recipient.email, success: data.ok, reason: data.ok ? null : (data.error || `HTTP ${res.status}`) });
+    } catch (err) {
+      dispatch({ type: "UPDATE_EMAIL_LOG_RECIPIENT", logId: log.id, email: recipient.email, success: false, reason: err.message || "Network error" });
+    }
+    setResendingEmail(null);
+  }
   const [adminSelDept, setAdminSelDept] = useState(null);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], emailLogs = [], users, settings } = state;
@@ -3047,15 +3071,25 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                           <div style={{ padding: "6px 14px 12px", background: T.surface, borderRadius: 6, margin: "0 0 4px" }}>
                             {(log.recipients || []).length === 0
                               ? <div style={{ fontSize: 12, color: T.textMuted }}>No emails were sent (no valid email addresses in scope).</div>
-                              : (log.recipients || []).map((r, j) => (
-                                <div key={j} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 13, borderBottom: `1px solid ${T.border}` }}>
-                                  <span style={{ width: 14, textAlign: "center", color: r.success ? T.ok : T.bad, fontWeight: 700 }}>{r.success ? "✓" : "✗"}</span>
-                                  <span style={{ flex: 1 }}>{r.name}</span>
-                                  <span style={{ color: T.textMuted, fontSize: 12 }}>{r.email}</span>
-                                  <span style={{ color: T.textMuted, fontSize: 12 }}>{r.krCount} KR{r.krCount !== 1 ? "s" : ""}</span>
-                                  {!r.success && <span style={{ color: T.bad, fontSize: 12 }}>{r.reason}</span>}
-                                </div>
-                              ))
+                              : (log.recipients || []).map((r, j) => {
+                                const rKey = `${log.id}:${r.email}`;
+                                const isSending = resendingEmail === rKey;
+                                return (
+                                  <div key={j} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 13, borderBottom: `1px solid ${T.border}` }}>
+                                    <span style={{ width: 14, textAlign: "center", color: r.success ? T.ok : T.bad, fontWeight: 700 }}>{r.success ? "✓" : "✗"}</span>
+                                    <span style={{ flex: 1 }}>{r.name}</span>
+                                    <span style={{ color: T.textMuted, fontSize: 12 }}>{r.email}</span>
+                                    <span style={{ color: T.textMuted, fontSize: 12 }}>{r.krCount} KR{r.krCount !== 1 ? "s" : ""}</span>
+                                    {!r.success && <span style={{ color: T.bad, fontSize: 12, flex: 1 }}>{r.reason}</span>}
+                                    {!r.success && (
+                                      <button disabled={!!resendingEmail} onClick={() => resendEmail(log, r)}
+                                        style={{ background: isSending ? T.raised : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "2px 10px", cursor: resendingEmail ? "not-allowed" : "pointer", color: T.brand, fontSize: 12, fontWeight: 700, opacity: resendingEmail && !isSending ? 0.5 : 1 }}>
+                                        {isSending ? "Sending…" : "Resend"}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })
                             }
                           </div>
                         )}
@@ -5233,6 +5267,16 @@ function appReducer(state, action) {
     case "LOG_EMAIL_SEND": {
       const logs = [action.log, ...(state.emailLogs || [])].slice(0, 100);
       return { ...state, emailLogs: logs };
+    }
+    case "UPDATE_EMAIL_LOG_RECIPIENT": {
+      return { ...state, emailLogs: (state.emailLogs || []).map(log => {
+        if (log.id !== action.logId) return log;
+        const newRecipients = (log.recipients || []).map(r =>
+          r.email !== action.email ? r : { ...r, success: action.success, reason: action.reason || null }
+        );
+        const newFailCount = newRecipients.filter(r => !r.success).length;
+        return { ...log, recipients: newRecipients, failureCount: newFailCount };
+      })};
     }
     case "CREATE_OKR_SUBMISSIONS": {
       const seen = new Set((state.okrSubmissions || []).map(s => `${s.memberId}:${s.krId}:${s.periodKey}`));
