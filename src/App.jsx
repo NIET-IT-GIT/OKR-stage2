@@ -159,6 +159,29 @@ function calcRate(krs) {
   if (!scored.length) return 0;
   return scored.reduce((sum, kr) => sum + krCompletion(kr), 0) / scored.length;
 }
+// Calculates completion from a submission snapshot, not live KR data.
+// krTarget is already the resolved per-period value stored at send time.
+function submissionCompletion(sub) {
+  if (!sub || sub.krType === "tracker") return null;
+  const op = sub.krOperator || ">=";
+  const target = sub.krTarget != null ? Number(sub.krTarget) : 0;
+  // answer=yes with no actualValue → member confirmed they met target → treat actual as target (100%)
+  const raw = sub.actualValue != null ? sub.actualValue : (sub.answer === "yes" ? target : null);
+  if (raw == null) return 0;
+  const actual = Number(raw) || 0;
+  if (target === 0) {
+    if (op === ">=" || op === ">") return 100;
+    return actual <= 0 ? 100 : Math.min((1 / (actual + 1)) * 100, 99);
+  }
+  switch (op) {
+    case ">=": return Math.min((actual / target) * 100, 100);
+    case ">":  return actual > target ? 100 : Math.min((actual / target) * 100, 100);
+    case "<=": return actual <= target ? 100 : Math.min((target / actual) * 100, 100);
+    case "<":  return actual < target ? 100 : Math.min((target / actual) * 100, 100);
+    case "=":  return actual === target ? 100 : 0;
+    default:   return Math.min((actual / target) * 100, 100);
+  }
+}
 function calcMemberRate(memberId, memberKrs, okrSubs) {
   const now = Date.now();
   const memberSubs = (okrSubs || []).filter(s => s.memberId === memberId);
@@ -168,7 +191,13 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
     const krSubs = memberSubs.filter(s => s.krId === kr.id);
     if (!krSubs.length) continue; // no check-in sent → excluded
     const answered = krSubs.filter(s => s.answer !== null);
-    if (answered.length) { scores.push(krCompletion(kr)); continue; } // answered → use real completion
+    if (answered.length) {
+      // Use most recent answered submission snapshot; prefer approved over pending
+      const approved = answered.filter(s => s.approval === "approved").sort((a, b) => (b.answeredAt || "").localeCompare(a.answeredAt || ""));
+      const best = approved.length ? approved[0] : answered.slice().sort((a, b) => (b.answeredAt || "").localeCompare(a.answeredAt || ""))[0];
+      scores.push(submissionCompletion(best) ?? 0);
+      continue;
+    }
     const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
     if (latest && (now - new Date(latest.sentAt).getTime()) >= 86400000) scores.push(0); // overdue → 0%
     // else < 24h grace period → excluded
