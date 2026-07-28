@@ -2646,17 +2646,23 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                             <div style={{ borderTop: `1px solid ${T.border}`, padding: "14px 16px" }}>
                               {personalKrs.length > 0 && (
                                 <div style={{ marginBottom: 10 }}>
-                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 80px 28px", gap: 8, padding: "5px 0 6px", fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${T.border}` }}>
-                                    <span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span />
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 52px 90px 90px 60px 90px 28px", gap: 8, padding: "5px 0 6px", fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${T.border}` }}>
+                                    <span>Key Result</span><span>Op</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span>Period</span><span />
                                   </div>
                                   {personalKrs.map((kr, i) => {
                                     const pct = krCompletion(kr); const st2 = getStatus(pct);
                                     return (
-                                      <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 80px 28px", gap: 8, padding: "6px 0", alignItems: "center", borderBottom: `1px solid ${T.border}`, background: i % 2 ? T.raised : "transparent", fontSize: 13 }}>
+                                      <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 52px 90px 90px 60px 90px 28px", gap: 8, padding: "6px 0", alignItems: "center", borderBottom: `1px solid ${T.border}`, background: i % 2 ? T.raised : "transparent", fontSize: 13 }}>
                                         <div><span>{kr.label}</span><span style={{ marginLeft: 8, fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[st2].color }}>{pct.toFixed(0)}%</span></div>
+                                        <select value={kr.operator || ">="} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "operator", value: e.target.value })} style={{ padding: "3px 4px", fontSize: 12, borderRadius: 4, border: `1px solid ${T.border}`, background: T.card, color: T.text, fontFamily: F.mono, cursor: "pointer" }}>
+                                          <option value=">=">≥</option><option value="<=">≤</option><option value="=">=</option><option value=">">{">"}</option><option value="<">{"<"}</option>
+                                        </select>
                                         <Input value={kr.target || 0} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />
                                         <Input value={kr.actual || 0} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />
                                         <span style={{ fontSize: 12, color: T.textMuted }}>{kr.unit || "—"}</span>
+                                        <select value={kr.period || "monthly"} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "period", value: e.target.value })} style={{ padding: "3px 4px", fontSize: 12, borderRadius: 4, border: `1px solid ${T.border}`, background: T.card, color: T.text, cursor: "pointer" }}>
+                                          <option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Bi-Annual</option><option value="annual">Annual</option>
+                                        </select>
                                         <button onClick={() => dispatch({ type: "REMOVE_MEMBER_KR", memberId: member.id, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 4, padding: "2px 6px", cursor: "pointer", color: T.bad, fontSize: 11 }}>✕</button>
                                       </div>
                                     );
@@ -2666,6 +2672,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                               {addPersonalKr?.memberId === member.id ? (
                                 <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", background: T.brandDim, borderRadius: 7 }}>
                                   <Input value={addPersonalKr.label} onChange={e => setAddPersonalKr(p => ({...p, label: e.target.value}))} placeholder="KR description *" style={{ flex: 1, padding: "4px 8px", fontSize: 13 }} />
+                                  <select value={addPersonalKr.operator} onChange={e => setAddPersonalKr(p => ({...p, operator: e.target.value}))} style={{ padding: "4px 5px", fontSize: 13, borderRadius: 5, border: `1px solid ${T.border}`, background: T.card, color: T.text, fontFamily: F.mono, cursor: "pointer" }}>
+                                    <option value=">=">≥</option><option value="<=">≤</option><option value="=">=</option><option value=">">{">"}</option><option value="<">{"<"}</option>
+                                  </select>
                                   <Input value={addPersonalKr.target} onChange={e => setAddPersonalKr(p => ({...p, target: e.target.value}))} placeholder="Target" style={{ width: 80, textAlign: "right", padding: "4px 6px", fontFamily: F.mono, fontSize: 13 }} />
                                   <Input value={addPersonalKr.unit} onChange={e => setAddPersonalKr(p => ({...p, unit: e.target.value}))} placeholder="Unit" style={{ width: 70, padding: "4px 6px", fontSize: 13 }} />
                                   <select value={addPersonalKr.period} onChange={e => setAddPersonalKr(p => ({...p, period: e.target.value}))} style={{ padding: "4px 6px", fontSize: 13, borderRadius: 5, border: `1px solid ${T.border}`, background: T.card, color: T.text, cursor: "pointer" }}>
@@ -2675,11 +2684,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                     <option value="biannual">Bi-Annual</option>
                                     <option value="annual">Annual</option>
                                   </select>
-                                  <button onClick={() => { if (!addPersonalKr.label.trim()) return; dispatch({ type: "ADD_MEMBER_KR", memberId: member.id, kr: { id: `P${Date.now().toString(36).slice(-4).toUpperCase()}`, label: addPersonalKr.label.trim(), target: Number(addPersonalKr.target) || 0, actual: null, unit: addPersonalKr.unit.trim(), operator: ">=", period: addPersonalKr.period } }); setAddPersonalKr(null); }} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
+                                  <button onClick={() => { if (!addPersonalKr.label.trim()) return; dispatch({ type: "ADD_MEMBER_KR", memberId: member.id, kr: { id: `P${Date.now().toString(36).slice(-4).toUpperCase()}`, label: addPersonalKr.label.trim(), target: Number(addPersonalKr.target) || 0, actual: null, unit: addPersonalKr.unit.trim(), operator: addPersonalKr.operator, period: addPersonalKr.period } }); setAddPersonalKr(null); }} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                                   <button onClick={() => setAddPersonalKr(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: T.text, fontSize: 12 }}>✕</button>
                                 </div>
                               ) : (
-                                <button onClick={() => setAddPersonalKr({ memberId: member.id, label: "", target: "", unit: "", period: "monthly" })}
+                                <button onClick={() => setAddPersonalKr({ memberId: member.id, label: "", target: "", unit: "", operator: ">=", period: "monthly" })}
                                   style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "7px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Personal KR</button>
                               )}
                             </div>
