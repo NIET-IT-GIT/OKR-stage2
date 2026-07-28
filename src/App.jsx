@@ -2650,10 +2650,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                     <span>Key Result</span><span>Op</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span>Period</span><span />
                                   </div>
                                   {personalKrs.map((kr, i) => {
-                                    const pct = krCompletion(kr); const st2 = getStatus(pct);
+                                    const isTracker = kr.type === "tracker";
+                                    const pct = isTracker ? 0 : krCompletion(kr); const st2 = getStatus(pct);
                                     return (
                                       <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "1fr 52px 90px 90px 60px 90px 28px", gap: 8, padding: "6px 0", alignItems: "center", borderBottom: `1px solid ${T.border}`, background: i % 2 ? T.raised : "transparent", fontSize: 13 }}>
-                                        <div><span>{kr.label}</span><span style={{ marginLeft: 8, fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[st2].color }}>{pct.toFixed(0)}%</span></div>
+                                        <div><span>{kr.label}</span>{isTracker ? <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 6px" }}>Tracker</span> : <span style={{ marginLeft: 8, fontFamily: F.mono, fontWeight: 700, fontSize: 12, color: STATUS_THEME[st2].color }}>{pct.toFixed(0)}%</span>}</div>
                                         <select value={kr.operator || ">="} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "operator", value: e.target.value })} style={{ padding: "3px 4px", fontSize: 12, borderRadius: 4, border: `1px solid ${T.border}`, background: T.card, color: T.text, fontFamily: F.mono, cursor: "pointer" }}>
                                           <option value=">=">≥</option><option value="<=">≤</option><option value="=">=</option><option value=">">{">"}</option><option value="<">{"<"}</option>
                                         </select>
