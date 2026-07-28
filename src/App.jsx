@@ -4718,10 +4718,16 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   ) : kr.type === "tracker" ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
                       <div>
-                        <div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: "#7c3aed" }}>
-                          {fmt(kr.actual)}{kr.unit ? <span style={{ fontSize: 16, fontWeight: 600, color: T.textMuted, marginLeft: 6 }}>{kr.unit}</span> : null}
-                        </div>
-                        <div style={{ fontSize: 12, color: T.textMuted }}>Last recorded value</div>
+                        {(() => {
+                          const latestApproved = myOkrSubs.filter(s => s.krId === kr.id && s.approval === "approved" && s.actualValue != null).sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+                          const displayVal = latestApproved != null ? latestApproved.actualValue : kr.actual;
+                          return (<>
+                            <div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: "#7c3aed" }}>
+                              {fmt(displayVal)}{kr.unit ? <span style={{ fontSize: 16, fontWeight: 600, color: T.textMuted, marginLeft: 6 }}>{kr.unit}</span> : null}
+                            </div>
+                            <div style={{ fontSize: 12, color: T.textMuted }}>Last recorded value</div>
+                          </>);
+                        })()}
                       </div>
                       <div style={{ background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "6px 14px" }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: "#7c3aed" }}>N/A</div>
@@ -5287,7 +5293,19 @@ function appReducer(state, action) {
       const answerSub = (state.okrSubmissions || []).find(s => s.id === action.id);
       const answered = { ...answerSub, answer: action.answer, answeredAt: new Date().toISOString(), reason: action.reason || null, actualValue: action.actualValue ?? null };
       if (answerSub?.krType === "tracker") {
-        return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? { ...answered, approval: "approved", approvedBy: "auto" } : s) };
+        const trackerSub = { ...answered, approval: "approved", approvedBy: "auto" };
+        const newTrackerSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? trackerSub : s);
+        const trackerActual = trackerSub.actualValue;
+        if (trackerActual == null) return { ...state, okrSubmissions: newTrackerSubs };
+        const trackerMd = state.memberData[answerSub.memberId];
+        if (!trackerMd) return { ...state, okrSubmissions: newTrackerSubs };
+        const trackerMk = (answerSub.periodKey || "").slice(0, 7);
+        const trackerMemberKrs = (trackerMd.krs || []).map(k => {
+          if (k.id !== answerSub.krId) return k;
+          if (k.monthlyTargets) return { ...k, monthlyActuals: { ...(k.monthlyActuals || {}), [trackerMk]: trackerActual } };
+          return { ...k, actual: trackerActual };
+        });
+        return { ...state, okrSubmissions: newTrackerSubs, memberData: { ...state.memberData, [answerSub.memberId]: { ...trackerMd, krs: trackerMemberKrs } } };
       }
       if (!answerSub || action.answer !== "yes") {
         return { ...state, okrSubmissions: (state.okrSubmissions || []).map(s => s.id === action.id ? answered : s) };
