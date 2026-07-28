@@ -52,7 +52,7 @@ export default async function handler(req, res) {
 
   const krRows = krs.map(kr => `
     <tr>
-      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:14px">${kr.label || "—"}${kr.type === "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Tracker</span>' : ""}</td>
+      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:14px">${kr.label || "—"}${kr.unit ? ` <span style="display:inline-block;font-size:10px;font-weight:700;color:#0071e3;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">${kr.unit}</span>` : ""}${kr.type === "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Tracker</span>' : ""}</td>
       <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:14px;font-family:monospace">
         ${kr.type === "tracker" ? '<em style="color:#7c3aed;font-style:italic;font-family:sans-serif">Only need to record numbers</em>' : (kr.target != null ? kr.target : "—") + (kr.unit ? " " + kr.unit : "")}
       </td>

@@ -3939,6 +3939,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
                             <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
+                            {s.krUnit && <span style={{ fontSize: 10, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 6px" }}>{s.krUnit}</span>}
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
@@ -4823,6 +4824,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
                             <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
+                            {s.krUnit && <span style={{ fontSize: 10, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 6px" }}>{s.krUnit}</span>}
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
