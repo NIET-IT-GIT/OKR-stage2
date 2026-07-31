@@ -2068,11 +2068,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
         : currentFYMonthKey();
       const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
-      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
+      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", krIsMonthly: !!(kr.monthlyTargets), period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
       if (freshKrs.length && u.email) {
         const emailTemplates = settings?.emailTemplates || {};
         const template = { ...emailTemplates.default, ...(emailTemplates[period] || {}) };
-        const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr) }));
+        const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr), isMonthly: !!(kr.monthlyTargets) }));
         const userOverdue = (okrSubmissions || []).filter(s => s.memberId === u.id && s.answer === null && s.periodKey !== periodKey)
           .map(s => ({ krLabel: s.krLabel, period: s.period, dateRange: s.dateRange, periodKey: s.periodKey }));
         emailPromises.push(
@@ -4081,6 +4081,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
                             <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
                             {s.krUnit && <span style={{ fontSize: 10, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 6px" }}>{s.krUnit}</span>}
+                            {s.krIsMonthly && s.krType !== "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc", borderRadius: 5, padding: "1px 6px" }}>Monthly</span>}
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
@@ -4972,6 +4973,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
                             <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
                             {s.krUnit && <span style={{ fontSize: 10, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 6px" }}>{s.krUnit}</span>}
+                            {s.krIsMonthly && s.krType !== "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc", borderRadius: 5, padding: "1px 6px" }}>Monthly</span>}
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
