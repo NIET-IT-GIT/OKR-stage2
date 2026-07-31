@@ -11,8 +11,11 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 
-  const { to, name, period, periodKey, dateRange, krs, template = {}, overdueSubs = [] } = req.body || {};
-  if (!to || !krs?.length) { res.status(400).json({ error: "Missing required fields" }); return; }
+  const { to, name, period, periodKey, dateRange, krs, sections, template = {}, overdueSubs = [] } = req.body || {};
+
+  // Normalize to sections array — backward compat: old flat krs[] becomes a single section
+  const emailSections = sections?.length ? sections : (krs?.length ? [{ period, periodKey, dateRange, krs }] : null);
+  if (!to || !emailSections?.length) { res.status(400).json({ error: "Missing required fields" }); return; }
 
   const smtpUser = process.env.SMTP_USER;
   const smtpPass = process.env.SMTP_PASS;
@@ -33,24 +36,32 @@ export default async function handler(req, res) {
   });
 
   const PERIOD_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", biannual: "Bi-Annual", annual: "Annual" };
-  const periodLabel = PERIOD_LABELS[period] || period || "Monthly";
+
+  const uniquePeriods = [...new Set(emailSections.map(s => s.period).filter(Boolean))];
+  const isMultiPeriod = uniquePeriods.length > 1;
+  const periodLabel = isMultiPeriod
+    ? uniquePeriods.map(p => PERIOD_LABELS[p] || p).join(" & ")
+    : (PERIOD_LABELS[emailSections[0].period] || emailSections[0].period || "Monthly");
   const periodLower = periodLabel.toLowerCase();
+  const firstSection = emailSections[0];
 
   const resolveTmpl = (tpl, fallback) => {
     const v = template[tpl] || fallback;
     return v
       .replace(/\{periodLabel\}/g, periodLabel)
       .replace(/\{periodLower\}/g, periodLower)
-      .replace(/\{periodKey\}/g,   periodKey || "");
+      .replace(/\{periodKey\}/g, firstSection.periodKey || "");
   };
 
-  const fromName  = template.fromName || "NIET Group OKRs";
-  const subject   = resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-In — ${dateRange || periodKey || ""}`);
-  const bodyText  = resolveTmpl("body", `Here are your ${periodLower} KPI targets for <strong>${dateRange || periodKey || ""}</strong>.\nPlease log in to the portal and mark whether you have met each target.`);
-  const ctaText   = template.ctaText  || "Submit My Check-In →";
+  const fromName   = template.fromName || "NIET Group OKRs";
+  const subject    = isMultiPeriod
+    ? `Action Required: ${periodLabel} KPI Check-In`
+    : resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-In — ${firstSection.dateRange || firstSection.periodKey || ""}`);
+  const bodyText   = resolveTmpl("body", `Here are your ${periodLower} KPI targets.\nPlease log in to the portal and mark whether you have met each target.`);
+  const ctaText    = template.ctaText  || "Submit My Check-In →";
   const footerText = (template.footer || "You are receiving this because you have KPI targets in the NIET Group OKRs system.\nPlease do not reply to this email.").replace(/\n/g, "<br/>");
 
-  const krRows = krs.map(kr => `
+  const buildKrRows = (krs) => krs.map(kr => `
     <tr>
       <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:14px">${kr.label || "—"}${kr.type === "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Tracker</span>' : ""}${kr.isMonthly && kr.type !== "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Monthly</span>' : ""}</td>
       <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:14px;font-family:monospace">
@@ -58,6 +69,51 @@ export default async function handler(req, res) {
       </td>
       <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6e6e73">${kr.unit || "—"}</td>
     </tr>`).join("");
+
+  const TABLE_HEADER = `
+    <thead>
+      <tr style="background:#f5f5f7">
+        <th style="padding:8px 14px;text-align:left;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Key Result</th>
+        <th style="padding:8px 14px;text-align:right;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Performance Target</th>
+        <th style="padding:8px 14px;text-align:left;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Unit</th>
+      </tr>
+    </thead>`;
+
+  let krContent;
+  if (isMultiPeriod) {
+    krContent = emailSections.map(sec => {
+      const secLabel = PERIOD_LABELS[sec.period] || sec.period;
+      return `
+      <div style="margin-bottom:24px">
+        <div style="font-size:11px;font-weight:700;color:#0071e3;text-transform:uppercase;letter-spacing:0.07em;padding:7px 14px;background:#f0f7ff;border-left:3px solid #0071e3;border-radius:0 4px 4px 0;margin-bottom:6px">${secLabel} Check-In${sec.dateRange ? ` · <span style="font-weight:400;color:#444">${sec.dateRange}</span>` : ""}</div>
+        <table style="width:100%;border-collapse:collapse">
+          ${TABLE_HEADER}
+          <tbody>${buildKrRows(sec.krs)}</tbody>
+        </table>
+      </div>`;
+    }).join("");
+  } else {
+    krContent = `
+      ${firstSection.dateRange ? `<div style="background:#f0f7ff;border-left:4px solid #0071e3;padding:10px 14px;border-radius:4px;margin:0 0 20px;font-size:13px;color:#1d1d1f"><strong>Review period:</strong> ${firstSection.dateRange}</div>` : ""}
+      <table style="width:100%;border-collapse:collapse;margin:0 0 24px">
+        ${TABLE_HEADER}
+        <tbody>${buildKrRows(firstSection.krs)}</tbody>
+      </table>`;
+  }
+
+  const overdueBlock = overdueSubs.length > 0 ? `
+    <div style="background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin:0 0 20px">
+      <div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px">
+        &#9888; ${overdueSubs.length} Overdue Check-In${overdueSubs.length !== 1 ? "s" : ""} — Please respond
+      </div>
+      <div style="font-size:13px;color:#6e6e73;margin-bottom:10px">You also have unanswered check-ins from previous periods:</div>
+      <table style="width:100%;border-collapse:collapse">
+        ${overdueSubs.map(s => `<tr>
+          <td style="padding:5px 0;font-size:13px;color:#1d1d1f;border-bottom:1px solid #fed7aa">${s.krLabel || "—"}</td>
+          <td style="padding:5px 0;font-size:12px;color:#b45309;text-align:right;white-space:nowrap;border-bottom:1px solid #fed7aa">${(PERIOD_LABELS[s.period] || s.period) + (s.dateRange ? " · " + s.dateRange : "")}</td>
+        </tr>`).join("")}
+      </table>
+    </div>` : "";
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
@@ -70,30 +126,8 @@ export default async function handler(req, res) {
     <div style="padding:28px 32px">
       <p style="margin:0 0 18px;font-size:15px;color:#1d1d1f">Hi ${name || "there"},</p>
       <p style="margin:0 0 18px;font-size:14px;color:#6e6e73;line-height:1.6">${bodyText.replace(/\n/g, "<br/>")}</p>
-      ${dateRange ? `<div style="background:#f0f7ff;border-left:4px solid #0071e3;padding:10px 14px;border-radius:4px;margin:0 0 20px;font-size:13px;color:#1d1d1f"><strong>Review period:</strong> ${dateRange}</div>` : ""}
-      <table style="width:100%;border-collapse:collapse;margin:0 0 24px">
-        <thead>
-          <tr style="background:#f5f5f7">
-            <th style="padding:8px 14px;text-align:left;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Key Result</th>
-            <th style="padding:8px 14px;text-align:right;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Performance Target</th>
-            <th style="padding:8px 14px;text-align:left;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Unit</th>
-          </tr>
-        </thead>
-        <tbody>${krRows}</tbody>
-      </table>
-      ${overdueSubs.length > 0 ? `
-      <div style="background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin:0 0 20px">
-        <div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px">
-          &#9888; ${overdueSubs.length} Overdue Check-In${overdueSubs.length !== 1 ? "s" : ""} — Please respond
-        </div>
-        <div style="font-size:13px;color:#6e6e73;margin-bottom:10px">You also have unanswered check-ins from previous periods:</div>
-        <table style="width:100%;border-collapse:collapse">
-          ${overdueSubs.map(s => `<tr>
-            <td style="padding:5px 0;font-size:13px;color:#1d1d1f;border-bottom:1px solid #fed7aa">${s.krLabel || "—"}</td>
-            <td style="padding:5px 0;font-size:12px;color:#b45309;text-align:right;white-space:nowrap;border-bottom:1px solid #fed7aa">${(PERIOD_LABELS[s.period] || s.period) + (s.dateRange ? " · " + s.dateRange : "")}</td>
-          </tr>`).join("")}
-        </table>
-      </div>` : ""}
+      ${krContent}
+      ${overdueBlock}
       <a href="${appUrl}/member/checkin"
          style="display:inline-block;padding:12px 28px;background:#0071e3;color:#fff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600;letter-spacing:-0.01em">
         ${ctaText}
@@ -103,15 +137,17 @@ export default async function handler(req, res) {
   </div>
 </body></html>`;
 
+  const allKrs = emailSections.flatMap(s => s.krs);
   const plainText = [
     `Hi ${name || "there"},`,
     "",
     bodyText.replace(/<[^>]+>/g, ""),
-    dateRange ? `Review period: ${dateRange}` : "",
     "",
-    "YOUR KPI TARGETS",
-    "----------------",
-    krs.map(kr => `• ${kr.label || "—"}${kr.type !== "tracker" && kr.target != null ? `: ${kr.operator || ">="} ${kr.target}${kr.unit ? " " + kr.unit : ""}` : " (Tracker — record numbers only)"}`).join("\n"),
+    ...emailSections.flatMap(sec => {
+      const secLabel = PERIOD_LABELS[sec.period] || sec.period;
+      const lines = isMultiPeriod ? [`${secLabel.toUpperCase()} CHECK-IN${sec.dateRange ? " · " + sec.dateRange : ""}`, "-----------------------------"] : ["YOUR KPI TARGETS", "----------------"];
+      return [...lines, ...sec.krs.map(kr => `• ${kr.label || "—"}${kr.type !== "tracker" && kr.target != null ? `: ${kr.operator || ">="} ${kr.target}${kr.unit ? " " + kr.unit : ""}` : " (Tracker — record numbers only)"}`)];
+    }),
     "",
     ...(overdueSubs.length > 0 ? [
       `⚠ OVERDUE CHECK-INS (${overdueSubs.length})`,

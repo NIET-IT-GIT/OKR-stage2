@@ -1791,6 +1791,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [expandedPersonalMember, setExpandedPersonalMember] = useState(null);
   const [addPersonalKr, setAddPersonalKr] = useState(null);
   const [subPeriod, setSubPeriod] = useState("monthly");
+  const [checkinPeriods, setCheckinPeriods] = useState(["monthly"]);
   const [sendingCheckin, setSendingCheckin] = useState(false);
   const [checkinResult, setCheckinResult] = useState(null);
   const [checkinScope, setCheckinScope] = useState({ deptId: "", teamId: "", userId: "" });
@@ -1809,17 +1810,29 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     const key = `${log.id}:${recipient.email}`;
     setResendingEmail(key);
     const member = users.find(u => u.email === recipient.email);
-    const subs = (okrSubmissions || []).filter(s =>
-      s.memberId === member?.id && s.period === log.period && s.periodKey === log.periodKey
-    );
-    const krs = subs.map(s => ({ id: s.krId, label: s.krLabel, target: s.krTarget, unit: s.krUnit, type: s.krType, operator: s.krOperator }));
     const emailTemplates = settings?.emailTemplates || {};
-    const template = { ...emailTemplates.default, ...(emailTemplates[log.period] || {}) };
     try {
-      const res = await fetch("/api/send-email", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: recipient.email, name: recipient.name, period: log.period, periodKey: log.periodKey, dateRange: log.dateRange, krs, template }),
-      });
+      let payload;
+      const periods = log.periods || [log.period];
+      const template = periods.length === 1
+        ? { ...emailTemplates.default, ...(emailTemplates[periods[0]] || {}) }
+        : { ...emailTemplates.default };
+      if (periods.length > 1) {
+        const sections = periods.map(p => {
+          const pk = log.periodKeys?.[p] || log.periodKey;
+          const dr = log.dateRanges?.[p] || log.dateRange;
+          const subs = (okrSubmissions || []).filter(s => s.memberId === member?.id && s.period === p && s.periodKey === pk);
+          const krs = subs.map(s => ({ id: s.krId, label: s.krLabel, target: s.krTarget, unit: s.krUnit, type: s.krType, operator: s.krOperator, isMonthly: s.krIsMonthly }));
+          return { period: p, periodKey: pk, dateRange: dr, krs };
+        }).filter(sec => sec.krs.length > 0);
+        payload = { to: recipient.email, name: recipient.name, sections, template };
+      } else {
+        const p = periods[0];
+        const subs = (okrSubmissions || []).filter(s => s.memberId === member?.id && s.period === p && s.periodKey === log.periodKey);
+        const krs = subs.map(s => ({ id: s.krId, label: s.krLabel, target: s.krTarget, unit: s.krUnit, type: s.krType, operator: s.krOperator, isMonthly: s.krIsMonthly }));
+        payload = { to: recipient.email, name: recipient.name, period: p, periodKey: log.periodKey, dateRange: log.dateRange, krs, template };
+      }
+      const res = await fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
       dispatch({ type: "UPDATE_EMAIL_LOG_RECIPIENT", logId: log.id, email: recipient.email, success: data.ok, reason: data.ok ? null : (data.error || `HTTP ${res.status}`) });
     } catch (err) {
@@ -2023,64 +2036,82 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     return "All Departments";
   }
 
-  function previewCheckin(period, scope = {}) {
-    const periodKey = prevPeriodKey(period);
-    const dateRange = periodDateRange(period, periodKey);
-    const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
+  function previewCheckin(periods, scope = {}) {
+    const periodDataList = periods.map(period => {
+      const periodKey = prevPeriodKey(period);
+      const dateRange = periodDateRange(period, periodKey);
+      const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
+      return { period, periodKey, dateRange, existing };
+    });
     const userPool = resolveScopePool(scope);
     const recipients = [];
     for (const u of userPool) {
       const dept = depts.find(d => d.id === u.deptId);
       if (!dept) continue;
-      const krList = [];
-      dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
-      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
-      (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
-      if (!krList.length) continue;
-      const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
-      const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
-      if (!freshKrs.length) continue;
-      recipients.push({ user: u, dept, krs: freshKrs });
+      const userSections = [];
+      for (const { period, periodKey, dateRange, existing } of periodDataList) {
+        const krList = [];
+        dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+        dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
+        (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+        const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
+        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+        if (freshKrs.length) userSections.push({ period, periodKey, dateRange, krs: freshKrs });
+      }
+      if (!userSections.length) continue;
+      recipients.push({ user: u, dept, sections: userSections });
     }
-    setCheckinPreview({ period, scope, periodKey, dateRange, recipients });
+    setCheckinPreview({ periods, scope, recipients });
   }
 
-  async function sendCheckin(period, scope = {}) {
+  async function sendCheckin(periods, scope = {}) {
     setSendingCheckin(true);
-    const periodKey = prevPeriodKey(period);
-    const dateRange = periodDateRange(period, periodKey);
-    const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
+    let ctr = Date.now();
     const newSubs = [];
     const emailPromises = [];
-    let ctr = Date.now();
     const userPool = resolveScopePool(scope);
+    const periodDataList = periods.map(period => {
+      const periodKey = prevPeriodKey(period);
+      const dateRange = periodDateRange(period, periodKey);
+      const existing = new Set(okrSubmissions.filter(s => s.period === period && s.periodKey === periodKey).map(s => `${s.memberId}:${s.krId}`));
+      return { period, periodKey, dateRange, existing };
+    });
     for (const u of userPool) {
       const dept = depts.find(d => d.id === u.deptId);
       if (!dept) continue;
-      const krList = [];
-      dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
-      dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
-      (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
-      if (!krList.length) continue;
-      const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
-      const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
-      const monthKey = period === "monthly" ? periodKey
-        : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
-        : currentFYMonthKey();
-      const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
-      freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", krIsMonthly: !!(kr.monthlyTargets), period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
-      if (freshKrs.length && u.email) {
-        const emailTemplates = settings?.emailTemplates || {};
-        const template = { ...emailTemplates.default, ...(emailTemplates[period] || {}) };
+      const emailSections = [];
+      for (const { period, periodKey, dateRange, existing } of periodDataList) {
+        const krList = [];
+        dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+        dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
+        (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
+        if (!krList.length) continue;
+        const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
+        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+        if (!freshKrs.length) continue;
+        const monthKey = period === "monthly" ? periodKey
+          : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
+          : currentFYMonthKey();
+        const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
+        freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", krIsMonthly: !!(kr.monthlyTargets), period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
         const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr), isMonthly: !!(kr.monthlyTargets) }));
-        const userOverdue = (okrSubmissions || []).filter(s => s.memberId === u.id && s.answer === null && s.periodKey !== periodKey)
+        emailSections.push({ period, periodKey, dateRange, krs: krsForEmail });
+      }
+      if (emailSections.length && u.email) {
+        const emailTemplates = settings?.emailTemplates || {};
+        const template = periods.length === 1
+          ? { ...emailTemplates.default, ...(emailTemplates[periods[0]] || {}) }
+          : { ...emailTemplates.default };
+        const sendingPeriodKeys = periodDataList.map(pd => pd.periodKey);
+        const userOverdue = (okrSubmissions || []).filter(s => s.memberId === u.id && s.answer === null && !sendingPeriodKeys.includes(s.periodKey))
           .map(s => ({ krLabel: s.krLabel, period: s.period, dateRange: s.dateRange, periodKey: s.periodKey }));
+        const totalKrCount = emailSections.reduce((n, sec) => n + sec.krs.length, 0);
         emailPromises.push(
-          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, period, periodKey, dateRange, krs: krsForEmail, template, overdueSubs: userOverdue }) })
+          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, sections: emailSections, template, overdueSubs: userOverdue }) })
             .then(res => res.ok
-              ? { name: u.name, email: u.email, krCount: freshKrs.length, success: true }
-              : { name: u.name, email: u.email, krCount: freshKrs.length, success: false, reason: `HTTP ${res.status}` })
-            .catch(err => ({ name: u.name, email: u.email, krCount: freshKrs.length, success: false, reason: err.message || "Network error" }))
+              ? { name: u.name, email: u.email, krCount: totalKrCount, success: true }
+              : { name: u.name, email: u.email, krCount: totalKrCount, success: false, reason: `HTTP ${res.status}` })
+            .catch(err => ({ name: u.name, email: u.email, krCount: totalKrCount, success: false, reason: err.message || "Network error" }))
         );
       }
     }
@@ -2089,10 +2120,18 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     const emailOutcomes = await Promise.all(emailPromises);
     const emailFailures = emailOutcomes.filter(o => !o.success);
     if (emailOutcomes.length > 0 || newSubs.length > 0) {
+      const PERIOD_LABELS_L = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", biannual: "Bi-Annual", annual: "Annual" };
+      const periodKeys = Object.fromEntries(periodDataList.map(pd => [pd.period, pd.periodKey]));
+      const dateRanges = Object.fromEntries(periodDataList.map(pd => [pd.period, pd.dateRange]));
       dispatch({ type: "LOG_EMAIL_SEND", log: {
         id: `el_${Date.now().toString(36)}`,
         sentAt: new Date().toISOString(),
-        period, periodKey, dateRange,
+        periods,
+        period: periods.length === 1 ? periods[0] : periods.map(p => PERIOD_LABELS_L[p] || p).join("+"),
+        periodKeys,
+        periodKey: periods.length === 1 ? periodDataList[0].periodKey : periodDataList.map(pd => pd.periodKey).join("+"),
+        dateRanges,
+        dateRange: periods.length === 1 ? periodDataList[0].dateRange : periodDataList.map(pd => pd.dateRange).join(" + "),
         scope,
         submissionsCreated: newSubs.length,
         recipientCount: emailOutcomes.length,
@@ -2100,7 +2139,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         failureCount: emailFailures.length,
       }});
     }
-    setCheckinResult({ count: newSubs.length, memberCount, period, scope, emailFailures });
+    setCheckinResult({ count: newSubs.length, memberCount, periods, scope, emailFailures });
     setSendingCheckin(false);
     setTimeout(() => setCheckinResult(null), 8000);
   }
@@ -2109,25 +2148,23 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
       {checkinPreview && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div style={{ background: T.surface, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "100%", maxWidth: 580, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+          <div style={{ background: T.surface, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "100%", maxWidth: 620, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontWeight: 800, fontSize: 17 }}>Confirm: Send {checkinPreview.period.charAt(0).toUpperCase() + checkinPreview.period.slice(1)} Check-In</div>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>Confirm: Send {(checkinPreview.periods || [checkinPreview.period]).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" & ")} Check-In</div>
               <div style={{ fontSize: 12, color: T.textDim, marginTop: 5 }}>
-                <span>Period: <strong style={{ color: T.text }}>{checkinPreview.dateRange || checkinPreview.periodKey}</strong></span>
-                <span style={{ margin: "0 6px", color: T.border }}>·</span>
                 <span>To: <strong style={{ color: T.text }}>{scopeLabel(checkinPreview.scope || {})}</strong></span>
                 <span style={{ margin: "0 6px", color: T.border }}>·</span>
                 <span>{checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}</span>
                 <span style={{ margin: "0 6px", color: T.border }}>·</span>
-                <span>{checkinPreview.recipients.reduce((n, r) => n + r.krs.length, 0)} KRs total</span>
+                <span>{checkinPreview.recipients.reduce((n, r) => n + (r.sections ? r.sections.reduce((m, s) => m + s.krs.length, 0) : (r.krs?.length || 0)), 0)} KRs total</span>
               </div>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 24px" }}>
               {checkinPreview.recipients.length === 0 ? (
                 <div style={{ padding: "28px 0", color: T.textDim, fontSize: 13, textAlign: "center" }}>
-                  No new check-ins to send — all KRs for this period already have submissions.
+                  No new check-ins to send — all KRs for selected periods already have submissions.
                 </div>
-              ) : checkinPreview.recipients.map(({ user: u, dept, krs }) => (
+              ) : checkinPreview.recipients.map(({ user: u, dept, sections, krs }) => (
                 <div key={u.id} style={{ marginBottom: 10, padding: "10px 14px", borderRadius: 8, background: T.raised, border: `1px solid ${T.border}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
                     <Avatar letters={u.av || "?"} size={26} />
@@ -2136,20 +2173,29 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     <span style={{ fontSize: 11, color: T.textMuted, background: T.surface, borderRadius: 5, padding: "1px 7px", border: `1px solid ${T.border}` }}>{dept.name}</span>
                     {u.email && <span style={{ fontSize: 11, color: T.textDim }}>{u.email}</span>}
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {krs.map(kr => (
-                      <span key={kr.id} style={{ fontSize: 11, background: kr.type === "tracker" ? "#ede9fe" : T.surface, color: kr.type === "tracker" ? "#7c3aed" : T.text, border: `1px solid ${kr.type === "tracker" ? "#c4b5fd" : T.border}`, borderRadius: 6, padding: "2px 8px" }}>
-                        {kr.label}
-                      </span>
-                    ))}
-                  </div>
+                  {(sections || [{ period: checkinPreview.period, periodKey: checkinPreview.periodKey, dateRange: checkinPreview.dateRange, krs: krs || [] }]).map(sec => (
+                    <div key={sec.period} style={{ marginBottom: 5 }}>
+                      {(checkinPreview.periods || []).length > 1 && (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.brand, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
+                          {sec.period.charAt(0).toUpperCase() + sec.period.slice(1)} · {sec.dateRange || sec.periodKey}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {sec.krs.map(kr => (
+                          <span key={kr.id} style={{ fontSize: 11, background: kr.type === "tracker" ? "#ede9fe" : T.surface, color: kr.type === "tracker" ? "#7c3aed" : T.text, border: `1px solid ${kr.type === "tracker" ? "#c4b5fd" : T.border}`, borderRadius: 6, padding: "2px 8px" }}>
+                            {kr.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
             <div style={{ padding: "14px 24px", borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <Btn onClick={() => setCheckinPreview(null)}>Cancel</Btn>
               <Btn primary disabled={checkinPreview.recipients.length === 0}
-                onClick={() => { const { period, scope } = checkinPreview; setCheckinPreview(null); sendCheckin(period, scope); }}>
+                onClick={() => { const { periods, period, scope } = checkinPreview; setCheckinPreview(null); sendCheckin(periods || [period], scope); }}>
                 📨 Confirm &amp; Send to {checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}
               </Btn>
             </div>
@@ -2814,6 +2860,14 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   <Metric label="Approved" value={periodSubs.filter(s => s.approval === "approved").length} status="green" />
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  {/* Period checkboxes */}
+                  {["daily","weekly","monthly","quarterly","biannual","annual"].map(p => (
+                    <label key={p} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, cursor: "pointer", userSelect: "none", padding: "4px 9px", borderRadius: 7, border: `1px solid ${checkinPeriods.includes(p) ? T.brandBorder : T.border}`, background: checkinPeriods.includes(p) ? T.brandDim : T.surface, color: checkinPeriods.includes(p) ? T.brand : T.textDim }}>
+                      <input type="checkbox" checked={checkinPeriods.includes(p)} onChange={e => setCheckinPeriods(prev => e.target.checked ? [...prev, p] : prev.filter(x => x !== p))} style={{ accentColor: T.brand, margin: 0 }} />
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </label>
+                  ))}
+                  <div style={{ width: 1, height: 24, background: T.border, margin: "0 2px" }} />
                   {/* Dept */}
                   <select value={checkinScope.deptId}
                     onChange={e => setCheckinScope({ deptId: e.target.value, teamId: "", userId: "" })}
@@ -2851,8 +2905,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       </select>
                     );
                   })()}
-                  <Btn primary onClick={() => previewCheckin(subPeriod, checkinScope)} disabled={sendingCheckin}>
-                    {sendingCheckin ? "Sending…" : `📨 Send ${subPeriod.charAt(0).toUpperCase() + subPeriod.slice(1)} Check-In`}
+                  <Btn primary onClick={() => previewCheckin(checkinPeriods, checkinScope)} disabled={sendingCheckin || !checkinPeriods.length}>
+                    {sendingCheckin ? "Sending…" : `📨 Send ${checkinPeriods.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" & ")} Check-In`}
                   </Btn>
                 </div>
               </div>
@@ -2870,7 +2924,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                           </div>
                         )}
                       </div>
-                    : `⚠ No submissions created — no KRs found for this period. Check that KRs are configured with the "${checkinResult.period}" period.`}
+                    : `⚠ No submissions created — no KRs found for selected periods. Check that KRs are configured with the correct period.`}
                 </div>
               )}
               {/* Filter bar */}
@@ -2973,7 +3027,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                     </div>
                                   : s.approval !== "pending" && <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                       <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />
-                                      <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "" }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
+                                      <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "", answer: s.answer }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
                                     </div>}
                                 <button onClick={() => dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id })} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
                               </div>
@@ -3023,7 +3077,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                             )}
                             {editingApproved?.id === s.id && (
                               <div style={{ margin: "0 18px 10px 21px", padding: "10px 12px", background: T.raised, borderRadius: 7, border: `1px solid ${T.border}` }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Actual Value — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Submission — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
+                                {s.krType !== "tracker" && (
+                                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                                    <button onClick={() => setEditingApproved(p => ({ ...p, answer: "yes" }))} style={{ background: editingApproved.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingApproved.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "yes" ? T.ok : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
+                                    <button onClick={() => setEditingApproved(p => ({ ...p, answer: "no" }))} style={{ background: editingApproved.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingApproved.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "no" ? T.bad : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✗ No</button>
+                                  </div>
+                                )}
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                   <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                   <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
@@ -3032,7 +3092,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                 </div>
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
-                                  <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0 }); setEditingApproved(null); }}>Save</Btn>
+                                  <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0, answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
                                 </div>
                               </div>
                             )}
@@ -3060,7 +3120,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       <div key={log.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                         <div onClick={() => setExpandedLog(isOpen ? null : log.id)} style={{ display: "grid", gridTemplateColumns: "160px 80px 1fr 1fr 70px 70px 60px", gap: 8, padding: "8px 0", alignItems: "center", fontSize: 13, cursor: "pointer", background: i % 2 ? T.raised : "transparent", userSelect: "none" }}>
                           <span style={{ fontFamily: F.mono, fontSize: 12 }}>{new Date(log.sentAt).toLocaleString("en-AU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
-                          <span style={{ fontWeight: 600 }}>{PERIOD_LABELS[log.period] || log.period}</span>
+                          <span style={{ fontWeight: 600 }}>{log.periods && log.periods.length > 1 ? log.periods.map(p => PERIOD_LABELS[p] || p).join(" & ") : (PERIOD_LABELS[log.period] || log.period)}</span>
                           <span style={{ color: T.textMuted, fontSize: 12 }}>{log.dateRange || log.periodKey}</span>
                           <span style={{ color: T.textMuted, fontSize: 12 }}>{scopeLabel(log.scope || {})}</span>
                           <span style={{ textAlign: "right", fontFamily: F.mono }}>{log.recipientCount}</span>
@@ -4246,7 +4306,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                         </div>
                                       : <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                           <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />
-                                          <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "" }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
+                                          <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "", answer: s.answer }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
                                         </div>}
                                   </div>
                                 </div>
@@ -4293,7 +4353,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                 )}
                                 {editingApproved?.id === s.id && (
                                   <div style={{ margin: "0 16px 10px 19px", padding: "10px 12px", background: T.raised, borderRadius: 7, border: `1px solid ${T.border}` }}>
-                                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Actual Value — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Submission — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
+                                    {s.krType !== "tracker" && (
+                                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                                        <button onClick={() => setEditingApproved(p => ({ ...p, answer: "yes" }))} style={{ background: editingApproved.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingApproved.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "yes" ? T.ok : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
+                                        <button onClick={() => setEditingApproved(p => ({ ...p, answer: "no" }))} style={{ background: editingApproved.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingApproved.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "no" ? T.bad : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✗ No</button>
+                                      </div>
+                                    )}
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                       <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                       <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
@@ -4302,7 +4368,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     </div>
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
-                                      <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0 }); setEditingApproved(null); }}>Save</Btn>
+                                      <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0, answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
                                     </div>
                                   </div>
                                 )}
@@ -5396,7 +5462,7 @@ function appReducer(state, action) {
       const sub = (state.okrSubmissions || []).find(s => s.id === action.id);
       if (!sub) return state;
       const newActual = action.actualValue;
-      const newSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, actualValue: newActual } : s);
+      const newSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, actualValue: newActual, ...(action.answer !== undefined ? { answer: action.answer } : {}) } : s);
       if (sub.approval !== "approved") return { ...state, okrSubmissions: newSubs };
       const md = state.memberData[sub.memberId];
       if (!md) return { ...state, okrSubmissions: newSubs };
