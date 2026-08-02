@@ -3522,20 +3522,65 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                     </div>
                                     {group.map((kr, ki) => {
                                       const pct = krCompletion(kr); const st = getStatus(pct);
+                                      const isMonthly = !!(kr.monthlyTargets);
+                                      const mk = currentFYMonthKey();
+                                      const mTgt = isMonthly ? (Number(kr.monthlyTargets[mk]) || 0) : null;
+                                      const mAct = isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : null;
                                       return (
-                                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
-                                          <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
-                                          <div>
-                                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={kr.label}>{kr.label}</span>
-                                            {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                                        <div key={kr.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                                          <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", fontSize: 13 }}>
+                                            <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
+                                            <div>
+                                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={kr.label}>{kr.label}</span>
+                                              {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                                              {isMonthly && kr.type !== "tracker" && <span style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, padding: "1px 5px", display: "inline-block", marginLeft: 4 }}>Monthly</span>}
+                                            </div>
+                                            {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>N/A</span>
+                                              : isMonthly ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted, fontSize: 12 }}>{kr.operator || ">="} {fmt(mTgt)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                                              : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
+                                            {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
+                                              : isMonthly ? <Input value={mAct != null ? String(mAct) : ""} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: Number(e.target.value) || 0 } })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
+                                              : <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
+                                            {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
+                                            {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
+                                            <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
+                                              title="Delete this OKR"
+                                              style={{ background: "none", border: `1px solid ${T.badBorder || T.bad}`, borderRadius: 5, padding: "3px 6px", cursor: "pointer", color: T.bad, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
                                           </div>
-                                          {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
-                                          {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span> : <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
-                                          {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
-                                          {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
-                                          <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
-                                            title="Delete this OKR"
-                                            style={{ background: "none", border: `1px solid ${T.badBorder || T.bad}`, borderRadius: 5, padding: "3px 6px", cursor: "pointer", color: T.bad, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                                          {isMonthly && kr.type !== "tracker" && (
+                                            <div style={{ padding: "4px 10px 10px 60px", background: ki % 2 ? T.raised : "transparent" }}>
+                                              <div style={{ display: "grid", gridTemplateColumns: "76px 100px 100px 56px 1fr", gap: 6, padding: "4px 6px", fontSize: 10, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: `1px solid ${T.border}`, marginBottom: 2 }}>
+                                                <span>Month</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span />
+                                              </div>
+                                              {getFYMonths().map(({ key, label }) => {
+                                                const mt = Number(kr.monthlyTargets[key]) || 0;
+                                                const ma = (kr.monthlyActuals || {})[key];
+                                                const mp = ma != null ? (() => {
+                                                  const op = kr.operator || ">=";
+                                                  if (mt === 0) return (op === ">=" || op === ">") ? 100 : (ma <= 0 ? 100 : Math.min((1/(ma+1))*100, 99));
+                                                  switch (op) {
+                                                    case ">=": return Math.min((ma/mt)*100, 100);
+                                                    case ">":  return ma > mt ? 100 : Math.min((ma/mt)*100, 100);
+                                                    case "<=": return ma <= mt ? 100 : Math.min((mt/ma)*100, 100);
+                                                    case "<":  return ma < mt ? 100 : Math.min((mt/ma)*100, 100);
+                                                    case "=":  return ma === mt ? 100 : 0;
+                                                    default:   return Math.min((ma/mt)*100, 100);
+                                                  }
+                                                })() : null;
+                                                const ms = mp != null ? getStatus(mp) : null;
+                                                const isCurr = key === mk;
+                                                return (
+                                                  <div key={key} style={{ display: "grid", gridTemplateColumns: "76px 100px 100px 56px 1fr", gap: 6, padding: "2px 6px", alignItems: "center", fontSize: 12, borderRadius: 4, background: isCurr ? T.brandDim : "transparent" }}>
+                                                    <span style={{ fontWeight: isCurr ? 700 : 400, color: isCurr ? T.brand : T.textMuted }}>{label}</span>
+                                                    <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(mt)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                                                    <span style={{ textAlign: "right", fontFamily: F.mono, color: ma != null ? T.text : T.textDim }}>{ma != null ? fmt(ma) : "—"}</span>
+                                                    <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: ms ? STATUS_THEME[ms].color : T.textDim }}>{mp != null ? mp.toFixed(0) + "%" : "—"}</span>
+                                                    <Bar value={mp ?? 0} status={ms || "behind"} h={3} />
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
                                         </div>
                                       );
                                     })}
