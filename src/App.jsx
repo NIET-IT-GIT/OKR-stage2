@@ -4172,14 +4172,29 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 </div>
               )}
               {grouped.length === 0 && <EmptyState text="No check-ins yet. Admin will send them when due." />}
-              {grouped.map(({ period, pending, answered }) => (
+              {grouped.map(({ period, pending, answered }) => {
+                const byPK = {};
+                [...pending, ...answered].forEach(s => {
+                  if (!byPK[s.periodKey]) byPK[s.periodKey] = { pk: s.periodKey, dr: s.dateRange || "", p: [], a: [] };
+                  if (s.answer === null) byPK[s.periodKey].p.push(s); else byPK[s.periodKey].a.push(s);
+                });
+                const pkGroups = Object.values(byPK).sort((a, b) =>
+                  a.p.length > 0 && b.p.length === 0 ? -1 : a.p.length === 0 && b.p.length > 0 ? 1 : b.pk.localeCompare(a.pk));
+                return (
                 <div key={period} style={{ marginBottom: 28 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
                     <div style={{ width: 4, height: 18, background: PERIOD_COLORS[period], borderRadius: 2 }} />
                     <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-Ins</span>
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
-                  {pending.map(s => (
+                  {pkGroups.map(({ pk, dr, p: pkPending, a: pkAnswered }) => (
+                    <div key={pk} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", marginBottom: 8, borderRadius: 6, background: pkPending.length > 0 ? T.warnDim : T.raised, border: `1px solid ${pkPending.length > 0 ? T.warnBorder : T.border}` }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: pkPending.length > 0 ? T.warn : T.textMuted }}>{dr || pk}</span>
+                        {pkPending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{pkPending.length} pending</span>}
+                        {pkPending.length === 0 && <span style={{ fontSize: 11, color: T.ok }}>✓ All answered</span>}
+                      </div>
+                  {pkPending.map(s => (
                     <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
@@ -4192,7 +4207,6 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ fontSize: 12, color: T.textMuted }}>
                             {s.krType !== "tracker" && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
-                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
                         </div>
                         {s.krType === "tracker" ? (
@@ -4248,10 +4262,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       )}
                     </Card>
                   ))}
-                  {answered.length > 0 && (
-                    <div style={{ marginTop: pending.length ? 10 : 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Answered</div>
-                      {answered.slice(0, 10).map(s => (
+                  {pkAnswered.length > 0 && (
+                    <div style={{ marginTop: pkPending.length > 0 ? 6 : 0 }}>
+                      {pkAnswered.slice(0, 10).map(s => (
                         <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
@@ -4271,8 +4284,11 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       ))}
                     </div>
                   )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+                );
+              })}
             </Pane>
           </>);
         })()}
@@ -5070,14 +5086,29 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 </div>
               )}
               {grouped.length === 0 && <EmptyState text="No check-ins yet. Admin will send them when due." />}
-              {grouped.map(({ period, pending, answered }) => (
+              {grouped.map(({ period, pending, answered }) => {
+                const byPK = {};
+                [...pending, ...answered].forEach(s => {
+                  if (!byPK[s.periodKey]) byPK[s.periodKey] = { pk: s.periodKey, dr: s.dateRange || "", p: [], a: [] };
+                  if (s.answer === null) byPK[s.periodKey].p.push(s); else byPK[s.periodKey].a.push(s);
+                });
+                const pkGroups = Object.values(byPK).sort((a, b) =>
+                  a.p.length > 0 && b.p.length === 0 ? -1 : a.p.length === 0 && b.p.length > 0 ? 1 : b.pk.localeCompare(a.pk));
+                return (
                 <div key={period} style={{ marginBottom: 28 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
                     <div style={{ width: 4, height: 18, background: PERIOD_COLORS[period], borderRadius: 2 }} />
                     <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{period.charAt(0).toUpperCase() + period.slice(1)} Check-Ins</span>
                     {pending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pending.length} pending</span>}
                   </div>
-                  {pending.map(s => (
+                  {pkGroups.map(({ pk, dr, p: pkPending, a: pkAnswered }) => (
+                    <div key={pk} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", marginBottom: 8, borderRadius: 6, background: pkPending.length > 0 ? T.warnDim : T.raised, border: `1px solid ${pkPending.length > 0 ? T.warnBorder : T.border}` }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: pkPending.length > 0 ? T.warn : T.textMuted }}>{dr || pk}</span>
+                        {pkPending.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{pkPending.length} pending</span>}
+                        {pkPending.length === 0 && <span style={{ fontSize: 11, color: T.ok }}>✓ All answered</span>}
+                      </div>
+                  {pkPending.map(s => (
                     <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
@@ -5090,7 +5121,6 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ fontSize: 12, color: T.textMuted }}>
                             {s.krType !== "tracker" && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
-                            <span style={{ display: "block", marginTop: 3, fontSize: 14, fontWeight: 600, color: T.text }}>Review period: {s.dateRange || (s.period === "weekly" ? s.periodKey : periodDateRange(s.period, s.periodKey))}</span>
                           </div>
                         </div>
                         {s.krType === "tracker" ? (
@@ -5146,10 +5176,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       )}
                     </Card>
                   ))}
-                  {answered.length > 0 && (
-                    <div style={{ marginTop: pending.length ? 10 : 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Answered</div>
-                      {answered.slice(0, 10).map(s => (
+                  {pkAnswered.length > 0 && (
+                    <div style={{ marginTop: pkPending.length > 0 ? 6 : 0 }}>
+                      {pkAnswered.slice(0, 10).map(s => (
                         <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
@@ -5169,8 +5198,11 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       ))}
                     </div>
                   )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+                );
+              })}
             </Pane>
           </>);
         })()}
