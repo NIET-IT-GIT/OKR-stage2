@@ -1817,6 +1817,51 @@ Use specific numbers and names.
 Reply in the same language the user asks in (Chinese or English).
 Do not make up data — only use what's provided.`;
 
+  function buildChatContext() {
+    const { depts, memberData, okrSubmissions = [], monthlyReports = [], users } = state;
+    const today = new Date().toISOString().slice(0, 10);
+    const monthKey = today.slice(0, 7);
+    const members = users.filter(u => u.role === "member" || u.role === "manager");
+
+    const memberSummary = members.map(u => {
+      const kd = memberData[u.id] || { krs: [] };
+      const mySubs = okrSubmissions.filter(s => s.memberId === u.id && s.answer !== null);
+      const thisMonthSubs = mySubs.filter(s => s.periodKey?.startsWith(monthKey));
+      const pending = okrSubmissions.filter(s => s.memberId === u.id && s.answer === null).length;
+      const krRates = kd.krs.filter(kr => kr.type !== "tracker").map(kr => {
+        const krSubs = mySubs.filter(s => s.krId === kr.id);
+        if (!krSubs.length) return null;
+        return (krSubs.filter(s => s.answer === "yes").length / krSubs.length) * 100;
+      }).filter(r => r !== null);
+      const rate = krRates.length ? krRates.reduce((a, b) => a + b, 0) / krRates.length : null;
+      const dept = depts.find(d => d.id === u.deptId)?.name || "—";
+      return `${u.name} (${dept}): ${rate !== null ? rate.toFixed(1) + "% target met" : "no submissions"}, ${thisMonthSubs.length} check-ins this month${pending ? `, ${pending} pending` : ""}`;
+    }).join("\n");
+
+    const deptSummary = depts.map(d => {
+      const dm = members.filter(u => u.deptId === d.id);
+      const rates = dm.map(u => {
+        const kd = memberData[u.id] || { krs: [] };
+        const mySubs = okrSubmissions.filter(s => s.memberId === u.id && s.answer !== null);
+        const krRates = kd.krs.filter(kr => kr.type !== "tracker").map(kr => {
+          const ks = mySubs.filter(s => s.krId === kr.id);
+          return ks.length ? (ks.filter(s => s.answer === "yes").length / ks.length) * 100 : null;
+        }).filter(r => r !== null);
+        return krRates.length ? krRates.reduce((a, b) => a + b, 0) / krRates.length : null;
+      }).filter(r => r !== null);
+      const avg = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
+      return `${d.name}: ${avg !== null ? avg.toFixed(1) + "%" : "no data"} (${dm.length} members)`;
+    }).join("\n");
+
+    const latestReport = [...monthlyReports].sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""))[0];
+    return [
+      `[Today: ${today}, current FY month: ${monthKey}]`,
+      `\nDepartments:\n${deptSummary}`,
+      `\nMembers:\n${memberSummary}`,
+      latestReport ? `\nLatest report (${latestReport.month || latestReport.publishedDate}): company rate ${Number(latestReport.data?.companyRate).toFixed(1)}%` : "",
+    ].join("\n");
+  }
+
   async function sendChat(question) {
     const q = (question || chatInput).trim();
     if (!q || chatLoading) return;
@@ -1828,12 +1873,14 @@ Do not make up data — only use what's provided.`;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, userId: user.id, systemPrompt: customPrompt }),
+        body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext() }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
       setChatHistory(h => [...h, { role: "ai", text: data.answer || data.error || "No response." }]);
     } catch (err) {
-      setChatHistory(h => [...h, { role: "ai", text: `Error: ${err.message}` }]);
+      setChatHistory(h => [...h, { role: "ai", text: `错误: ${err.message}` }]);
     }
     setChatLoading(false);
   }
