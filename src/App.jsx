@@ -1900,61 +1900,82 @@ Do not make up data — only use what's provided.`;
 
   function buildChatContext() {
     const { depts, memberData, okrSubmissions = [], monthlyReports = [], users } = state;
-    const today = new Date().toISOString().slice(0, 10);
-    const monthKey = today.slice(0, 7);
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
+    // Match Company Overview monthly view: submissions sent in current calendar month, period in daily/weekly/monthly
+    const monthlyTypes = ["daily", "weekly", "monthly"];
+    const monthSubs = okrSubmissions.filter(s => {
+      if (!monthlyTypes.includes(s.period) || !s.sentAt) return false;
+      const d = new Date(s.sentAt);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    });
+    const nowMs = Date.now();
     const members = users.filter(u => u.role === "member" || u.role === "manager");
 
-    const memberSummary = members.map(u => {
+    // Per-member stats using calcMemberRate — identical to Company Overview deptRanks logic
+    const memberStats = members.map(u => {
       const kd = memberData[u.id] || { krs: [] };
-      const mySubs = okrSubmissions.filter(s => s.memberId === u.id && s.answer !== null);
-      const pending = okrSubmissions.filter(s => s.memberId === u.id && s.answer === null).length;
+      const krs = kd.krs.filter(kr => monthlyTypes.includes(kr.period || "monthly"));
       const dept = depts.find(d => d.id === u.deptId)?.name || "—";
-
-      const krRates = kd.krs.filter(kr => kr.type !== "tracker").map(kr => {
-        const krSubs = mySubs.filter(s => s.krId === kr.id);
-        if (!krSubs.length) return null;
-        return (krSubs.filter(s => s.answer === "yes").length / krSubs.length) * 100;
-      }).filter(r => r !== null);
-      const rate = krRates.length ? krRates.reduce((a, b) => a + b, 0) / krRates.length : null;
-
+      // Eligible = has at least one answered or overdue-unanswered submission this month (non-tracker only)
+      const hasEligible = krs.filter(kr => kr.type !== "tracker").some(kr => {
+        const krSubs = monthSubs.filter(s => s.memberId === u.id && s.krId === kr.id);
+        if (!krSubs.length) return false;
+        if (krSubs.some(s => s.answer !== null)) return true;
+        const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
+        return latest && (nowMs - new Date(latest.sentAt).getTime()) >= 86400000;
+      });
+      const rate = hasEligible ? calcMemberRate(u.id, krs, monthSubs) : null;
+      const status = rate !== null ? getStatus(rate) : "no data";
+      const answered = monthSubs.filter(s => s.memberId === u.id && s.answer !== null).length;
+      const pending = monthSubs.filter(s => s.memberId === u.id && s.answer === null).length;
       const trackerLines = kd.krs.filter(kr => kr.type === "tracker").map(kr => {
-        const krSubs = mySubs
-          .filter(s => s.krId === kr.id)
-          .sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""))
-          .slice(0, 4);
+        const krSubs = okrSubmissions.filter(s => s.memberId === u.id && s.krId === kr.id)
+          .sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || "")).slice(0, 3);
         if (!krSubs.length) return null;
         const entries = krSubs.map(s => `${s.actualValue ?? 0}${kr.unit ? " " + kr.unit : ""} (${s.dateRange || s.periodKey})`).join(", ");
-        return `    - ${kr.label}: ${entries}`;
+        return `    Tracker — ${kr.label}: ${entries}`;
       }).filter(Boolean);
+      return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines };
+    });
 
-      let line = `${u.name} (${dept}, ${u.role}):`;
-      line += `\n  Target met rate: ${rate !== null ? rate.toFixed(1) + "%" : "no non-tracker KRs"}`;
-      if (trackerLines.length) line += `\n  Tracker KRs (recent recorded values):\n${trackerLines.join("\n")}`;
-      if (pending) line += `\n  Pending check-ins: ${pending}`;
+    // Dept rates = average of eligible member rates (same as Company Overview deptRanks)
+    const deptStats = depts.map(d => {
+      const dm = memberStats.filter(m => members.find(u => u.id === m.id)?.deptId === d.id);
+      const eligible = dm.filter(m => m.hasEligible);
+      const rate = eligible.length ? eligible.reduce((s, m) => s + m.rate, 0) / eligible.length : null;
+      return { name: d.name, rate, status: rate !== null ? getStatus(rate) : "no data", total: dm.length, eligible: eligible.length };
+    }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+
+    // Company rate = average of depts with data (same as Company Overview compRate)
+    const deptsWithData = deptStats.filter(d => d.rate !== null);
+    const compRate = deptsWithData.length ? deptsWithData.reduce((s, d) => s + d.rate, 0) / deptsWithData.length : null;
+
+    const deptSection = deptStats.map(d =>
+      `  ${d.name}: ${d.rate !== null ? d.rate.toFixed(1) + "% [" + d.status + "]" : "no data"} (${d.eligible}/${d.total} members with submissions)`
+    ).join("\n");
+
+    const memberSection = memberStats.map(m => {
+      let line = `  ${m.name} (${m.dept}, ${m.role}): ${m.rate !== null ? m.rate.toFixed(1) + "% [" + m.status + "]" : "no data this month"}`;
+      if (m.answered || m.pending) line += ` — ${m.answered} answered, ${m.pending} awaiting`;
+      else line += ` — no check-ins sent this month`;
+      if (m.trackerLines.length) line += "\n" + m.trackerLines.join("\n");
       return line;
-    }).join("\n\n");
-
-    const deptSummary = depts.map(d => {
-      const dm = members.filter(u => u.deptId === d.id);
-      const rates = dm.map(u => {
-        const kd = memberData[u.id] || { krs: [] };
-        const mySubs = okrSubmissions.filter(s => s.memberId === u.id && s.answer !== null);
-        const krRates = kd.krs.filter(kr => kr.type !== "tracker").map(kr => {
-          const ks = mySubs.filter(s => s.krId === kr.id);
-          return ks.length ? (ks.filter(s => s.answer === "yes").length / ks.length) * 100 : null;
-        }).filter(r => r !== null);
-        return krRates.length ? krRates.reduce((a, b) => a + b, 0) / krRates.length : null;
-      }).filter(r => r !== null);
-      const avg = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
-      return `${d.name}: ${avg !== null ? avg.toFixed(1) + "%" : "no data"} (${dm.length} members)`;
     }).join("\n");
 
     const latestReport = [...monthlyReports].sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""))[0];
+    const reportSection = latestReport
+      ? [`LATEST PUBLISHED REPORT (${latestReport.month || latestReport.publishedDate}): company rate ${Number(latestReport.data?.companyRate).toFixed(1)}%`,
+         ...(latestReport.data?.deptRanks?.length ? ["  Dept breakdown: " + latestReport.data.deptRanks.map(d => `${d.name} ${Number(d.rate).toFixed(1)}%`).join(", ")] : [])
+        ].join("\n")
+      : "";
+
     return [
-      `[Today: ${today}, current FY month: ${monthKey}]`,
-      `\nDepartment summary:\n${deptSummary}`,
-      `\nMember details:\n${memberSummary}`,
-      latestReport ? `\nLatest report (${latestReport.month || latestReport.publishedDate}): company rate ${Number(latestReport.data?.companyRate).toFixed(1)}%` : "",
+      `[Today: ${today} | Month: ${monthLabel} | Company completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
+      `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
+      `\nMEMBER DETAILS (current month):\n${memberSection}`,
+      reportSection ? `\n${reportSection}` : "",
     ].join("\n");
   }
 
