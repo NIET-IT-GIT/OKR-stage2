@@ -2031,7 +2031,7 @@ Do not make up data — only use what's provided.`;
     { id: "leaderboard",      icon: "▲", label: "Leaderboard"       },
     { id: "users",            icon: "⊹", label: "User Management"   },
     { id: "email-templates",  icon: "✦", label: "Email Templates"   },
-    { id: "ai-chat",          icon: "⬡", label: "AI Assistant"      },
+    { id: "ai-chat",          icon: "⬡", label: "NIET Pilot"        },
   ];
   const deptSubItems = [
     { id: "__all__",   label: "All Departments", icon: "⊕" },
@@ -4023,7 +4023,7 @@ Do not make up data — only use what's provided.`;
           ];
           return (
             <div style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 820, margin: "0 auto" }}>
-              <Header title="AI Assistant" sub="Ask questions about your OKR data"
+              <Header title="NIET Pilot" sub="Ask questions about your OKR data"
                 right={<Btn small onClick={() => setChatPromptOpen(o => !o)}>{chatPromptOpen ? "Hide System Prompt" : "Edit System Prompt"}</Btn>} />
               {chatPromptOpen && (() => {
                 const saved = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
