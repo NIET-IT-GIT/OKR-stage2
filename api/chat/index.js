@@ -1,6 +1,6 @@
-const https = require("https");
+import https from "https";
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -11,6 +11,7 @@ module.exports = async (req, res) => {
   if (typeof parsed === "string") { try { parsed = JSON.parse(parsed); } catch { parsed = {}; } }
   if (!parsed || typeof parsed !== "object") parsed = {};
   const { question, systemPrompt, contextData } = parsed;
+
   if (!question) return res.status(400).json({ error: "missing question" });
 
   const apiKey = process.env.CLAUDE_API_KEY;
@@ -22,7 +23,7 @@ module.exports = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-};
+}
 
 function callClaude(apiKey, systemPrompt, contextData, question) {
   const system = systemPrompt || "You are an OKR analytics assistant. Answer questions based on the provided data. Be concise and use specific numbers. Reply in the same language as the question.";
