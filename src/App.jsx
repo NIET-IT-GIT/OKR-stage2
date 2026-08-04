@@ -1805,6 +1805,40 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [adminOkrPeriod, setAdminOkrPeriod] = useState("all");
   const [expandedLog, setExpandedLog] = useState(null);
   const [resendingEmail, setResendingEmail] = useState(null); // `${logId}:${email}`
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatPromptOpen, setChatPromptOpen] = useState(false);
+  const chatEndRef = useRef(null);
+
+  const DEFAULT_CHAT_PROMPT = `You are an OKR analytics assistant for NIET (National Institute for Excellence in Teaching).
+Answer questions concisely based on the provided OKR data.
+Use specific numbers and names.
+Reply in the same language the user asks in (Chinese or English).
+Do not make up data — only use what's provided.`;
+
+  async function sendChat(question) {
+    const q = (question || chatInput).trim();
+    if (!q || chatLoading) return;
+    setChatInput("");
+    setChatHistory(h => [...h, { role: "user", text: q }]);
+    setChatLoading(true);
+    const customPrompt = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, userId: user.id, systemPrompt: customPrompt }),
+      });
+      const data = await res.json();
+      setChatHistory(h => [...h, { role: "ai", text: data.answer || data.error || "No response." }]);
+    } catch (err) {
+      setChatHistory(h => [...h, { role: "ai", text: `Error: ${err.message}` }]);
+    }
+    setChatLoading(false);
+  }
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory, chatLoading]);
 
   async function resendEmail(log, recipient) {
     const key = `${log.id}:${recipient.email}`;
@@ -1854,6 +1888,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     { id: "leaderboard",      icon: "▲", label: "Leaderboard"       },
     { id: "users",            icon: "⊹", label: "User Management"   },
     { id: "email-templates",  icon: "✦", label: "Email Templates"   },
+    { id: "ai-chat",          icon: "⬡", label: "AI Assistant"      },
   ];
   const deptSubItems = [
     { id: "__all__",   label: "All Departments", icon: "⊕" },
@@ -1909,10 +1944,20 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       if (!kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
       return calcMemberRate(u.id, kd.krs, rptSubs);
     }).filter(r => r !== null);
-    const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
-    return { name: d.name, rate, status: getStatus(rate) };
+    const hasData = rates.length > 0;
+    const rate = hasData ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0;
+    return { name: d.name, rate, hasData, status: getStatus(rate) };
   }).sort((a, b) => b.rate - a.rate);
-  const rptCompRate = rptDeptRanks.length ? rptDeptRanks.reduce((a, d) => a + d.rate, 0) / rptDeptRanks.length : 0;
+  const rptActiveDepts = rptDeptRanks.filter(d => d.hasData);
+  const rptCompRate = rptActiveDepts.length ? Math.round(rptActiveDepts.reduce((a, d) => a + d.rate, 0) / rptActiveDepts.length * 10) / 10 : 0;
+  const rptMembers = users
+    .filter(u => u.role === "member" || u.role === "manager")
+    .map(u => {
+      const kd = memberData[u.id] || { krs: [] };
+      const hasData = kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id));
+      const rate = hasData ? calcMemberRate(u.id, kd.krs, rptSubs) : 0;
+      return { ...u, rate, hasData, status: getStatus(rate) };
+    }).sort((a, b) => b.rate - a.rate);
   const allMembers = users
     .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
@@ -3207,12 +3252,6 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 if (state.monthlyReports.some(r => r.month === currentMonth())) {
                   if (!window.confirm(`A report for ${currentMonth()} already exists. Publish another?`)) return;
                 }
-                const rptMembers = users.filter(u => u.role === "member" || u.role === "manager").map(u => {
-                  const kd = memberData[u.id] || { krs: [] };
-                  const hasData = kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id));
-                  const rate = hasData ? calcMemberRate(u.id, kd.krs, rptSubs) : 0;
-                  return { ...u, rate, hasData, status: getStatus(rate) };
-                }).sort((a, b) => b.rate - a.rate);
                 const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
                   reportType: "monthly",
                   notes: "",
@@ -3249,8 +3288,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     }
                     const allAnswered = (state.okrSubmissions || []).filter(s => {
                       if (s.answer === null) return false;
-                      if (genPeriod.from && s.sentAt && s.sentAt < genPeriod.from) return false;
-                      if (genPeriod.to && s.sentAt && s.sentAt > genPeriod.to + "T23:59:59") return false;
+                      if (genPeriod.from && s.sentAt && s.sentAt.slice(0, 10) < genPeriod.from) return false;
+                      if (genPeriod.to && s.sentAt && s.sentAt.slice(0, 10) > genPeriod.to) return false;
                       return true;
                     });
                     const gSubRate = allAnswered.length > 0 ? Math.round((allAnswered.filter(s => s.answer === "yes").length / allAnswered.length) * 1000) / 10 : 0;
@@ -3261,10 +3300,12 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                         if (!kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
                         return calcMemberRate(u.id, kd.krs, allAnswered);
                       }).filter(r => r !== null);
-                      const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
-                      return { name: d.name, rate, status: getStatus(rate) };
+                      const hasData = rates.length > 0;
+                      const rate = hasData ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0;
+                      return { name: d.name, rate, hasData, status: getStatus(rate) };
                     }).sort((a, b) => b.rate - a.rate);
-                    const gCompRate = gDeptRanks.length ? gDeptRanks.reduce((a, d) => a + d.rate, 0) / gDeptRanks.length : 0;
+                    const gActiveDepts = gDeptRanks.filter(d => d.hasData);
+                    const gCompRate = gActiveDepts.length ? Math.round(gActiveDepts.reduce((a, d) => a + d.rate, 0) / gActiveDepts.length * 10) / 10 : 0;
                     const gMembers = users.filter(u => u.role === "member" || u.role === "manager").map(u => {
                       const kd = memberData[u.id] || { krs: [] };
                       const hasData = kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id));
@@ -3298,9 +3339,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             <Card style={{ padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>Current Data Preview — what will be published</div>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                <div><span style={{ color: T.textMuted }}>Submission rate ({currentMonth()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
-                <div><span style={{ color: T.textMuted }}>Top performers: </span>{allMembers.slice(0, 3).map(m => m.name).join(", ") || "—"}</div>
-                <div><span style={{ color: T.textMuted }}>Needs attention: </span>{allMembers.filter(m => m.status === "red").length > 0 ? allMembers.filter(m => m.status === "red").map(m => m.name).join(", ") : "None"}</div>
+                <div><span style={{ color: T.textMuted }}>Target met rate ({currentMonth()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
+                <div><span style={{ color: T.textMuted }}>Top performers: </span>{rptMembers.filter(m => m.hasData).slice(0, 3).map(m => m.name).join(", ") || "—"}</div>
+                <div><span style={{ color: T.textMuted }}>Needs attention: </span>{rptMembers.filter(m => m.hasData && m.status === "red").map(m => m.name).join(", ") || "None"}</div>
               </div>
             </Card>
             {(() => {
@@ -3317,7 +3358,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""} · Visible to all teams</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                      <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
                       <Btn small onClick={() => { setEditReportId(r.id); setEditReportForm({ month: r.month, notes: r.notes || "" }); }}>Edit</Btn>
                       <button onClick={() => { if (window.confirm(`Delete report "${r.month}"? This cannot be undone.`)) dispatch({ type: "REMOVE_REPORT", reportId: r.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete report">✕</button>
                     </div>
@@ -3343,13 +3384,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14 }}>
                             <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
                             <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                            <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+                            <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
                             <Tag type={d.status} small />
                           </div>
                         ))}
                         {r.submissionRate != null && (
                           <div style={{ marginTop: 12 }}>
-                            <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Submission rate: {r.submissionRate}%</span>
+                            <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Target met rate: {r.submissionRate}%</span>
                           </div>
                         )}
                         {r.notes && <div style={{ marginTop: 12, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
@@ -3827,6 +3868,113 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             </div>
           </div>
         )}
+
+        {page === "ai-chat" && (() => {
+          const SUGGESTIONS = [
+            "本月哪个部门完成率最低？",
+            "哪些成员还没提交本月 check-in？",
+            "本月完成率最高的前3名成员是谁？",
+            "有多少成员状态是红色（需要关注）？",
+            "各部门平均完成率分别是多少？",
+            "最近提交最活跃的成员是谁？",
+          ];
+          return (
+            <div style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 820, margin: "0 auto" }}>
+              <Header title="AI Assistant" sub="向 AI 提问，直接查询 OKR 数据"
+                right={<Btn small onClick={() => setChatPromptOpen(o => !o)}>{chatPromptOpen ? "收起 System Prompt" : "编辑 System Prompt"}</Btn>} />
+              {chatPromptOpen && (() => {
+                const saved = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
+                return (
+                  <div style={{ margin: "0 32px 0", padding: "14px 18px", background: T.raised, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>System Prompt</div>
+                    <textarea
+                      key="sysPrompt"
+                      defaultValue={saved}
+                      rows={6}
+                      id="chatSysPromptTA"
+                      style={{ width: "100%", padding: "9px 12px", fontSize: 13, fontFamily: F.mono, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", resize: "vertical", lineHeight: 1.55, boxSizing: "border-box" }}
+                      onFocus={e => e.target.style.borderColor = T.borderFocus}
+                      onBlur={e => e.target.style.borderColor = T.border}
+                    />
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end", alignItems: "center" }}>
+                      <button onClick={() => { document.getElementById("chatSysPromptTA").value = DEFAULT_CHAT_PROMPT; }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>重置为默认</button>
+                      <Btn small primary onClick={() => {
+                        const val = document.getElementById("chatSysPromptTA").value.trim();
+                        if (val) { dispatch({ type: "SET_SETTINGS", updates: { aiChatPrompt: val } }); setChatPromptOpen(false); }
+                      }}>保存</Btn>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div style={{ flex: 1, overflowY: "auto", padding: "20px 32px 0" }}>
+                {chatHistory.length === 0 && (
+                  <div style={{ paddingTop: 20 }}>
+                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>建议问题</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {SUGGESTIONS.map(s => (
+                        <button key={s} onClick={() => sendChat(s)}
+                          style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 20, padding: "7px 14px", fontSize: 13, color: T.textSoft, cursor: "pointer", fontFamily: F.body }}
+                          onMouseEnter={e => e.currentTarget.style.background = T.brandDim}
+                          onMouseLeave={e => e.currentTarget.style.background = T.raised}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {chatHistory.map((msg, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 14, marginTop: i === 0 ? 20 : 0 }}>
+                    {msg.role === "ai" && (
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginRight: 10, marginTop: 2 }}>AI</div>
+                    )}
+                    <div style={{
+                      maxWidth: "72%", padding: "10px 16px",
+                      borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                      background: msg.role === "user" ? T.brand : T.raised,
+                      color: msg.role === "user" ? "#fff" : T.text,
+                      fontSize: 14, lineHeight: 1.65,
+                      border: msg.role === "ai" ? `1px solid ${T.border}` : "none",
+                      whiteSpace: "pre-wrap",
+                    }}>{msg.text}</div>
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 14 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginRight: 10, marginTop: 2 }}>AI</div>
+                    <div style={{ padding: "12px 18px", borderRadius: "18px 18px 18px 4px", background: T.raised, border: `1px solid ${T.border}`, display: "flex", gap: 5, alignItems: "center" }}>
+                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.textDim, opacity: 0.5 }} />
+                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.textDim, opacity: 0.7 }} />
+                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.textDim }} />
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              <div style={{ padding: "16px 32px 24px", borderTop: `1px solid ${T.border}`, background: T.bg }}>
+                {chatHistory.length > 0 && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                    <button onClick={() => setChatHistory([])} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>清除对话</button>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                  <textarea
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                    placeholder="输入问题，按 Enter 发送…"
+                    rows={2}
+                    style={{ flex: 1, padding: "10px 14px", fontSize: 14, fontFamily: F.body, background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 12, color: T.text, outline: "none", resize: "none", lineHeight: 1.5 }}
+                    onFocus={e => e.target.style.borderColor = T.borderFocus}
+                    onBlur={e => e.target.style.borderColor = T.border}
+                  />
+                  <Btn primary disabled={!chatInput.trim() || chatLoading} onClick={() => sendChat()}>发送</Btn>
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11, color: T.textDim, textAlign: "center" }}>回答基于当前 OKR 数据 · 仅限管理员</div>
+              </div>
+            </div>
+          );
+        })()}
+
         {syncNote && (
           <div style={{ position: "fixed", bottom: 28, right: 28, zIndex: 1100, background: T.ok, color: "#fff", borderRadius: 12, padding: "14px 22px", boxShadow: "0 6px 28px rgba(0,0,0,0.22)", display: "flex", alignItems: "center", gap: 12, fontSize: 14, fontWeight: 600, minWidth: 280 }}>
             <span style={{ fontSize: 20 }}>✓</span>
@@ -4632,7 +4780,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       </div>
                       <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""}</div>
                     </div>
-                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
                   </div>
                   <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                     <div>
@@ -4641,13 +4789,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
                           <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
                           <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
                           <Tag type={d.status} small />
                         </div>
                       ))}
                       {r.submissionRate != null && (
                         <div style={{ marginTop: 10 }}>
-                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Submission rate: {r.submissionRate}%</span>
+                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Target met rate: {r.submissionRate}%</span>
                         </div>
                       )}
                       {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
@@ -5326,7 +5474,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       </div>
                       <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate} · Visible to everyone</div>
                     </div>
-                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${r.data.companyRate}%`} />
+                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
                   </div>
                   <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                     <div>
@@ -5335,12 +5483,12 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
                           <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
                           <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{d.rate}%</span>
+                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
                         </div>
                       ))}
                       {r.submissionRate != null && (
                         <div style={{ marginTop: 10 }}>
-                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Submission rate: {r.submissionRate}%</span>
+                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Target met rate: {r.submissionRate}%</span>
                         </div>
                       )}
                       {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
