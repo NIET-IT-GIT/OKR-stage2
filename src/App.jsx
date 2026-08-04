@@ -4014,104 +4014,107 @@ Do not make up data — only use what's provided.`;
 
         {page === "ai-chat" && (() => {
           const SUGGESTIONS = [
-            "Which department has the lowest completion rate this month?",
-            "Which members haven't submitted their check-in this month?",
-            "Who are the top 3 performers this month?",
-            "How many members are in red status (needs attention)?",
-            "What is the average completion rate for each department?",
-            "Which members have been most active in submissions recently?",
+            { icon: "📊", text: "Which department has the lowest completion rate this month?" },
+            { icon: "📋", text: "Which members haven't submitted their check-in this month?" },
+            { icon: "🏆", text: "Who are the top 3 performers this month?" },
+            { icon: "🔴", text: "How many members are in red status (needs attention)?" },
+            { icon: "📈", text: "What is the average completion rate for each department?" },
+            { icon: "⚡", text: "Which members have been most active in submissions recently?" },
           ];
+          const NP_AVATAR = (
+            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0071E3,#6B47DC)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0, letterSpacing: "0.02em", boxShadow: "0 2px 8px rgba(0,113,227,0.35)" }}>NP</div>
+          );
           return (
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 820, margin: "0 auto" }}>
-              <Header title="NIET Pilot" sub="Ask questions about your OKR data"
-                right={<Btn small onClick={() => setChatPromptOpen(o => !o)}>{chatPromptOpen ? "Hide System Prompt" : "Edit System Prompt"}</Btn>} />
+            <div style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 860, margin: "0 auto" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 32px 14px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0071E3,#6B47DC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 800, letterSpacing: "0.02em", boxShadow: "0 2px 10px rgba(0,113,227,0.3)" }}>NP</div>
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.01em" }}>NIET Pilot</div>
+                    <div style={{ fontSize: 12, color: T.textMuted, marginTop: 1 }}>AI-powered OKR analytics</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {chatHistory.length > 0 && <button onClick={() => setChatHistory([])} style={{ background: "none", border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 12, color: T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>Clear chat</button>}
+                  <button onClick={() => setChatPromptOpen(o => !o)} style={{ background: chatPromptOpen ? T.brandDim : "none", border: `1px solid ${chatPromptOpen ? T.brandBorder : T.border}`, cursor: "pointer", fontSize: 12, color: chatPromptOpen ? T.brand : T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>⚙ System Prompt</button>
+                </div>
+              </div>
               {chatPromptOpen && (() => {
                 const saved = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
                 return (
-                  <div style={{ margin: "0 32px 0", padding: "14px 18px", background: T.raised, border: `1px solid ${T.border}`, borderRadius: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>System Prompt</div>
-                    <textarea
-                      key="sysPrompt"
-                      defaultValue={saved}
-                      rows={6}
-                      id="chatSysPromptTA"
-                      style={{ width: "100%", padding: "9px 12px", fontSize: 13, fontFamily: F.mono, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", resize: "vertical", lineHeight: 1.55, boxSizing: "border-box" }}
-                      onFocus={e => e.target.style.borderColor = T.borderFocus}
-                      onBlur={e => e.target.style.borderColor = T.border}
-                    />
+                  <div style={{ margin: "12px 32px 0", padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>System Prompt</div>
+                    <textarea key="sysPrompt" defaultValue={saved} rows={5} id="chatSysPromptTA"
+                      style={{ width: "100%", padding: "9px 12px", fontSize: 13, fontFamily: F.mono, background: T.surface, border: `1px solid ${T.brandBorder}`, borderRadius: 8, color: T.text, outline: "none", resize: "vertical", lineHeight: 1.55, boxSizing: "border-box" }}
+                      onFocus={e => e.target.style.borderColor = T.borderFocus} onBlur={e => e.target.style.borderColor = T.brandBorder} />
                     <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end", alignItems: "center" }}>
                       <button onClick={() => { document.getElementById("chatSysPromptTA").value = DEFAULT_CHAT_PROMPT; }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>Reset to default</button>
-                      <Btn small primary onClick={() => {
-                        const val = document.getElementById("chatSysPromptTA").value.trim();
-                        if (val) { dispatch({ type: "SET_SETTINGS", updates: { aiChatPrompt: val } }); setChatPromptOpen(false); }
-                      }}>保存</Btn>
+                      <Btn small primary onClick={() => { const val = document.getElementById("chatSysPromptTA").value.trim(); if (val) { dispatch({ type: "SET_SETTINGS", updates: { aiChatPrompt: val } }); setChatPromptOpen(false); } }}>Save</Btn>
                     </div>
                   </div>
                 );
               })()}
-              <div style={{ flex: 1, overflowY: "auto", padding: "20px 32px 0" }}>
+              <div style={{ flex: 1, overflowY: "auto", padding: "0 32px" }}>
                 {chatHistory.length === 0 && (
-                  <div style={{ paddingTop: 20 }}>
-                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Suggested questions</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ paddingTop: 40, paddingBottom: 24 }}>
+                    <div style={{ textAlign: "center", marginBottom: 40 }}>
+                      <div style={{ width: 64, height: 64, borderRadius: 18, background: "linear-gradient(135deg,#0071E3,#6B47DC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, fontWeight: 800, margin: "0 auto 16px", boxShadow: "0 8px 28px rgba(0,113,227,0.3)" }}>NP</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", marginBottom: 8 }}>NIET Pilot</div>
+                      <div style={{ fontSize: 14, color: T.textMuted, maxWidth: 380, margin: "0 auto", lineHeight: 1.6 }}>Ask anything about your organisation’s OKR performance — completions, trends, member progress, and more.</div>
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>Try asking</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       {SUGGESTIONS.map(s => (
-                        <button key={s} onClick={() => sendChat(s)}
-                          style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 20, padding: "7px 14px", fontSize: 13, color: T.textSoft, cursor: "pointer", fontFamily: F.body }}
-                          onMouseEnter={e => e.currentTarget.style.background = T.brandDim}
-                          onMouseLeave={e => e.currentTarget.style.background = T.raised}>
-                          {s}
+                        <button key={s.text} onClick={() => sendChat(s.text)}
+                          style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", textAlign: "left", cursor: "pointer", fontFamily: F.body, display: "flex", alignItems: "flex-start", gap: 10 }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = T.brandBorder; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.brandDim}`; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "none"; }}>
+                          <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>{s.icon}</span>
+                          <span style={{ fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{s.text}</span>
                         </button>
                       ))}
                     </div>
                   </div>
                 )}
+                {chatHistory.length > 0 && <div style={{ height: 20 }} />}
                 {chatHistory.map((msg, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 14, marginTop: i === 0 ? 20 : 0 }}>
-                    {msg.role === "ai" && (
-                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginRight: 10, marginTop: 2 }}>AI</div>
-                    )}
+                  <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 16, alignItems: "flex-start", gap: 10 }}>
+                    {msg.role === "ai" && NP_AVATAR}
                     <div style={{
-                      maxWidth: "72%", padding: "10px 16px",
-                      borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                      background: msg.role === "user" ? T.brand : T.raised,
+                      maxWidth: "74%", padding: "12px 18px",
+                      borderRadius: msg.role === "user" ? "20px 20px 5px 20px" : "5px 20px 20px 20px",
+                      background: msg.role === "user" ? "linear-gradient(135deg,#0071E3,#0077ED)" : T.surface,
                       color: msg.role === "user" ? "#fff" : T.text,
                       fontSize: 14, lineHeight: 1.65,
                       border: msg.role === "ai" ? `1px solid ${T.border}` : "none",
+                      boxShadow: msg.role === "user" ? "0 2px 12px rgba(0,113,227,0.25)" : "0 1px 4px rgba(0,0,0,0.06)",
                     }}>{msg.role === "ai" ? <MdMsg text={msg.text} /> : msg.text}</div>
+                    {msg.role === "user" && <div style={{ width: 32, height: 32, borderRadius: "50%", background: T.raised, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0, color: T.textMuted }}>{(user.name || "U").slice(0,1).toUpperCase()}</div>}
                   </div>
                 ))}
                 {chatLoading && (
-                  <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 14 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginRight: 10, marginTop: 2 }}>AI</div>
-                    <div style={{ padding: "12px 18px", borderRadius: "18px 18px 18px 4px", background: T.raised, border: `1px solid ${T.border}`, display: "flex", gap: 5, alignItems: "center" }}>
-                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.textDim, opacity: 0.5 }} />
-                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.textDim, opacity: 0.7 }} />
-                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.textDim }} />
+                  <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 16, gap: 10 }}>
+                    {NP_AVATAR}
+                    <div style={{ padding: "14px 18px", borderRadius: "5px 20px 20px 20px", background: T.surface, border: `1px solid ${T.border}`, display: "flex", gap: 5, alignItems: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                      {[0,1,2].map(n => <div key={n} style={{ width: 7, height: 7, borderRadius: "50%", background: T.brand, opacity: 0.35 + n * 0.3 }} />)}
                     </div>
                   </div>
                 )}
                 <div ref={chatEndRef} />
               </div>
-              <div style={{ padding: "16px 32px 24px", borderTop: `1px solid ${T.border}`, background: T.bg }}>
-                {chatHistory.length > 0 && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                    <button onClick={() => setChatHistory([])} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>Clear chat</button>
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-                  <textarea
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
+              <div style={{ padding: "14px 32px 24px", flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 16, padding: "8px 8px 8px 16px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}
+                  onFocusCapture={e => { e.currentTarget.style.borderColor = T.borderFocus; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.brandDim}`; }}
+                  onBlurCapture={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.06)"; }}>
+                  <textarea value={chatInput} onChange={e => setChatInput(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-                    placeholder="Ask a question, press Enter to send…"
-                    rows={2}
-                    style={{ flex: 1, padding: "10px 14px", fontSize: 14, fontFamily: F.body, background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 12, color: T.text, outline: "none", resize: "none", lineHeight: 1.5 }}
-                    onFocus={e => e.target.style.borderColor = T.borderFocus}
-                    onBlur={e => e.target.style.borderColor = T.border}
-                  />
-                  <Btn primary disabled={!chatInput.trim() || chatLoading} onClick={() => sendChat()}>Send</Btn>
+                    placeholder="Ask about OKR performance, members, departments…"
+                    rows={1}
+                    style={{ flex: 1, padding: "6px 0", fontSize: 14, fontFamily: F.body, background: "transparent", border: "none", color: T.text, outline: "none", resize: "none", lineHeight: 1.55 }} />
+                  <button onClick={() => sendChat()} disabled={!chatInput.trim() || chatLoading}
+                    style={{ width: 36, height: 36, borderRadius: 10, background: chatInput.trim() && !chatLoading ? "linear-gradient(135deg,#0071E3,#6B47DC)" : T.raised, border: "none", cursor: chatInput.trim() && !chatLoading ? "pointer" : "default", color: chatInput.trim() && !chatLoading ? "#fff" : T.textDim, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>↑</button>
                 </div>
-                <div style={{ marginTop: 8, fontSize: 11, color: T.textDim, textAlign: "center" }}>Answers based on current OKR data · Admin only</div>
+                <div style={{ marginTop: 8, fontSize: 11, color: T.textDim, textAlign: "center" }}>Answers based on live OKR data · Admin only</div>
               </div>
             </div>
           );
