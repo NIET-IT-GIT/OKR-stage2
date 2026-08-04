@@ -1812,7 +1812,7 @@ function MdMsg({ text }) {
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
-    return p[1] === 'admin' ? (p[2] || 'overview') : 'overview';
+    return p[1] === 'admin' ? (p[2] || 'ai-chat') : 'ai-chat';
   });
   const [selDept, setSelDept] = useState(() => {
     const p = window.location.pathname.split('/');
@@ -1821,11 +1821,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const setPage = useCallback(p => { window.history.pushState(null, '', `/admin/${p}`); setPageRaw(p); }, []);
   useEffect(() => {
     if (window.location.pathname.split('/')[1] !== 'admin') {
-      window.history.replaceState(null, '', `/admin/overview`);
+      window.history.replaceState(null, '', `/admin/ai-chat`);
     }
     const onPop = () => {
       const p = window.location.pathname.split('/');
-      setPageRaw(p[1] === 'admin' ? (p[2] || 'overview') : 'overview');
+      setPageRaw(p[1] === 'admin' ? (p[2] || 'ai-chat') : 'ai-chat');
       setSelDept(p[1] === 'admin' && p[2] === 'departments' ? (p[3] || null) : null);
     };
     window.addEventListener('popstate', onPop);
