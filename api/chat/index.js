@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
 function callClaude(apiKey, systemPrompt, contextData, question) {
   const system = systemPrompt || "You are an OKR analytics assistant. Answer questions based on the provided data. Be concise and use specific numbers. Reply in the same language as the question.";
-  const userMessage = contextData ? `${contextData}\n\n问题：${question}` : question;
+  const userMessage = contextData ? `${contextData}\n\nQuestion: ${question}` : question;
 
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({

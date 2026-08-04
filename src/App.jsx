@@ -1954,14 +1954,14 @@ Do not make up data — only use what's provided.`;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext() }),
+        body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext(), lang: "en" }),
       });
       const text = await res.text();
       let data;
       try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
       setChatHistory(h => [...h, { role: "ai", text: data.answer || data.error || "No response." }]);
     } catch (err) {
-      setChatHistory(h => [...h, { role: "ai", text: `错误: ${err.message}` }]);
+      setChatHistory(h => [...h, { role: "ai", text: `Error: ${err.message}` }]);
     }
     setChatLoading(false);
   }
@@ -3999,17 +3999,17 @@ Do not make up data — only use what's provided.`;
 
         {page === "ai-chat" && (() => {
           const SUGGESTIONS = [
-            "本月哪个部门完成率最低？",
-            "哪些成员还没提交本月 check-in？",
-            "本月完成率最高的前3名成员是谁？",
-            "有多少成员状态是红色（需要关注）？",
-            "各部门平均完成率分别是多少？",
-            "最近提交最活跃的成员是谁？",
+            "Which department has the lowest completion rate this month?",
+            "Which members haven't submitted their check-in this month?",
+            "Who are the top 3 performers this month?",
+            "How many members are in red status (needs attention)?",
+            "What is the average completion rate for each department?",
+            "Which members have been most active in submissions recently?",
           ];
           return (
             <div style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 820, margin: "0 auto" }}>
-              <Header title="AI Assistant" sub="向 AI 提问，直接查询 OKR 数据"
-                right={<Btn small onClick={() => setChatPromptOpen(o => !o)}>{chatPromptOpen ? "收起 System Prompt" : "编辑 System Prompt"}</Btn>} />
+              <Header title="AI Assistant" sub="Ask questions about your OKR data"
+                right={<Btn small onClick={() => setChatPromptOpen(o => !o)}>{chatPromptOpen ? "Hide System Prompt" : "Edit System Prompt"}</Btn>} />
               {chatPromptOpen && (() => {
                 const saved = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
                 return (
@@ -4025,7 +4025,7 @@ Do not make up data — only use what's provided.`;
                       onBlur={e => e.target.style.borderColor = T.border}
                     />
                     <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end", alignItems: "center" }}>
-                      <button onClick={() => { document.getElementById("chatSysPromptTA").value = DEFAULT_CHAT_PROMPT; }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>重置为默认</button>
+                      <button onClick={() => { document.getElementById("chatSysPromptTA").value = DEFAULT_CHAT_PROMPT; }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>Reset to default</button>
                       <Btn small primary onClick={() => {
                         const val = document.getElementById("chatSysPromptTA").value.trim();
                         if (val) { dispatch({ type: "SET_SETTINGS", updates: { aiChatPrompt: val } }); setChatPromptOpen(false); }
@@ -4037,7 +4037,7 @@ Do not make up data — only use what's provided.`;
               <div style={{ flex: 1, overflowY: "auto", padding: "20px 32px 0" }}>
                 {chatHistory.length === 0 && (
                   <div style={{ paddingTop: 20 }}>
-                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>建议问题</div>
+                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Suggested questions</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       {SUGGESTIONS.map(s => (
                         <button key={s} onClick={() => sendChat(s)}
@@ -4080,7 +4080,7 @@ Do not make up data — only use what's provided.`;
               <div style={{ padding: "16px 32px 24px", borderTop: `1px solid ${T.border}`, background: T.bg }}>
                 {chatHistory.length > 0 && (
                   <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                    <button onClick={() => setChatHistory([])} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>清除对话</button>
+                    <button onClick={() => setChatHistory([])} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>Clear chat</button>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -4088,15 +4088,15 @@ Do not make up data — only use what's provided.`;
                     value={chatInput}
                     onChange={e => setChatInput(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-                    placeholder="输入问题，按 Enter 发送…"
+                    placeholder="Ask a question, press Enter to send…"
                     rows={2}
                     style={{ flex: 1, padding: "10px 14px", fontSize: 14, fontFamily: F.body, background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 12, color: T.text, outline: "none", resize: "none", lineHeight: 1.5 }}
                     onFocus={e => e.target.style.borderColor = T.borderFocus}
                     onBlur={e => e.target.style.borderColor = T.border}
                   />
-                  <Btn primary disabled={!chatInput.trim() || chatLoading} onClick={() => sendChat()}>发送</Btn>
+                  <Btn primary disabled={!chatInput.trim() || chatLoading} onClick={() => sendChat()}>Send</Btn>
                 </div>
-                <div style={{ marginTop: 8, fontSize: 11, color: T.textDim, textAlign: "center" }}>回答基于当前 OKR 数据 · 仅限管理员</div>
+                <div style={{ marginTop: 8, fontSize: 11, color: T.textDim, textAlign: "center" }}>Answers based on current OKR data · Admin only</div>
               </div>
             </div>
           );
