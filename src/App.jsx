@@ -1726,6 +1726,87 @@ function FinancialPerformancePage({ state, dispatch }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   MARKDOWN RENDERER (for AI chat)
+   ───────────────────────────────────────────────────────────── */
+function inlineFmt(text, key) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/);
+  return parts.map((p, i) => {
+    if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    if (p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
+    if (p.startsWith("`") && p.endsWith("`")) return <code key={i} style={{ fontFamily: F.mono, fontSize: 12, background: "rgba(0,0,0,0.06)", padding: "1px 4px", borderRadius: 3 }}>{p.slice(1, -1)}</code>;
+    return p;
+  });
+}
+function MdMsg({ text }) {
+  const lines = text.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trim = line.trim();
+    // table
+    if (trim.startsWith("|") && i + 1 < lines.length && lines[i + 1].trim().startsWith("|---")) {
+      const headers = trim.split("|").filter(c => c.trim()).map(c => c.trim());
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        rows.push(lines[i].trim().split("|").filter(c => c.trim()).map(c => c.trim()));
+        i++;
+      }
+      out.push(
+        <div key={i} style={{ overflowX: "auto", margin: "10px 0" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 13, width: "100%" }}>
+            <thead>
+              <tr>{headers.map((h, j) => <th key={j} style={{ padding: "6px 12px", borderBottom: `2px solid ${T.border}`, textAlign: "left", fontWeight: 700, color: T.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{inlineFmt(h, j)}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} style={{ background: ri % 2 ? "rgba(0,0,0,0.02)" : "transparent" }}>
+                  {row.map((cell, ci) => <td key={ci} style={{ padding: "6px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{inlineFmt(cell, ci)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+    // hr
+    if (trim === "---" || trim === "***" || trim === "___") { out.push(<hr key={i} style={{ border: "none", borderTop: `1px solid ${T.border}`, margin: "10px 0" }} />); i++; continue; }
+    // headings
+    if (trim.startsWith("### ")) { out.push(<div key={i} style={{ fontWeight: 700, fontSize: 13, color: T.brand, margin: "12px 0 4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{inlineFmt(trim.slice(4), i)}</div>); i++; continue; }
+    if (trim.startsWith("## ")) { out.push(<div key={i} style={{ fontWeight: 800, fontSize: 15, margin: "14px 0 6px" }}>{inlineFmt(trim.slice(3), i)}</div>); i++; continue; }
+    if (trim.startsWith("# ")) { out.push(<div key={i} style={{ fontWeight: 800, fontSize: 17, margin: "14px 0 8px" }}>{inlineFmt(trim.slice(2), i)}</div>); i++; continue; }
+    // bullet list — collect consecutive items
+    if (trim.startsWith("- ") || trim.startsWith("* ") || trim.startsWith("• ")) {
+      const items = [];
+      while (i < lines.length && (lines[i].trim().startsWith("- ") || lines[i].trim().startsWith("* ") || lines[i].trim().startsWith("• "))) {
+        items.push(lines[i].trim().replace(/^[-*•] /, ""));
+        i++;
+      }
+      out.push(<ul key={i} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ marginBottom: 3, lineHeight: 1.55 }}>{inlineFmt(it, j)}</li>)}</ul>);
+      continue;
+    }
+    // numbered list
+    if (/^\d+\.\s/.test(trim)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s/, ""));
+        i++;
+      }
+      out.push(<ol key={i} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ marginBottom: 3, lineHeight: 1.55 }}>{inlineFmt(it, j)}</li>)}</ol>);
+      continue;
+    }
+    // blank line
+    if (!trim) { out.push(<div key={i} style={{ height: 6 }} />); i++; continue; }
+    // paragraph
+    out.push(<div key={i} style={{ margin: "3px 0", lineHeight: 1.65 }}>{inlineFmt(trim, i)}</div>);
+    i++;
+  }
+  return <div>{out}</div>;
+}
+
+/* ─────────────────────────────────────────────────────────────
    ADMIN PORTAL
    ───────────────────────────────────────────────────────────── */
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
@@ -3981,8 +4062,7 @@ Do not make up data — only use what's provided.`;
                       color: msg.role === "user" ? "#fff" : T.text,
                       fontSize: 14, lineHeight: 1.65,
                       border: msg.role === "ai" ? `1px solid ${T.border}` : "none",
-                      whiteSpace: "pre-wrap",
-                    }}>{msg.text}</div>
+                    }}>{msg.role === "ai" ? <MdMsg text={msg.text} /> : msg.text}</div>
                   </div>
                 ))}
                 {chatLoading && (
