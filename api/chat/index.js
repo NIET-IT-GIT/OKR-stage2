@@ -7,7 +7,10 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { question, systemPrompt, contextData } = req.body || {};
+  let parsed = req.body;
+  if (typeof parsed === "string") { try { parsed = JSON.parse(parsed); } catch { parsed = {}; } }
+  if (!parsed || typeof parsed !== "object") parsed = {};
+  const { question, systemPrompt, contextData } = parsed;
   if (!question) return res.status(400).json({ error: "missing question" });
 
   const apiKey = process.env.CLAUDE_API_KEY;
