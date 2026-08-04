@@ -1907,17 +1907,32 @@ Do not make up data — only use what's provided.`;
     const memberSummary = members.map(u => {
       const kd = memberData[u.id] || { krs: [] };
       const mySubs = okrSubmissions.filter(s => s.memberId === u.id && s.answer !== null);
-      const thisMonthSubs = mySubs.filter(s => s.periodKey?.startsWith(monthKey));
       const pending = okrSubmissions.filter(s => s.memberId === u.id && s.answer === null).length;
+      const dept = depts.find(d => d.id === u.deptId)?.name || "—";
+
       const krRates = kd.krs.filter(kr => kr.type !== "tracker").map(kr => {
         const krSubs = mySubs.filter(s => s.krId === kr.id);
         if (!krSubs.length) return null;
         return (krSubs.filter(s => s.answer === "yes").length / krSubs.length) * 100;
       }).filter(r => r !== null);
       const rate = krRates.length ? krRates.reduce((a, b) => a + b, 0) / krRates.length : null;
-      const dept = depts.find(d => d.id === u.deptId)?.name || "—";
-      return `${u.name} (${dept}): ${rate !== null ? rate.toFixed(1) + "% target met" : "no submissions"}, ${thisMonthSubs.length} check-ins this month${pending ? `, ${pending} pending` : ""}`;
-    }).join("\n");
+
+      const trackerLines = kd.krs.filter(kr => kr.type === "tracker").map(kr => {
+        const krSubs = mySubs
+          .filter(s => s.krId === kr.id)
+          .sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""))
+          .slice(0, 4);
+        if (!krSubs.length) return null;
+        const entries = krSubs.map(s => `${s.answer}${kr.unit ? " " + kr.unit : ""} (${s.dateRange || s.periodKey})`).join(", ");
+        return `    - ${kr.label}: ${entries}`;
+      }).filter(Boolean);
+
+      let line = `${u.name} (${dept}, ${u.role}):`;
+      line += `\n  Target met rate: ${rate !== null ? rate.toFixed(1) + "%" : "no non-tracker KRs"}`;
+      if (trackerLines.length) line += `\n  Tracker KRs (recent recorded values):\n${trackerLines.join("\n")}`;
+      if (pending) line += `\n  Pending check-ins: ${pending}`;
+      return line;
+    }).join("\n\n");
 
     const deptSummary = depts.map(d => {
       const dm = members.filter(u => u.deptId === d.id);
@@ -1937,8 +1952,8 @@ Do not make up data — only use what's provided.`;
     const latestReport = [...monthlyReports].sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""))[0];
     return [
       `[Today: ${today}, current FY month: ${monthKey}]`,
-      `\nDepartments:\n${deptSummary}`,
-      `\nMembers:\n${memberSummary}`,
+      `\nDepartment summary:\n${deptSummary}`,
+      `\nMember details:\n${memberSummary}`,
       latestReport ? `\nLatest report (${latestReport.month || latestReport.publishedDate}): company rate ${Number(latestReport.data?.companyRate).toFixed(1)}%` : "",
     ].join("\n");
   }
