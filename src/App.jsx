@@ -1923,7 +1923,7 @@ Do not make up data — only use what's provided.`;
           .sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""))
           .slice(0, 4);
         if (!krSubs.length) return null;
-        const entries = krSubs.map(s => `${s.answer}${kr.unit ? " " + kr.unit : ""} (${s.dateRange || s.periodKey})`).join(", ");
+        const entries = krSubs.map(s => `${s.actualValue ?? 0}${kr.unit ? " " + kr.unit : ""} (${s.dateRange || s.periodKey})`).join(", ");
         return `    - ${kr.label}: ${entries}`;
       }).filter(Boolean);
 
