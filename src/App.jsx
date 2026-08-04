@@ -4051,12 +4051,10 @@ RESPONSE STYLE:
 
         {page === "ai-chat" && (() => {
           const SUGGESTIONS = [
-            { icon: "📊", text: "Which department has the lowest completion rate this month?" },
+            { icon: "🏢", text: "Give me a company OKR review for this month." },
+            { icon: "📊", text: "Give me a department-by-department OKR review." },
+            { icon: "🔴", text: "How many members are in red status this month?" },
             { icon: "📋", text: "Which members haven't submitted their check-in this month?" },
-            { icon: "🏆", text: "Who are the top 3 performers this month?" },
-            { icon: "🔴", text: "How many members are in red status (needs attention)?" },
-            { icon: "📈", text: "What is the average completion rate for each department?" },
-            { icon: "⚡", text: "Which members have been most active in submissions recently?" },
           ];
           const NP_AVATAR = (
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0071E3,#6B47DC)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0, letterSpacing: "0.02em", boxShadow: "0 2px 8px rgba(0,113,227,0.35)" }}>NP</div>
