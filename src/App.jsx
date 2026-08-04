@@ -2022,6 +2022,7 @@ Do not make up data — only use what's provided.`;
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], emailLogs = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
+    { id: "ai-chat",          icon: "⬡", label: "NIET Pilot"        },
     { id: "overview",         icon: "◎", label: "Company Overview"  },
     { id: "departments",      icon: "⬛", label: "Departments"       },
     { id: "okr-review",       icon: "◉", label: "OKR Review"        },
@@ -2031,7 +2032,6 @@ Do not make up data — only use what's provided.`;
     { id: "leaderboard",      icon: "▲", label: "Leaderboard"       },
     { id: "users",            icon: "⊹", label: "User Management"   },
     { id: "email-templates",  icon: "✦", label: "Email Templates"   },
-    { id: "ai-chat",          icon: "⬡", label: "NIET Pilot"        },
   ];
   const deptSubItems = [
     { id: "__all__",   label: "All Departments", icon: "⊕" },
