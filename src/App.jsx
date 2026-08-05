@@ -2034,6 +2034,7 @@ DATA RULES:
 - A member shown as "no data this month" has not yet received or answered a check-in — do not treat them as 0% performers.
 - Tracker KRs record numerical values only and do not affect completion rates.
 - Financial data (Revenue, Net Profit, Expense) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
+- Project data includes all manager-owned projects: name, department, responsible manager, status (active/completed), progress (0–100%), and due date. Proactively flag projects that are overdue or have low progress close to their due date.
 
 RESPONSE STYLE:
 - Lead with the direct answer, then supporting detail.
@@ -2050,7 +2051,7 @@ ACTIONS:
 When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
 
   function buildChatContext() {
-    const { depts, memberData, okrSubmissions = [], monthlyReports = [], users } = state;
+    const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
     const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
@@ -2178,6 +2179,24 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       pendingSection = `PENDING SUBMISSIONS (answered by member, awaiting admin approval):\n${byDept.join("\n")}\n  Total: ${allPending.length}`;
     }
 
+    // Projects — grouped by status, dept derived from mgrId
+    const activeProjects = projects.filter(p => p.status === "active");
+    const completedProjects = projects.filter(p => p.status === "completed");
+    const fmtProject = p => {
+      const mgr = users.find(u => u.id === p.mgrId);
+      const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
+      const mgrName = mgr?.name || "—";
+      const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
+      let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}% | Due: ${p.due || "TBD"}${overdue}`;
+      if (p.log) line += `\n    Note: ${p.log.slice(0, 100)}${p.log.length > 100 ? "…" : ""}`;
+      return line;
+    };
+    const projectSection = [
+      `PROJECTS: Total ${projects.length} (${activeProjects.length} active, ${completedProjects.length} completed)`,
+      activeProjects.length ? `Active (${activeProjects.length}):\n${activeProjects.map(fmtProject).join("\n")}` : "Active: none",
+      completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
+    ].filter(Boolean).join("\n");
+
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
@@ -2185,6 +2204,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       reportSection ? `\n${reportSection}` : "",
       `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
       `\n${pendingSection}`,
+      `\n${projectSection}`,
     ].join("\n");
   }
 
