@@ -1807,6 +1807,137 @@ function MdMsg({ text }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   ACTION REVIEW CARD  (NIET Pilot bulk approve / reject)
+   ───────────────────────────────────────────────────────────── */
+function ActionReviewCard({ action, submissions, onConfirm, onCancel }) {
+  const isApprove = action.type === "approve";
+  const accentColor = isApprove ? T.ok : T.bad;
+  const accentDim   = isApprove ? T.okDim  : T.badDim;
+  const accentBdr   = isApprove ? T.okBorder : T.badBorder;
+
+  // Pre-deselect "no"-answer submissions when approving (likely need review)
+  const [skipped, setSkipped] = useState(() =>
+    new Set(isApprove ? submissions.filter(s => s.answer === "no").map(s => s.id) : [])
+  );
+  const [done, setDone]       = useState(false);
+  const [doneCount, setDoneCount] = useState(0);
+  const [cancelled, setCancelled] = useState(false);
+
+  const toAct  = submissions.filter(s => !skipped.has(s.id));
+  const noCount = submissions.filter(s => s.answer === "no").length;
+
+  if (done) return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: accentDim, border: `1px solid ${accentBdr}`, fontSize: 14, fontWeight: 600, color: accentColor }}>
+      {isApprove ? "✓" : "✕"} {isApprove ? "Approved" : "Rejected"} {doneCount} submission{doneCount !== 1 ? "s" : ""}
+    </div>
+  );
+
+  if (cancelled) return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: T.raised, border: `1px solid ${T.border}`, fontSize: 14, color: T.textMuted }}>
+      ✕ Action cancelled
+    </div>
+  );
+
+  if (submissions.length === 0) return (
+    <div style={{ padding: "14px 18px", borderRadius: 12, background: T.surface, border: `1px solid ${T.border}`, fontSize: 14, color: T.textMuted }}>
+      No pending submissions found matching that criteria.
+    </div>
+  );
+
+  return (
+    <div style={{ borderRadius: 14, background: T.surface, border: `1px solid ${T.border}`, overflow: "hidden", maxWidth: "100%", boxShadow: T.shadowSm }}>
+      {/* Header */}
+      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, background: accentDim, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: accentColor, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{isApprove ? "✓" : "✕"}</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{action.message}</div>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 1 }}>{submissions.length} submission{submissions.length !== 1 ? "s" : ""} pending — review before confirming</div>
+        </div>
+      </div>
+
+      {/* Warning: "no" answers when approving */}
+      {isApprove && noCount > 0 && (
+        <div style={{ padding: "9px 18px", background: T.warnDim, borderBottom: `1px solid ${T.warnBorder}`, fontSize: 13, color: T.warn, display: "flex", gap: 7, alignItems: "center" }}>
+          <span>⚠️</span>
+          <span>{noCount} submission{noCount !== 1 ? "s" : ""} answered "no" — pre-deselected. Check before including.</span>
+        </div>
+      )}
+
+      {/* Table */}
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: T.raised }}>
+              {["", "Member", "KR", "Answer", "Actual", "Target", "Period"].map(h => (
+                <th key={h} style={{ padding: "8px 12px", textAlign: h === "Actual" || h === "Target" ? "right" : "left", fontWeight: 700, fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {submissions.map((s, i) => {
+              const isNo      = s.answer === "no";
+              const isTracker = s.krType === "tracker";
+              const isSkipped = skipped.has(s.id);
+              const answerColor = isTracker ? "#7c3aed" : isNo ? T.bad : T.ok;
+              return (
+                <tr key={s.id} style={{ background: isSkipped ? "transparent" : (i % 2 ? T.raised : "transparent"), opacity: isSkipped ? 0.4 : 1, borderBottom: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 12px", textAlign: "center", width: 36 }}>
+                    <input type="checkbox" checked={!isSkipped} style={{ cursor: "pointer", accentColor }}
+                      onChange={e => setSkipped(prev => { const n = new Set(prev); e.target.checked ? n.delete(s.id) : n.add(s.id); return n; })} />
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{s.memberName}</div>
+                    <div style={{ fontSize: 11, color: T.textMuted }}>{s.deptName}</div>
+                  </td>
+                  <td style={{ padding: "10px 12px", color: T.textSoft, maxWidth: 200 }}>
+                    <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.krLabel}</span>
+                    {isTracker && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", borderRadius: 6, padding: "1px 5px" }}>Tracker</span>}
+                  </td>
+                  <td style={{ padding: "10px 12px", textAlign: "left" }}>
+                    <span style={{ fontWeight: 700, color: answerColor, fontSize: 13 }}>
+                      {isTracker ? "recorded" : s.answer}
+                      {isApprove && isNo && !isSkipped && " ⚠️"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: F.mono, fontSize: 13 }}>
+                    {s.actualValue != null ? `${s.actualValue}${s.krUnit ? " " + s.krUnit : ""}` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.textMuted, whiteSpace: "nowrap" }}>
+                    {!isTracker && s.krTarget != null ? `${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? " " + s.krUnit : ""}` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 12px", fontSize: 12, color: T.textMuted, whiteSpace: "nowrap" }}>
+                    {s.dateRange || s.periodKey || "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Footer */}
+      <div style={{ padding: "12px 18px", borderTop: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: T.raised }}>
+        <div style={{ fontSize: 12, color: T.textMuted }}>
+          {toAct.length} of {submissions.length} selected{skipped.size > 0 ? ` · ${skipped.size} skipped` : ""}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setCancelled(true); onCancel(); }}
+            style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${T.border}`, background: "none", cursor: "pointer", fontSize: 13, color: T.textMuted, fontFamily: F.body }}>
+            Cancel
+          </button>
+          <button
+            disabled={toAct.length === 0}
+            onClick={() => { const n = toAct.length; onConfirm(toAct.map(s => s.id)); setDoneCount(n); setDone(true); }}
+            style={{ padding: "7px 20px", borderRadius: 8, border: "none", background: toAct.length > 0 ? accentColor : T.raised, cursor: toAct.length > 0 ? "pointer" : "default", fontSize: 13, fontWeight: 700, color: toAct.length > 0 ? "#fff" : T.textDim, fontFamily: F.body }}>
+            {isApprove ? "✓ Approve" : "✕ Reject"} {toAct.length} submission{toAct.length !== 1 ? "s" : ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
    ADMIN PORTAL
    ───────────────────────────────────────────────────────────── */
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
@@ -1913,7 +2044,10 @@ RESPONSE STYLE:
 - Proactively flag actionable items: red-status members, pending unanswered check-ins, departments below target.
 - Do not repeat the question. Do not explain the data structure unless asked.
 - Reply in the same language as the user's question (Chinese or English).
-- Never fabricate data. If the information is not in the provided context, say so clearly.`;
+- Never fabricate data. If the information is not in the provided context, say so clearly.
+
+ACTIONS:
+When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
 
   function buildChatContext() {
     const { depts, memberData, okrSubmissions = [], monthlyReports = [], users } = state;
@@ -2027,13 +2161,60 @@ RESPONSE STYLE:
       return lines.join("\n");
     }).join("\n");
 
+    // Pending submissions awaiting admin approval — grouped by dept for AI awareness
+    const allPending = okrSubmissions.filter(s => s.answer !== null && s.approval === "pending");
+    let pendingSection;
+    if (allPending.length === 0) {
+      pendingSection = "PENDING SUBMISSIONS: None currently awaiting approval.";
+    } else {
+      const byDept = depts.map(d => {
+        const dp = allPending.filter(s => s.deptId === d.id);
+        if (!dp.length) return null;
+        const byMonth = {};
+        dp.forEach(s => { const mk = (s.sentAt || "").slice(0, 7) || "unknown"; byMonth[mk] = (byMonth[mk] || 0) + 1; });
+        const breakdown = Object.entries(byMonth).sort().map(([k, n]) => `${n} in ${k}`).join(", ");
+        return `  ${d.name}: ${dp.length} pending (${breakdown})`;
+      }).filter(Boolean);
+      pendingSection = `PENDING SUBMISSIONS (answered by member, awaiting admin approval):\n${byDept.join("\n")}\n  Total: ${allPending.length}`;
+    }
+
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
       `\nMEMBER DETAILS (current month):\n${memberSection}`,
       reportSection ? `\n${reportSection}` : "",
       `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
+      `\n${pendingSection}`,
     ].join("\n");
+  }
+
+  function applyActionFilters(filters) {
+    // Start from all pending: member has answered, admin hasn't reviewed yet
+    let subs = okrSubmissions.filter(s => s.answer !== null && s.approval === "pending");
+    if (filters?.deptName) {
+      const lc = filters.deptName.toLowerCase();
+      const matched = depts.find(d => d.name.toLowerCase().includes(lc));
+      if (matched) subs = subs.filter(s => s.deptId === matched.id);
+    }
+    if (filters?.memberName) {
+      const lc = filters.memberName.toLowerCase();
+      subs = subs.filter(s => (s.memberName || "").toLowerCase().includes(lc));
+    }
+    if (!filters?.allPeriods) {
+      if (filters?.periodKey) {
+        subs = subs.filter(s => (s.periodKey || "").startsWith(filters.periodKey));
+      } else {
+        // Default: submissions sent in current calendar month
+        const nowD = new Date();
+        subs = subs.filter(s => {
+          if (!s.sentAt) return false;
+          const d = new Date(s.sentAt);
+          return d.getFullYear() === nowD.getFullYear() && d.getMonth() === nowD.getMonth();
+        });
+      }
+    }
+    // Enrich with deptName for display
+    return subs.map(s => ({ ...s, deptName: depts.find(d => d.id === s.deptId)?.name || "—" }));
   }
 
   async function sendChat(question) {
@@ -2052,7 +2233,13 @@ RESPONSE STYLE:
       const text = await res.text();
       let data;
       try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
-      setChatHistory(h => [...h, { role: "ai", text: data.answer || data.error || "No response." }]);
+      if (data.action) {
+        // Tool use response — apply filters in frontend, show review card
+        const pendingSubs = applyActionFilters(data.action.filters);
+        setChatHistory(h => [...h, { role: "action", action: data.action, submissions: pendingSubs }]);
+      } else {
+        setChatHistory(h => [...h, { role: "ai", text: data.answer || data.error || "No response." }]);
+      }
     } catch (err) {
       setChatHistory(h => [...h, { role: "ai", text: `Error: ${err.message}` }]);
     }
@@ -4155,21 +4342,49 @@ RESPONSE STYLE:
                   </div>
                 )}
                 {chatHistory.length > 0 && <div style={{ height: 20 }} />}
-                {chatHistory.map((msg, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 16, alignItems: "flex-start", gap: 10 }}>
-                    {msg.role === "ai" && NP_AVATAR}
-                    <div style={{
-                      maxWidth: "74%", padding: "12px 18px",
-                      borderRadius: msg.role === "user" ? "20px 20px 5px 20px" : "5px 20px 20px 20px",
-                      background: msg.role === "user" ? "linear-gradient(135deg,#0071E3,#0077ED)" : T.surface,
-                      color: msg.role === "user" ? "#fff" : T.text,
-                      fontSize: 14, lineHeight: 1.65,
-                      border: msg.role === "ai" ? `1px solid ${T.border}` : "none",
-                      boxShadow: msg.role === "user" ? "0 2px 12px rgba(0,113,227,0.25)" : "0 1px 4px rgba(0,0,0,0.06)",
-                    }}>{msg.role === "ai" ? <MdMsg text={msg.text} /> : msg.text}</div>
-                    {msg.role === "user" && <div style={{ width: 32, height: 32, borderRadius: "50%", background: T.raised, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0, color: T.textMuted }}>{(user.name || "U").slice(0,1).toUpperCase()}</div>}
-                  </div>
-                ))}
+                {chatHistory.map((msg, i) => {
+                  if (msg.role === "action") {
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "flex-start", marginBottom: 16, gap: 10 }}>
+                        {NP_AVATAR}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <ActionReviewCard
+                            action={msg.action}
+                            submissions={msg.submissions}
+                            onConfirm={ids => {
+                              ids.forEach(id => {
+                                const sub = okrSubmissions.find(s => s.id === id);
+                                dispatch({
+                                  type: "APPROVE_OKR_SUBMISSION",
+                                  id,
+                                  status: msg.action.type === "approve" ? "approved" : "rejected",
+                                  approvedBy: user.id,
+                                  ...(msg.action.type === "reject" ? { actualValue: sub?.actualValue } : {}),
+                                });
+                              });
+                            }}
+                            onCancel={() => {}}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 16, alignItems: "flex-start", gap: 10 }}>
+                      {msg.role === "ai" && NP_AVATAR}
+                      <div style={{
+                        maxWidth: "74%", padding: "12px 18px",
+                        borderRadius: msg.role === "user" ? "20px 20px 5px 20px" : "5px 20px 20px 20px",
+                        background: msg.role === "user" ? "linear-gradient(135deg,#0071E3,#0077ED)" : T.surface,
+                        color: msg.role === "user" ? "#fff" : T.text,
+                        fontSize: 14, lineHeight: 1.65,
+                        border: msg.role === "ai" ? `1px solid ${T.border}` : "none",
+                        boxShadow: msg.role === "user" ? "0 2px 12px rgba(0,113,227,0.25)" : "0 1px 4px rgba(0,0,0,0.06)",
+                      }}>{msg.role === "ai" ? <MdMsg text={msg.text} /> : msg.text}</div>
+                      {msg.role === "user" && <div style={{ width: 32, height: 32, borderRadius: "50%", background: T.raised, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0, color: T.textMuted }}>{(user.name || "U").slice(0,1).toUpperCase()}</div>}
+                    </div>
+                  );
+                })}
                 {chatLoading && (
                   <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 16, gap: 10 }}>
                     {NP_AVATAR}

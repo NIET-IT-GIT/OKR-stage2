@@ -1,5 +1,35 @@
 import https from "https";
 
+const TOOLS = [{
+  name: "propose_bulk_action",
+  description: "Call this tool when the user wants to approve or reject OKR submissions. Never perform or describe the approval in text — always use this tool so the admin can review a full submission summary before confirming. Use this for any approve/reject/bulk-approve/bulk-reject request.",
+  input_schema: {
+    type: "object",
+    properties: {
+      type: {
+        type: "string",
+        enum: ["approve", "reject"],
+        description: "The action type"
+      },
+      filters: {
+        type: "object",
+        description: "Criteria to select which pending submissions to act on. Omit a field to not filter on it.",
+        properties: {
+          deptName: { type: "string", description: "Filter by department name (partial match ok). Omit for all departments." },
+          memberName: { type: "string", description: "Filter by member name (partial match ok). Omit for all members." },
+          periodKey: { type: "string", description: "Filter by period key prefix, e.g. '2026-08' for August 2026. Omit to default to current calendar month." },
+          allPeriods: { type: "boolean", description: "If true, include submissions from all time periods, not just current month." }
+        }
+      },
+      message: {
+        type: "string",
+        description: "Brief message shown as the card header, e.g. 'Pending submissions for IT Department — August 2026'"
+      }
+    },
+    required: ["type", "message"]
+  }
+}];
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -18,8 +48,8 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ error: "CLAUDE_API_KEY not configured" });
 
   try {
-    const answer = await callClaude(apiKey, systemPrompt, contextData, question);
-    res.status(200).json({ answer });
+    const result = await callClaude(apiKey, systemPrompt, contextData, question);
+    res.status(200).json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -32,8 +62,9 @@ function callClaude(apiKey, systemPrompt, contextData, question) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model: "claude-opus-4-5",
-      max_tokens: 1024,
+      max_tokens: 2048,
       system,
+      tools: TOOLS,
       messages: [{ role: "user", content: userMessage }],
     });
 
@@ -56,7 +87,14 @@ function callClaude(apiKey, systemPrompt, contextData, question) {
         try {
           const parsed = JSON.parse(data);
           if (parsed.error) return reject(new Error(parsed.error.message));
-          resolve(parsed.content?.[0]?.text || "No response.");
+          // Check for tool_use block first
+          const toolUse = parsed.content?.find(b => b.type === "tool_use" && b.name === "propose_bulk_action");
+          if (toolUse) {
+            resolve({ action: toolUse.input });
+          } else {
+            const textBlock = parsed.content?.find(b => b.type === "text");
+            resolve({ answer: textBlock?.text || "No response." });
+          }
         } catch (e) { reject(e); }
       });
     });
