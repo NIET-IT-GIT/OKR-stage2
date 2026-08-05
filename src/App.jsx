@@ -1897,11 +1897,12 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
 Your role is to help school administrators quickly understand staff OKR performance, identify who needs follow-up, and prepare summary insights for meetings.
 
 DATA RULES:
-- Data covers the current calendar month's check-in submissions only.
+- OKR data covers the current calendar month's check-in submissions only.
 - Completion rates compare actual values against targets using operator logic (not simple yes/no counts).
 - Status thresholds: green ≥ 66.7%, yellow ≥ 60%, red < 60%.
 - A member shown as "no data this month" has not yet received or answered a check-in — do not treat them as 0% performers.
 - Tracker KRs record numerical values only and do not affect completion rates.
+- Financial data (Revenue, Net Profit, Expense) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
 
 RESPONSE STYLE:
 - Lead with the direct answer, then supporting detail.
@@ -1987,11 +1988,51 @@ RESPONSE STYLE:
         ].join("\n")
       : "";
 
+    // Financial Performance — same data as Financial Performance page
+    const FY_MONTHS = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+    const REV_DIVS = ["NIET","CB","Rhodes","Educare"];
+    const nowFYMonth = (() => { const m = now.getMonth(); return m >= 6 ? m - 6 : m + 6; })();
+    const fyLabel = `Jul–${FY_MONTHS[nowFYMonth]} FY${String(now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear()).slice(2)}`;
+    const fmtMoney = v => v >= 1_000_000 ? `$${(v/1_000_000).toFixed(2)}M` : v >= 1_000 ? `$${(v/1_000).toFixed(1)}K` : `$${Math.round(v)}`;
+    const mkDefault = () => ({ pt: 0, dt: 0, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
+    const finModules = [
+      { key: "revenue",   label: "Revenue",    hasTargets: true  },
+      { key: "netProfit", label: "Net Profit", hasTargets: true  },
+      { key: "expense",   label: "Expense",    hasTargets: false },
+    ];
+    const finSection = finModules.map(({ key, label, hasTargets }) => {
+      const cfg = state.settings?.[key] ?? mkDefault();
+      const monthly = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (cfg.divisions[d]?.[i] || 0), 0));
+      const cumulative = monthly.map((_, i) => monthly.slice(0, i + 1).reduce((a, b) => a + b, 0));
+      const cum = cumulative[nowFYMonth] || 0;
+      const ptPct = hasTargets && cfg.pt > 0 ? (cum / cfg.pt * 100).toFixed(1) + "%" : null;
+      const dtPct = hasTargets && cfg.dt > 0 ? (cum / cfg.dt * 100).toFixed(1) + "%" : null;
+      const divLines = REV_DIVS.map(div => {
+        const divCum = (cfg.divisions[div] || Array(12).fill(0)).slice(0, nowFYMonth + 1).reduce((a, b) => a + b, 0);
+        const pct = cum > 0 ? (divCum / cum * 100).toFixed(1) + "%" : "0%";
+        return `    ${div}: ${fmtMoney(divCum)} (${pct} of group)`;
+      });
+      const monthlyLine = FY_MONTHS.slice(0, nowFYMonth + 1).map((m, i) => `${m} ${fmtMoney(monthly[i])}`).join(", ");
+      let lines = [`  ${label}: cumulative ${fmtMoney(cum)} (${fyLabel})`];
+      if (hasTargets) {
+        if (cfg.pt > 0) lines.push(`    vs PT (${fmtMoney(cfg.pt)}): ${ptPct}`);
+        if (cfg.dt > 0) lines.push(`    vs DT (${fmtMoney(cfg.dt)}): ${dtPct}`);
+      }
+      if (cum > 0) {
+        lines.push(`    Division breakdown:\n${divLines.join("\n")}`);
+        lines.push(`    Monthly: ${monthlyLine}`);
+      } else {
+        lines.push(`    No data entered yet`);
+      }
+      return lines.join("\n");
+    }).join("\n");
+
     return [
-      `[Today: ${today} | Month: ${monthLabel} | Company completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
+      `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
       `\nMEMBER DETAILS (current month):\n${memberSection}`,
       reportSection ? `\n${reportSection}` : "",
+      `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
     ].join("\n");
   }
 
@@ -4055,6 +4096,8 @@ RESPONSE STYLE:
             { icon: "📊", text: "Give me a department-by-department OKR review." },
             { icon: "🔴", text: "How many members are in red status this month?" },
             { icon: "📋", text: "Which members haven't submitted their check-in this month?" },
+            { icon: "💰", text: "How is the company tracking financially this FY?" },
+            { icon: "📈", text: "Which division contributes the most to revenue?" },
           ];
           const NP_AVATAR = (
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0071E3,#6B47DC)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0, letterSpacing: "0.02em", boxShadow: "0 2px 8px rgba(0,113,227,0.35)" }}>NP</div>
