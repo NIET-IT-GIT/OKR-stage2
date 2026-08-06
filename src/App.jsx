@@ -23,9 +23,10 @@ const F = { body: "-apple-system,'SF Pro Text',BlinkMacSystemFont,'Segoe UI',sys
 const TP = 66.7;
 
 const STATUS_THEME = {
-  green:  { bg: T.okDim,   border: T.okBorder,   color: T.ok,   tag: "On Track" },
-  yellow: { bg: T.warnDim, border: T.warnBorder,  color: T.warn, tag: "At Risk"  },
-  red:    { bg: T.badDim,  border: T.badBorder,   color: T.bad,  tag: "Behind"   },
+  green:  { bg: T.okDim,   border: T.okBorder,   color: T.ok,        tag: "On Track" },
+  yellow: { bg: T.warnDim, border: T.warnBorder,  color: T.warn,      tag: "At Risk"  },
+  red:    { bg: T.badDim,  border: T.badBorder,   color: T.bad,       tag: "Behind"   },
+  none:   { bg: T.raised,  border: T.border,      color: T.textMuted, tag: "N/A"      },
 };
 const APPROVAL = {
   pending:  { bg: T.warnDim, border: T.warnBorder, color: T.warn, label: "Pending Review" },
@@ -210,7 +211,8 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
   if (!scores.length) return 0;
   return scores.reduce((a, b) => a + b, 0) / scores.length;
 }
-function getStatus(r) { return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
+function getStatus(r) { if (r == null) return "none"; return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
+function memberHasRateKrs(krs) { return (krs || []).some(kr => kr.type !== "tracker"); }
 function fmt(v) { return typeof v === "number" ? (v % 1 ? v.toFixed(1) : v.toLocaleString()) : v; }
 function currentFYQuarter() {
   const d = new Date();
@@ -1278,8 +1280,8 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
                 const r2 = calcDeptRate(d.id); const s2 = getStatus(r2);
                 const deptMembers = users
                   .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
-                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = calcMemberRate(u.id, dmFiltKrs(kd.krs), dmSubs); return { ...u, rate: mr, status: getStatus(mr) }; })
-                  .sort((a, b) => b.rate - a.rate);
+                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = memberHasRateKrs(kd.krs) ? calcMemberRate(u.id, dmFiltKrs(kd.krs), dmSubs) : null; return { ...u, rate: mr, status: getStatus(mr) }; })
+                  .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
                 return (
                   <div style={{ background: T.bgSoft, borderBottom: `1px solid ${T.border}`, padding: "16px 18px" }}>
                     <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
@@ -1312,12 +1314,12 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
                         ? <div style={{ padding: "14px 18px", fontSize: 14, color: T.textMuted }}>No members assigned to this department.</div>
                         : deptMembers.map((m, mi) => (
                           <div key={m.id} style={{ display: "grid", gridTemplateColumns: "28px 36px 1fr 120px 55px 140px 70px", padding: "9px 18px", gap: 10, alignItems: "center", background: mi % 2 ? T.raised : "transparent", borderBottom: mi < deptMembers.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
-                            <span style={{ fontFamily: F.mono, fontWeight: 800, color: mi === 0 ? T.ok : mi === deptMembers.length - 1 && deptMembers.length > 2 ? T.bad : T.textMuted }}>#{mi + 1}</span>
+                            <span style={{ fontFamily: F.mono, fontWeight: 800, color: m.status === "green" ? T.ok : m.status === "red" ? T.bad : T.textMuted }}>#{mi + 1}</span>
                             <Avatar letters={m.av} size={26} />
                             <div><span style={{ fontWeight: 600 }}>{m.name}</span></div>
                             <span style={{ fontSize: 12, color: T.textMuted }}>{m.title || "—"}</span>
-                            <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
-                            <Bar value={m.rate} status={m.status} h={4} />
+                            <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate != null ? `${m.rate.toFixed(1)}%` : "N/A"}</span>
+                            <Bar value={m.rate ?? 0} status={m.status} h={4} />
                             <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
                           </div>
                         ))
@@ -1984,7 +1986,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ name: "", progress: 0, status: "active", log: "", due: "" });
+  const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", log: "", due: "", contribution: "" });
+  const [progressEdits, setProgressEdits] = useState({});
   const [subFilter, setSubFilter] = useState("all");
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
@@ -2402,7 +2405,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
       const kd = memberData[u.id] || { krs: [] };
-      const r = calcMemberRate(u.id, kd.krs, ovSubs);
+      const r = memberHasRateKrs(kd.krs) ? calcMemberRate(u.id, kd.krs, ovSubs) : null;
       const hasData = kd.krs.some(kr => ovSubs.some(s => s.memberId === u.id && s.krId === kr.id));
       const dept = depts.find(d => d.id === u.deptId);
       const deptName = dept?.name || "—";
@@ -2411,7 +2414,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       const teamName = primaryTeam ? (secondTeam ? `${primaryTeam.name} / ${secondTeam.name}` : primaryTeam.name) : "—";
       return { ...u, deptName, teamName, rate: r, hasData, status: getStatus(r) };
     })
-    .sort((a, b) => b.rate - a.rate);
+    .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
 
   function triggerSyncPrompt(deptId, teamId) {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -3865,10 +3868,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         {page === "projects" && (<>
           <Header title="Manager Projects" sub="Projects grouped by department" />
           <Pane>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
               <Metric label="Total Projects" value={projects.length} />
               <Metric label="Active"         value={projects.filter(p => p.status === "active").length}   status="yellow" />
               <Metric label="Completed"      value={projects.filter(p => p.status !== "active").length}   status="green"  />
+              {projects.length > 0 && <Metric label="Avg Progress" value={`${Math.round(projects.reduce((a, p) => a + p.progress, 0) / projects.length)}%`} />}
+              {(() => { const tc = projects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
             </div>
             {projects.length === 0 && <EmptyState text="No projects submitted by managers yet." />}
             {projects.length > 0 && (() => {
@@ -3884,49 +3889,48 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     </div>
                     {deptProjects.map(p => {
                       const mgr = deptManagers.find(m => m.id === p.mgrId);
-                      const isActive = p.status === "active";
-                      const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
-                      const isEditing = editProjId === p.id;
+                      const draftProg = progressEdits[p.id] ?? p.progress;
+                      const ps = draftProg >= 70 ? "green" : draftProg >= 35 ? "yellow" : "red";
+                      const progChanged = progressEdits[p.id] !== undefined;
+                      const isDetailsOpen = editProjId === p.id;
                       return (
                         <Card key={p.id} style={{ overflow: "hidden", marginBottom: 8 }}>
                           <div style={{ padding: "12px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                             <div>
                               <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                              <div style={{ fontSize: 12, color: T.textMuted }}>{mgr ? `${mgr.name} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
+                              <div style={{ fontSize: 12, color: T.textMuted }}>{mgr ? `${mgr.name} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <Tag type={isActive ? "pending" : "approved"} label={isActive ? "ACTIVE" : "COMPLETED"} small />
-                              <Btn small onClick={() => {
-                                if (isEditing) { setEditProjId(null); return; }
-                                setEditProjId(p.id);
-                                setEditProjForm({ name: p.name, progress: p.progress, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
-                              }}>{isEditing ? "Cancel" : "Edit"}</Btn>
+                              <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
                               <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>
                             </div>
                           </div>
-                          {!isEditing && (
-                            <div style={{ padding: "12px 18px" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: (p.log || p.contribution != null) ? 10 : 0 }}>
-                                <Bar value={p.progress} status={ps} h={6} />
-                                <span style={{ fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
-                                {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
-                              </div>
-                              {p.log && <p style={{ margin: 0, fontSize: 13, color: T.textSoft, lineHeight: 1.6, padding: "8px 12px", background: T.raised, borderRadius: 6 }}>{p.log}</p>}
-                            </div>
-                          )}
-                          {isEditing && (
-                            <div style={{ padding: "14px 18px" }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                          <div style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}` }}>
+                            <Bar value={draftProg} status={ps} h={6} />
+                            <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                            <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
+                            {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                            <Btn primary small disabled={!progChanged} onClick={() => {
+                              dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                              setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                            }}>Save</Btn>
+                          </div>
+                          {p.log && !isDetailsOpen && <div style={{ padding: "8px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{p.log}</div>}
+                          <div style={{ padding: "8px 18px" }}>
+                            <button onClick={() => {
+                              if (isDetailsOpen) { setEditProjId(null); return; }
+                              setEditProjId(p.id);
+                              setEditProjForm({ name: p.name, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                            }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
+                              {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
+                            </button>
+                          </div>
+                          {isDetailsOpen && (
+                            <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                                 <div>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Name</div>
                                   <Input value={editProjForm.name} onChange={e => setEditProjForm(f => ({ ...f, name: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
-                                </div>
-                                <div>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Completion %</div>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                    <input type="range" min={0} max={100} value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Number(e.target.value) }))} style={{ flex: 1 }} />
-                                    <Input value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 50, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                                  </div>
                                 </div>
                                 <div>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
@@ -3952,9 +3956,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                                 <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                                 <Btn primary small disabled={!editProjForm.name.trim()} onClick={() => {
-                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                                   setEditProjId(null);
-                                }}>Save</Btn>
+                                }}>Save Details</Btn>
                               </div>
                             </div>
                           )}
@@ -3976,6 +3980,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               <Metric label="On Track" value={allMembers.filter(m => m.status === "green").length}  status="green"  />
               <Metric label="At Risk"  value={allMembers.filter(m => m.status === "yellow").length} status="yellow" />
               <Metric label="Behind"   value={allMembers.filter(m => m.status === "red").length}    status="red"    />
+              {allMembers.filter(m => m.status === "none").length > 0 && (
+                <Metric label="No OKRs" value={allMembers.filter(m => m.status === "none").length} status="none" />
+              )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -4006,9 +4013,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               const periodMembers = lbPeriod === "all" ? allMembers : allMembers.map(m => {
                 const periodKrs = (memberData[m.id]?.krs || []).filter(kr => (kr.period || "monthly") === lbPeriod);
                 const periodSubs = okrSubmissions.filter(s => s.period === lbPeriod);
-                const rate = calcMemberRate(m.id, periodKrs, periodSubs);
+                const rate = memberHasRateKrs(periodKrs) ? calcMemberRate(m.id, periodKrs, periodSubs) : null;
                 return { ...m, rate, status: getStatus(rate) };
-              }).sort((a, b) => b.rate - a.rate);
+              }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
               const filtered = periodMembers.filter(m =>
                 (lbDeptFilter === "all" || m.deptId === lbDeptFilter) &&
                 (!q || m.name.toLowerCase().includes(q) || m.title?.toLowerCase().includes(q))
@@ -4034,8 +4041,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                           <div><span style={{ fontWeight: 600 }}>{m.name}</span><span style={{ color: T.textDim, marginLeft: 6, fontSize: 12 }}>{m.title}</span></div>
                           <span style={{ fontSize: 12, color: T.textMuted }}>{m.deptName}</span>
                           <span style={{ fontSize: 12, color: T.textMuted }}>{m.teamName}</span>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate.toFixed(1)}%</span>
-                          <Bar value={m.rate} status={m.status} h={5} />
+                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[m.status].color }}>{m.rate != null ? `${m.rate.toFixed(1)}%` : "N/A"}</span>
+                          <Bar value={m.rate ?? 0} status={m.status} h={5} />
                           <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={m.status} small /></div>
                           <div style={{ display: "flex", justifyContent: "flex-end" }}>
                             <button onClick={() => setLbExpandedMember(isExpanded ? null : m.id)}
@@ -4503,8 +4510,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   }, []);
   useEffect(() => { if (page === "checkin") onReload(); }, [page]); // eslint-disable-line
   const [newProj, setNewProj] = useState({ name: "", due: "" });
+  const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", log: "", due: "", contribution: "" });
+  const [progressEdits, setProgressEdits] = useState({});
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
   const [syncNote, setSyncNote] = useState(null);
@@ -4815,14 +4824,23 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             <SectionLabel>My Team Members</SectionLabel>
             {myMembers.map(m => {
               const kd = memberData[m.id]; if (!kd) return null;
-              const r = calcMemberRate(m.id, kd.krs, allOkrSubs); const s = getStatus(r);
+              const hasRateKrs = memberHasRateKrs(kd.krs);
+              const r = hasRateKrs ? calcMemberRate(m.id, kd.krs, allOkrSubs) : null;
+              const s = getStatus(r);
+              const memberProjCount = projects.filter(p => p.mgrId === m.id).length;
               return (
                 <Card key={m.id} style={{ padding: "14px 18px", marginBottom: 8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 55px 150px 70px", alignItems: "center", gap: 12 }}>
                     <Avatar letters={m.av} size={30} />
-                    <div><div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{m.title}</div></div>
-                    <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</span>
-                    <Bar value={r} status={s} h={6} />
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
+                        <span style={{ fontSize: 12, color: T.textMuted }}>{m.title}</span>
+                        {memberProjCount > 0 && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px", fontWeight: 700 }}>◫ {memberProjCount} project{memberProjCount > 1 ? "s" : ""}</span>}
+                      </div>
+                    </div>
+                    <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r != null ? `${r.toFixed(1)}%` : "N/A"}</span>
+                    <Bar value={r ?? 0} status={s} h={6} />
                     <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={s} small /></div>
                   </div>
                 </Card>
@@ -5146,56 +5164,81 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
         {page === "projects" && (<>
           <Header title="Projects" sub="Create and track team projects" />
           <Pane>
-            {user.projectAccess && (
-              <Card style={{ padding: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Create New Project</div>
-                <div style={{ display: "flex", gap: 12 }}>
-                  <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="Project name..." style={{ flex: 1 }} />
-                  <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
-                  <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
-                </div>
-              </Card>
+            {myProjects.length > 0 && (
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
+                <Metric label="Total" value={myProjects.length} />
+                <Metric label="Active" value={myProjects.filter(p => p.status === "active").length} status="yellow" />
+                <Metric label="Completed" value={myProjects.filter(p => p.status !== "active").length} status="green" />
+                <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
+                {(() => { const tc = myProjects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
+              </div>
             )}
+            {user.projectAccess && (
+              <div style={{ marginBottom: 16 }}>
+                {!showNewProj ? (
+                  <Btn primary onClick={() => setShowNewProj(true)}>+ New Project</Btn>
+                ) : (
+                  <Card style={{ padding: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>New Project</div>
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Name</div>
+                        <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Term 2 NAPLAN Prep" style={{ width: "100%" }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
+                        <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
+                      </div>
+                      <Btn primary disabled={!newProj.name.trim()} onClick={() => { dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name.trim(), status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Create</Btn>
+                      <Btn onClick={() => { setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Cancel</Btn>
+                    </div>
+                  </Card>
+                )}
+              </div>
+            )}
+            {myProjects.length === 0 && <EmptyState text={user.projectAccess ? "No projects yet. Click '+ New Project' to get started." : "No projects assigned."} />}
             {myProjects.map(p => {
-              const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
-              const isEditing = editProjId === p.id;
+              const draftProg = progressEdits[p.id] ?? p.progress;
+              const ps = draftProg >= 70 ? "green" : draftProg >= 35 ? "yellow" : "red";
+              const progChanged = progressEdits[p.id] !== undefined;
+              const isDetailsOpen = editProjId === p.id;
               return (
-                <Card key={p.id} style={{ overflow: "hidden" }}>
-                  <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <Card key={p.id} style={{ overflow: "hidden", marginBottom: 8 }}>
+                  <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
-                      <div style={{ fontSize: 16, fontWeight: 700 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
-                      {user.projectAccess && <Btn small onClick={() => {
-                        if (isEditing) { setEditProjId(null); return; }
-                        setEditProjId(p.id);
-                        setEditProjForm({ progress: p.progress, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
-                      }}>{isEditing ? "Cancel" : "Edit"}</Btn>}
+                      {user.projectAccess && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
                     </div>
                   </div>
-                  {!isEditing && (
-                    <div style={{ padding: "12px 18px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: (p.log || p.contribution != null) ? 10 : 0 }}>
-                        <Bar value={p.progress} status={ps} h={6} />
-                        <span style={{ fontFamily: F.mono, fontSize: 15, fontWeight: 800, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
-                        {p.contribution != null && <span style={{ fontSize: 12, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
-                      </div>
-                      {p.log && <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{p.log}</p>}
+                  <div style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${T.border}` }}>
+                    <Bar value={draftProg} status={ps} h={6} />
+                    <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                    <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
+                    {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                    <Btn primary small disabled={!progChanged} onClick={() => {
+                      dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                      setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                    }}>Save</Btn>
+                  </div>
+                  {p.log && !isDetailsOpen && <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{p.log}</div>}
+                  {user.projectAccess && (
+                    <div style={{ padding: "6px 18px 10px" }}>
+                      <button onClick={() => {
+                        if (isDetailsOpen) { setEditProjId(null); return; }
+                        setEditProjId(p.id);
+                        setEditProjForm({ status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                      }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
+                        {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
+                      </button>
                     </div>
                   )}
-                  {isEditing && (
-                    <div style={{ padding: "14px 18px" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Completion %</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input type="range" min={0} max={100} value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Number(e.target.value) }))} style={{ flex: 1 }} />
-                            <Input value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 55, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                            <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
-                          </div>
-                        </div>
+                  {isDetailsOpen && (
+                    <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
@@ -5220,9 +5263,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
-                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           setEditProjId(null);
-                        }}>Save</Btn>
+                        }}>Save Details</Btn>
                       </div>
                     </div>
                   )}
@@ -5238,12 +5281,14 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             {myMembers.filter(m => m.role === "member").map(m => {
               const kd = memberData[m.id];
               const krs = kd?.krs || [];
-              const r = calcMemberRate(m.id, krs, allOkrSubs); const s = getStatus(r);
+              const hasRateKrs = memberHasRateKrs(krs);
+              const r = hasRateKrs ? calcMemberRate(m.id, krs, allOkrSubs) : null;
+              const s = getStatus(r);
               return (
                 <Card key={m.id} style={{ overflow: "hidden" }}>
                   <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar letters={m.av} size={30} /><div><div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{m.title}</div></div></div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</span><Tag type={s} /></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r != null ? `${r.toFixed(1)}%` : "N/A"}</span><Tag type={s} /></div>
                   </div>
                   {krs.length === 0
                     ? <div style={{ padding: "14px 18px", fontSize: 13, color: T.textMuted }}>No KPI data for this member yet. Sync team KPIs to populate.</div>
@@ -5381,8 +5426,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [syncing, setSyncing] = useState(false);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
   const [newProj, setNewProj] = useState({ name: "", due: "" });
+  const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "", contribution: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", log: "", due: "", contribution: "" });
+  const [progressEdits, setProgressEdits] = useState({});
 
   const { memberData, monthlyReports, depts, projects = [] } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -5391,7 +5438,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const mySecondTeam = user.secondTeamId ? myDept?.teams.find(t => t.id === user.secondTeamId) : null;
   const myOkrSubs = (state.okrSubmissions || []).filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
-  const rate = calcMemberRate(user.id, kd.krs, state.okrSubmissions || []); const st = getStatus(rate);
+  const hasRateKrs = memberHasRateKrs(kd.krs);
+  const rate = hasRateKrs ? calcMemberRate(user.id, kd.krs, state.okrSubmissions || []) : null;
+  const st = getStatus(rate);
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
   const myProjects = projects.filter(p => p.mgrId === user.id);
   const navItems = [
@@ -5412,7 +5461,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           <Header title="My OKRs" sub={`${user.title} · ${currentFYQuarter()}`} right={<Tag type={st} />} />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="My Completion"  value={`${rate.toFixed(1)}%`} status={st} sub={`Time: ${TP}%`} />
+              <Metric label="My Completion" value={hasRateKrs ? `${rate.toFixed(1)}%` : "N/A"} status={st} sub={hasRateKrs ? `Time: ${TP}%` : undefined} />
               <Metric label="KRs Tracked"    value={kd.krs.length} />
               <Metric label="Check-Ins" value={myPendingCheckins.length === 0 ? "All Done" : `${myPendingCheckins.length} Pending`} status={myPendingCheckins.length === 0 ? "green" : "yellow"} />
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
@@ -5426,11 +5475,28 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             </div>
             {kd.krs.length === 0 && (
               <div style={{ padding: "28px 20px", textAlign: "center", color: T.textMuted, background: T.raised, borderRadius: 10, border: `1px dashed ${T.border}` }}>
-                <div style={{ fontSize: 32, marginBottom: 10 }}>◎</div>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: T.text }}>No KPIs assigned yet</div>
-                {!user.teamId
-                  ? <div style={{ fontSize: 13 }}>You haven't been assigned to a team. Ask your admin to assign you to a team so your KPIs can be set up.</div>
-                  : <div style={{ fontSize: 13 }}>Your manager hasn't synced KRs to your profile yet. Once they do, your KPIs will appear here.</div>}
+                {user.projectAccess && myProjects.length > 0 ? (<>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>◫</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: T.text }}>No OKRs — contribution tracked via Projects</div>
+                  <div style={{ fontSize: 13, marginBottom: 16 }}>You have {myProjects.length} project{myProjects.length > 1 ? "s" : ""}. Your contribution is tracked through the Projects section.</div>
+                  <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                    <Metric label="Total Projects" value={myProjects.length} />
+                    <Metric label="Active" value={myProjects.filter(p => p.status === "active").length} />
+                    <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
+                  </div>
+                  <Btn primary onClick={() => setPage("projects")}>Go to Projects →</Btn>
+                </>) : user.projectAccess ? (<>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>◫</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: T.text }}>No OKRs assigned</div>
+                  <div style={{ fontSize: 13, marginBottom: 16 }}>Track your work through Projects.</div>
+                  <Btn primary onClick={() => setPage("projects")}>Go to Projects →</Btn>
+                </>) : (<>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>◎</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: T.text }}>No KPIs assigned yet</div>
+                  {!user.teamId
+                    ? <div style={{ fontSize: 13 }}>You haven't been assigned to a team. Ask your admin to assign you to a team so your KPIs can be set up.</div>
+                    : <div style={{ fontSize: 13 }}>Your manager hasn't synced KRs to your profile yet. Once they do, your KPIs will appear here.</div>}
+                </>)}
               </div>
             )}
             {(myKpiPeriod === "all" ? kd.krs : kd.krs.filter(kr => (kr.period || "monthly") === myKpiPeriod)).map(kr => {
@@ -5986,56 +6052,81 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
         {page === "projects" && (<>
           <Header title="Projects" sub="Create and track your projects" />
           <Pane>
-            {user.projectAccess && (
-              <Card style={{ padding: 20 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Create New Project</div>
-                <div style={{ display: "flex", gap: 12 }}>
-                  <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="Project name..." style={{ flex: 1 }} />
-                  <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
-                  <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
-                </div>
-              </Card>
+            {myProjects.length > 0 && (
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
+                <Metric label="Total" value={myProjects.length} />
+                <Metric label="Active" value={myProjects.filter(p => p.status === "active").length} status="yellow" />
+                <Metric label="Completed" value={myProjects.filter(p => p.status !== "active").length} status="green" />
+                <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
+                {(() => { const tc = myProjects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
+              </div>
             )}
+            {user.projectAccess && (
+              <div style={{ marginBottom: 16 }}>
+                {!showNewProj ? (
+                  <Btn primary onClick={() => setShowNewProj(true)}>+ New Project</Btn>
+                ) : (
+                  <Card style={{ padding: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>New Project</div>
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Name</div>
+                        <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Term 2 NAPLAN Prep" style={{ width: "100%" }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
+                        <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
+                      </div>
+                      <Btn primary disabled={!newProj.name.trim()} onClick={() => { dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name.trim(), status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Create</Btn>
+                      <Btn onClick={() => { setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Cancel</Btn>
+                    </div>
+                  </Card>
+                )}
+              </div>
+            )}
+            {myProjects.length === 0 && <EmptyState text={user.projectAccess ? "No projects yet. Click '+ New Project' to get started." : "No projects assigned."} />}
             {myProjects.map(p => {
-              const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
-              const isEditing = editProjId === p.id;
+              const draftProg = progressEdits[p.id] ?? p.progress;
+              const ps = draftProg >= 70 ? "green" : draftProg >= 35 ? "yellow" : "red";
+              const progChanged = progressEdits[p.id] !== undefined;
+              const isDetailsOpen = editProjId === p.id;
               return (
-                <Card key={p.id} style={{ overflow: "hidden" }}>
-                  <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <Card key={p.id} style={{ overflow: "hidden", marginBottom: 8 }}>
+                  <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
-                      <div style={{ fontSize: 16, fontWeight: 700 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
-                      {user.projectAccess && <Btn small onClick={() => {
-                        if (isEditing) { setEditProjId(null); return; }
-                        setEditProjId(p.id);
-                        setEditProjForm({ progress: p.progress, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
-                      }}>{isEditing ? "Cancel" : "Edit"}</Btn>}
+                      {user.projectAccess && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
                     </div>
                   </div>
-                  {!isEditing && (
-                    <div style={{ padding: "12px 18px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: (p.log || p.contribution != null) ? 10 : 0 }}>
-                        <Bar value={p.progress} status={ps} h={6} />
-                        <span style={{ fontFamily: F.mono, fontSize: 15, fontWeight: 800, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
-                        {p.contribution != null && <span style={{ fontSize: 12, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
-                      </div>
-                      {p.log && <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{p.log}</p>}
+                  <div style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${T.border}` }}>
+                    <Bar value={draftProg} status={ps} h={6} />
+                    <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                    <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
+                    {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                    <Btn primary small disabled={!progChanged} onClick={() => {
+                      dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                      setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                    }}>Save</Btn>
+                  </div>
+                  {p.log && !isDetailsOpen && <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{p.log}</div>}
+                  {user.projectAccess && (
+                    <div style={{ padding: "6px 18px 10px" }}>
+                      <button onClick={() => {
+                        if (isDetailsOpen) { setEditProjId(null); return; }
+                        setEditProjId(p.id);
+                        setEditProjForm({ status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                      }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
+                        {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
+                      </button>
                     </div>
                   )}
-                  {isEditing && (
-                    <div style={{ padding: "14px 18px" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Completion %</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input type="range" min={0} max={100} value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Number(e.target.value) }))} style={{ flex: 1 }} />
-                            <Input value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 55, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                            <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
-                          </div>
-                        </div>
+                  {isDetailsOpen && (
+                    <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
@@ -6060,16 +6151,15 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
-                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           setEditProjId(null);
-                        }}>Save</Btn>
+                        }}>Save Details</Btn>
                       </div>
                     </div>
                   )}
                 </Card>
               );
             })}
-            {myProjects.length === 0 && <EmptyState text="No projects yet. Create one above." />}
           </Pane>
         </>)}
 
