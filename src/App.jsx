@@ -1093,6 +1093,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { financeAccess: !u.financeAccess } })} style={{ background: u.financeAccess ? "#d1fae5" : T.raised, border: `1px solid ${u.financeAccess ? "#6ee7b7" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.financeAccess ? "#065f46" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Financial Performance access">$</button>
                 )}
                 {!isSystem && u.role !== "admin" && (
+                  <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { projectAccess: !u.projectAccess } })} style={{ background: u.projectAccess ? T.brandDim : T.raised, border: `1px solid ${u.projectAccess ? T.brandBorder : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.projectAccess ? T.brand : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Project access">◫</button>
+                )}
+                {!isSystem && u.role !== "admin" && (
                   <button onClick={() => onImpersonate(u)} style={{ background: "#fff3e0", border: "1px solid #ffb74d", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#e65100", fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={`View portal as ${u.name}`}>👁</button>
                 )}
                 {!isSystem && (
@@ -5143,14 +5146,16 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
         {page === "projects" && (<>
           <Header title="Projects" sub="Create and track team projects" />
           <Pane>
-            <Card style={{ padding: 20 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Create New Project</div>
-              <div style={{ display: "flex", gap: 12 }}>
-                <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="Project name..." style={{ flex: 1 }} />
-                <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
-                <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
-              </div>
-            </Card>
+            {user.projectAccess && (
+              <Card style={{ padding: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Create New Project</div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="Project name..." style={{ flex: 1 }} />
+                  <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
+                  <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
+                </div>
+              </Card>
+            )}
             {myProjects.map(p => {
               const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
               const isEditing = editProjId === p.id;
@@ -5163,11 +5168,11 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
-                      <Btn small onClick={() => {
+                      {user.projectAccess && <Btn small onClick={() => {
                         if (isEditing) { setEditProjId(null); return; }
                         setEditProjId(p.id);
                         setEditProjForm({ progress: p.progress, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
-                      }}>{isEditing ? "Cancel" : "Edit"}</Btn>
+                      }}>{isEditing ? "Cancel" : "Edit"}</Btn>}
                     </div>
                   </div>
                   {!isEditing && (
@@ -5375,8 +5380,11 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [histPeriod, setHistPeriod] = useState("all");
   const [syncing, setSyncing] = useState(false);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
+  const [newProj, setNewProj] = useState({ name: "", due: "" });
+  const [editProjId, setEditProjId] = useState(null);
+  const [editProjForm, setEditProjForm] = useState({ progress: 0, status: "active", log: "", due: "", contribution: "" });
 
-  const { memberData, monthlyReports, depts } = state;
+  const { memberData, monthlyReports, depts, projects = [] } = state;
   const kd = memberData[user.id] || { krs: [] };
   const myDept = depts.find(d => d.id === user.deptId);
   const myTeam = myDept?.teams.find(t => t.id === user.teamId);
@@ -5385,12 +5393,14 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const rate = calcMemberRate(user.id, kd.krs, state.okrSubmissions || []); const st = getStatus(rate);
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
+  const myProjects = projects.filter(p => p.mgrId === user.id);
   const navItems = [
     { id: "mykpis",       icon: "◎", label: "My OKRs"          },
     { id: "checkin",      icon: "✓", label: "OKR Check-In"     },
     { id: "okr-overview", icon: "⬛", label: "OKR Overview"     },
     { id: "history",      icon: "⊞", label: "My History"        },
     { id: "reports",      icon: "⊠", label: "OKR Reports"      },
+    ...(user.projectAccess ? [{ id: "projects", icon: "◫", label: "Projects" }] : []),
   ];
 
   return (
@@ -5970,6 +5980,96 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 })}
               </>);
             })()}
+          </Pane>
+        </>)}
+
+        {page === "projects" && (<>
+          <Header title="Projects" sub="Create and track your projects" />
+          <Pane>
+            {user.projectAccess && (
+              <Card style={{ padding: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Create New Project</div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="Project name..." style={{ flex: 1 }} />
+                  <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
+                  <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
+                </div>
+              </Card>
+            )}
+            {myProjects.map(p => {
+              const ps = p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red";
+              const isEditing = editProjId === p.id;
+              return (
+                <Card key={p.id} style={{ overflow: "hidden" }}>
+                  <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{p.name}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Last updated: ${p.updatedDate}` : ""}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
+                      {user.projectAccess && <Btn small onClick={() => {
+                        if (isEditing) { setEditProjId(null); return; }
+                        setEditProjId(p.id);
+                        setEditProjForm({ progress: p.progress, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                      }}>{isEditing ? "Cancel" : "Edit"}</Btn>}
+                    </div>
+                  </div>
+                  {!isEditing && (
+                    <div style={{ padding: "12px 18px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: (p.log || p.contribution != null) ? 10 : 0 }}>
+                        <Bar value={p.progress} status={ps} h={6} />
+                        <span style={{ fontFamily: F.mono, fontSize: 15, fontWeight: 800, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
+                        {p.contribution != null && <span style={{ fontSize: 12, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                      </div>
+                      {p.log && <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{p.log}</p>}
+                    </div>
+                  )}
+                  {isEditing && (
+                    <div style={{ padding: "14px 18px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Completion %</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input type="range" min={0} max={100} value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Number(e.target.value) }))} style={{ flex: 1 }} />
+                            <Input value={editProjForm.progress} onChange={e => setEditProjForm(f => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 55, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                            <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
+                          <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
+                          <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution to Date ($)</div>
+                        <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                        <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
+                      </div>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
+                        <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Update on progress, blockers, milestones reached..." rows={3} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
+                        <Btn primary small onClick={() => {
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          setEditProjId(null);
+                        }}>Save</Btn>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+            {myProjects.length === 0 && <EmptyState text="No projects yet. Create one above." />}
           </Pane>
         </>)}
 
