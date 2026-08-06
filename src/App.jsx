@@ -393,10 +393,18 @@ async function dbGet() {
 }
 
 async function dbUpsert(collection, item) {
-  const { error } = await supabase
+  const { data: updated, error: updErr } = await supabase
     .from("app_data")
-    .upsert({ collection, id: item.id, doc: item }, { onConflict: "collection,id" });
-  if (error) throw new Error(`dbUpsert(${collection}/${item.id}): ${error.message}`);
+    .update({ doc: item })
+    .eq("collection", collection)
+    .eq("id", item.id)
+    .select("id");
+  if (updErr) throw new Error(`dbUpsert update (${collection}/${item.id}): ${updErr.message}`);
+  if (updated?.length) return;
+  const { error: insErr } = await supabase
+    .from("app_data")
+    .insert({ collection, id: item.id, doc: item });
+  if (insErr) throw new Error(`dbUpsert insert (${collection}/${item.id}): ${insErr.message}`);
 }
 
 async function dbDelete(collection, id) {
