@@ -163,6 +163,11 @@ function calcRate(krs) {
 // krTarget is already the resolved per-period value stored at send time.
 function submissionCompletion(sub) {
   if (!sub || sub.krType === "tracker") return null;
+  if (sub.krType === "progress") {
+    const target = sub.krTarget != null ? Number(sub.krTarget) : 0;
+    if (target === 0) return 100;
+    return Math.min((Number(sub.actualValue || 0) / target) * 100, 100);
+  }
   const op = sub.krOperator || ">=";
   const target = sub.krTarget != null ? Number(sub.krTarget) : 0;
   // answer=yes with no actualValue → member confirmed they met target → treat actual as target (100%)
@@ -1875,10 +1880,11 @@ function ActionReviewCard({ action, submissions, onConfirm, onCancel }) {
           </thead>
           <tbody>
             {submissions.map((s, i) => {
-              const isNo      = s.answer === "no";
-              const isTracker = s.krType === "tracker";
-              const isSkipped = skipped.has(s.id);
-              const answerColor = isTracker ? "#7c3aed" : isNo ? T.bad : T.ok;
+              const isNo       = s.answer === "no";
+              const isTracker  = s.krType === "tracker";
+              const isProgress = s.krType === "progress";
+              const isSkipped  = skipped.has(s.id);
+              const answerColor = isTracker ? "#7c3aed" : isProgress ? T.brand : isNo ? T.bad : T.ok;
               return (
                 <tr key={s.id} style={{ background: isSkipped ? "transparent" : (i % 2 ? T.raised : "transparent"), opacity: isSkipped ? 0.4 : 1, borderBottom: `1px solid ${T.border}` }}>
                   <td style={{ padding: "10px 12px", textAlign: "center", width: 36 }}>
@@ -1892,10 +1898,11 @@ function ActionReviewCard({ action, submissions, onConfirm, onCancel }) {
                   <td style={{ padding: "10px 12px", color: T.textSoft, maxWidth: 200 }}>
                     <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.krLabel}</span>
                     {isTracker && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", borderRadius: 6, padding: "1px 5px" }}>Tracker</span>}
+                    {isProgress && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "1px 5px" }}>Progress</span>}
                   </td>
                   <td style={{ padding: "10px 12px", textAlign: "left" }}>
                     <span style={{ fontWeight: 700, color: answerColor, fontSize: 13 }}>
-                      {isTracker ? "recorded" : s.answer}
+                      {(isTracker || isProgress) ? "recorded" : s.answer}
                       {isApprove && isNo && !isSkipped && " ⚠️"}
                     </span>
                   </td>
@@ -1903,7 +1910,7 @@ function ActionReviewCard({ action, submissions, onConfirm, onCancel }) {
                     {s.actualValue != null ? `${s.actualValue}${s.krUnit ? " " + s.krUnit : ""}` : "—"}
                   </td>
                   <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.textMuted, whiteSpace: "nowrap" }}>
-                    {!isTracker && s.krTarget != null ? `${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? " " + s.krUnit : ""}` : "—"}
+                    {(!isTracker && !isProgress) && s.krTarget != null ? `${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? " " + s.krUnit : ""}` : isProgress && s.krTarget != null ? `target: ${s.krTarget}${s.krUnit ? " " + s.krUnit : ""}` : "—"}
                   </td>
                   <td style={{ padding: "10px 12px", fontSize: 12, color: T.textMuted, whiteSpace: "nowrap" }}>
                     {s.dateRange || s.periodKey || "—"}
@@ -2033,8 +2040,9 @@ DATA RULES:
 - Status thresholds: green ≥ 66.7%, yellow ≥ 60%, red < 60%.
 - A member shown as "no data this month" has not yet received or answered a check-in — do not treat them as 0% performers.
 - Tracker KRs record numerical values only and do not affect completion rates.
+- Progress KRs record a cumulative running total toward a target and contribute proportionally to completion rate (actual ÷ target × 100%). They are used for project-oriented goals like annual profit targets where multiple check-ins occur through the year.
 - Financial data (Revenue, Net Profit, Expense) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
-- Project data includes all manager-owned projects: name, department, responsible manager, status (active/completed), progress (0–100%), and due date. Proactively flag projects that are overdue or have low progress close to their due date.
+- Project data includes all manager-owned projects: name, department, responsible manager, status (active/completed), progress (0–100%), due date, and optional contribution ($). Proactively flag projects that are overdue or have low progress close to their due date.
 
 RESPONSE STYLE:
 - Lead with the direct answer, then supporting detail.
@@ -2188,6 +2196,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       const mgrName = mgr?.name || "—";
       const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
       let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}% | Due: ${p.due || "TBD"}${overdue}`;
+      if (p.contribution != null) line += ` | Contribution: ${fmtMoney(p.contribution)}`;
       if (p.log) line += `\n    Note: ${p.log.slice(0, 100)}${p.log.length > 100 ? "…" : ""}`;
       return line;
     };
@@ -2434,11 +2443,14 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
 
   function addKr(deptId, teamId) {
     if (!newKr.label) return;
-    if (newKr.krType !== "tracker" && !newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
+    if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
+    if (newKr.krType === "progress" && Number(newKr.target) <= 0) return;
     const newId = `N${Date.now().toString(36).slice(-4).toUpperCase()}`;
     const baseKr = { id: newId, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
     const kr = newKr.krType === "tracker"
       ? { ...baseKr, type: "tracker", target: 0, actual: null }
+      : newKr.krType === "progress"
+      ? { ...baseKr, type: "progress", target: Number(newKr.target), actual: null }
       : newKr.useMonthlyTargets
         ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
         : { ...baseKr, target: Number(newKr.target), actual: null };
@@ -2764,10 +2776,11 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
                   {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                   {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                  {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress · affects rate proportionally</span>}
                   {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Monthly Breakdown</span>}
                   {adminOkrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                 </div>
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)} this mo.` : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)} this mo.` : kr.type === "progress" ? fmt(kr.target) : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
                 {kr.type === "tracker"
                   ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span>
                   : isMonthly
@@ -3082,7 +3095,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         {customCols.map(col => <span key={col.id} />)}
                         <button onClick={() => addKr(deptId, teamId)} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                       </div>
-                      {sectionPeriod === "monthly" && newKr.krType !== "tracker" && (
+                      {sectionPeriod === "monthly" && newKr.krType !== "tracker" && newKr.krType !== "progress" && (
                         <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}` }}>
                           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: T.brand, fontWeight: 600 }}>
                             <input type="checkbox" checked={newKr.useMonthlyTargets} onChange={e => setNewKr(p => ({ ...p, useMonthlyTargets: e.target.checked, target: e.target.checked ? "" : p.target }))} style={{ accentColor: T.brand }} />
@@ -3100,10 +3113,14 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                           )}
                         </div>
                       )}
-                      <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}` }}>
+                      <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}`, display: "flex", gap: 24, flexWrap: "wrap" }}>
                         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: "#7c3aed", fontWeight: 600 }}>
                           <input type="checkbox" checked={newKr.krType === "tracker"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "tracker" : "", useMonthlyTargets: false }))} style={{ accentColor: "#7c3aed" }} />
                           Tracker — record values only, does not affect completion rate
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: "#0771e3", fontWeight: 600 }}>
+                          <input type="checkbox" checked={newKr.krType === "progress"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "progress" : "", useMonthlyTargets: false }))} style={{ accentColor: "#0771e3" }} />
+                          Progress — records cumulative progress toward target; affects rate proportionally
                         </label>
                       </div>
                     </div>
@@ -3511,23 +3528,27 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                                   <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{s.krLabel}</span>
                                   {s.krType === "tracker" && <span style={{ fontSize: 10, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Tracker · no rate impact</span>}
+                                  {s.krType === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Progress · affects rate</span>}
                                 </div>
                                 <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
-                                  {s.krType !== "tracker" && <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono, fontWeight: 600, alignSelf: "center" }}>{s.krOperator || ">="}</span>}
+                                  {s.krType !== "tracker" && s.krType !== "progress" && <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono, fontWeight: 600, alignSelf: "center" }}>{s.krOperator || ">="}</span>}
                                   <span style={{ fontSize: 20, fontWeight: 800, fontFamily: F.mono, color: T.text, lineHeight: 1 }}>{s.krTarget ?? "—"}</span>
                                   {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
-                                  <span style={{ fontSize: 11, color: T.textDim }}>performance target</span>
+                                  <span style={{ fontSize: 11, color: T.textDim }}>{s.krType === "progress" ? "target" : "performance target"}</span>
                                   {s.answer === "no" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.bad, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.bad }}>actual</span></>}
                                   {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.actualValue ?? s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span></>}
+                                  {s.krType === "progress" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.brand, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.brand }}>recorded</span></>}
                                 </div>
                                 <div style={{ fontSize: 12, color: T.textMuted }}>{periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}</div>
                                 {s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.bad, marginTop: 3, fontStyle: "italic" }}>Reason: {s.reason}</div>}
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                                 {s.answer === null
-                                  ? <span style={{ fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "3px 8px" }}>{s.krType === "tracker" ? "Awaiting record" : "Awaiting answer"}</span>
+                                  ? <span style={{ fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 6, padding: "3px 8px" }}>{(s.krType === "tracker" || s.krType === "progress") ? "Awaiting record" : "Awaiting answer"}</span>
                                   : s.krType === "tracker"
                                     ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "3px 8px" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                                    : s.krType === "progress"
+                                    ? <span style={{ fontSize: 12, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "3px 8px" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}{s.krTarget ? ` (${Math.min(Math.round((Number(s.actualValue || 0) / Number(s.krTarget)) * 100), 100)}%)` : ""}</span>
                                     : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                                 {s.answer !== null && s.approval === "pending"
                                   ? <div style={{ display: "flex", gap: 6 }}>
@@ -3548,7 +3569,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                   <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
                                   {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                  <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                  {s.krType === "progress" ? <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span> : <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                 </div>
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
@@ -3559,7 +3580,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             {editingSub?.id === s.id && (
                               <div style={{ margin: "0 18px 10px 21px", padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Submission</div>
-                                {s.krType !== "tracker" ? (<>
+                                {s.krType !== "tracker" && s.krType !== "progress" ? (<>
                                   <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                                     <button onClick={() => setEditingSub(p => ({ ...p, answer: "yes", actual: String(s.krTarget ?? "") }))}
                                       style={{ background: editingSub.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingSub.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "yes" ? T.ok : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
@@ -3577,18 +3598,19 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                     <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
                                     <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                     {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                    {s.krType === "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                   </div>
                                 )}
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
-                                  <Btn primary small onClick={() => { const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                  <Btn primary small onClick={() => { const newAnswer = (s.krType === "tracker" || s.krType === "progress") ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
                                 </div>
                               </div>
                             )}
                             {editingApproved?.id === s.id && (
                               <div style={{ margin: "0 18px 10px 21px", padding: "10px 12px", background: T.raised, borderRadius: 7, border: `1px solid ${T.border}` }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Submission — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
-                                {s.krType !== "tracker" && (
+                                {s.krType !== "tracker" && s.krType !== "progress" && (
                                   <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                                     <button onClick={() => setEditingApproved(p => ({ ...p, answer: "yes" }))} style={{ background: editingApproved.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingApproved.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "yes" ? T.ok : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
                                     <button onClick={() => setEditingApproved(p => ({ ...p, answer: "no" }))} style={{ background: editingApproved.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingApproved.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "no" ? T.bad : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✗ No</button>
@@ -3598,7 +3620,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                   <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                   {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                  {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                  {s.krType !== "tracker" && s.krType !== "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                  {s.krType === "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                 </div>
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
@@ -3873,16 +3896,17 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <Btn small onClick={() => {
                                 if (isEditing) { setEditProjId(null); return; }
                                 setEditProjId(p.id);
-                                setEditProjForm({ name: p.name, progress: p.progress, status: p.status, log: p.log || "", due: p.due || "" });
+                                setEditProjForm({ name: p.name, progress: p.progress, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
                               }}>{isEditing ? "Cancel" : "Edit"}</Btn>
                               <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>
                             </div>
                           </div>
                           {!isEditing && (
                             <div style={{ padding: "12px 18px" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: p.log ? 10 : 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: (p.log || p.contribution != null) ? 10 : 0 }}>
                                 <Bar value={p.progress} status={ps} h={6} />
                                 <span style={{ fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
+                                {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                               </div>
                               {p.log && <p style={{ margin: 0, fontSize: 13, color: T.textSoft, lineHeight: 1.6, padding: "8px 12px", background: T.raised, borderRadius: 6 }}>{p.log}</p>}
                             </div>
@@ -3914,13 +3938,18 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 </div>
                               </div>
                               <div style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution to Date ($)</div>
+                                <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                                <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
+                              </div>
+                              <div style={{ marginBottom: 12 }}>
                                 <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
                                 <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Notes, updates, observations..." rows={3} />
                               </div>
                               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                                 <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                                 <Btn primary small disabled={!editProjForm.name.trim()} onClick={() => {
-                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                                   setEditProjId(null);
                                 }}>Save</Btn>
                               </div>
@@ -4039,10 +4068,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                             <div>
                                               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={kr.label}>{kr.label}</span>
                                               {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
-                                              {isMonthly && kr.type !== "tracker" && <span style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, padding: "1px 5px", display: "inline-block", marginLeft: 4 }}>Monthly</span>}
+                                              {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress</span>}
+                                              {isMonthly && kr.type !== "tracker" && kr.type !== "progress" && <span style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, padding: "1px 5px", display: "inline-block", marginLeft: 4 }}>Monthly</span>}
                                             </div>
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>N/A</span>
                                               : isMonthly ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted, fontSize: 12 }}>{kr.operator || ">="} {fmt(mTgt)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                                              : kr.type === "progress" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                                               : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
                                               : isMonthly ? <Input value={mAct != null ? String(mAct) : ""} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: Number(e.target.value) || 0 } })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
@@ -4584,10 +4615,11 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
                   {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                   {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                  {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress · affects rate proportionally</span>}
                   {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Monthly Breakdown</span>}
                   {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                 </div>
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)} this mo.` : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)} this mo.` : kr.type === "progress" ? fmt(kr.target) : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
                 {kr.type === "tracker"
                   ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span>
                   : isMonthly
@@ -4838,25 +4870,27 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         {pkPending.length === 0 && <span style={{ fontSize: 11, color: T.ok }}>✓ All answered</span>}
                       </div>
                   {pkPending.map(s => (
-                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.krType === "progress" ? T.brand : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
                             <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
                             {s.krUnit && <span style={{ fontSize: 10, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 6px" }}>{s.krUnit}</span>}
-                            {s.krIsMonthly && s.krType !== "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc", borderRadius: 5, padding: "1px 6px" }}>Monthly</span>}
+                            {s.krIsMonthly && s.krType !== "tracker" && s.krType !== "progress" && <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc", borderRadius: 5, padding: "1px 6px" }}>Monthly</span>}
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
+                            {s.krType === "progress" && <span style={{ fontSize: 10, fontWeight: 700, background: T.brandDim, color: T.brand, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Progress · affects rate proportionally</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            {s.krType !== "tracker" && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {(s.krType !== "tracker" && s.krType !== "progress") && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType === "progress" && <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                           </div>
                         </div>
-                        {s.krType === "tracker" ? (
+                        {(s.krType === "tracker" || s.krType === "progress") ? (
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                             <Input value={trackerInput[s.id] || ""} onChange={e => setTrackerInput(p => ({ ...p, [s.id]: e.target.value }))} placeholder="Enter value" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>Record</Btn>
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>{s.krType === "progress" ? "Record Progress" : "Record"}</Btn>
                           </div>
                         ) : (noReason?.id !== s.id && yesConfirm?.id !== s.id) ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -4871,7 +4905,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           </div>
                         ) : null}
                       </div>
-                      {s.krType !== "tracker" && yesConfirm?.id === s.id && (
+                      {s.krType !== "tracker" && s.krType !== "progress" && yesConfirm?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.okDim, borderRadius: 8, border: `1px solid ${T.okBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.ok, marginBottom: 8 }}>Enter your actual value</div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -4885,7 +4919,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           </div>
                         </div>
                       )}
-                      {s.krType !== "tracker" && noReason?.id === s.id && (
+                      {s.krType !== "tracker" && s.krType !== "progress" && noReason?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
                           <TextArea value={noReason.reason} onChange={e => setNoReason(p => ({ ...p, reason: e.target.value }))} placeholder="Briefly explain why this target was not reached..." rows={2} />
@@ -4908,7 +4942,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   {pkAnswered.length > 0 && (
                     <div style={{ marginTop: pkPending.length > 0 ? 6 : 0 }}>
                       {pkAnswered.slice(0, 10).map(s => (
-                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
+                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.krType === "progress" ? T.brand : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
                               <span style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</span>
@@ -4917,6 +4951,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               {s.krType === "tracker"
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                                : s.krType === "progress"
+                                ? <span style={{ fontSize: 12, fontWeight: 700, color: T.brand }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}{s.krTarget ? ` (${Math.min(Math.round((Number(s.actualValue || 0) / Number(s.krTarget)) * 100), 100)}%)` : ""}</span>
                                 : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                               {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
@@ -4987,20 +5023,25 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
                                       <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{s.krLabel}</span>
                                       {s.krType === "tracker" && <span style={{ fontSize: 10, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Tracker · no rate impact</span>}
+                                      {s.krType === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Progress · affects rate</span>}
                                     </div>
                                     <div style={{ fontSize: 11, color: T.textMuted }}>
                                       <span style={{ fontSize: 11, color: T.textMuted, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "0px 5px", marginRight: 6 }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
-                                      {s.krType !== "tracker" && <>{`Performance Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
+                                      {s.krType !== "tracker" && s.krType !== "progress" && <>{`Performance Target: ${s.krOperator || ">="} ${s.krTarget}${s.krUnit ? ` ${s.krUnit}` : ""}`}</>}
+                                      {s.krType === "progress" && <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                                       {s.krType === "tracker" && s.actualValue != null && <span style={{ color: "#6d28d9", fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
-                                      {s.krType !== "tracker" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
-                                      {s.krType !== "tracker" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.actualValue ?? s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                      {s.krType === "progress" && s.actualValue != null && <span style={{ color: T.brand, marginLeft: 8, fontWeight: 700 }}>Recorded: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}{s.krTarget ? ` (${Math.min(Math.round((Number(s.actualValue) / Number(s.krTarget)) * 100), 100)}%)` : ""}</span>}
+                                      {s.krType !== "tracker" && s.krType !== "progress" && s.answer === "no" && s.actualValue != null && <span style={{ color: T.bad, marginLeft: 8, fontWeight: 700 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                      {s.krType !== "tracker" && s.krType !== "progress" && s.answer === "yes" && <span style={{ color: T.ok, marginLeft: 8 }}>Actual: {s.actualValue ?? s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                                       <span style={{ marginLeft: 8 }}>· Answered: {s.answeredAt?.slice(0,10) || "—"}</span>
                                     </div>
-                                    {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
+                                    {s.krType !== "tracker" && s.krType !== "progress" && s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.bad, marginTop: 2, fontStyle: "italic" }}>Reason: {s.reason}</div>}
                                   </div>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                                     {s.krType === "tracker"
                                       ? <span style={{ fontSize: 11, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px" }}>Tracker</span>
+                                      : s.krType === "progress"
+                                      ? <span style={{ fontSize: 11, fontWeight: 700, background: T.brandDim, color: T.brand, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px" }}>Progress</span>
                                       : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                                     {s.approval === "pending"
                                       ? <div style={{ display: "flex", gap: 6 }}>
@@ -5020,7 +5061,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                       <Input value={rejectOkr.actual} onChange={e => setRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
                                       {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                      <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
+                                      {s.krType === "progress" ? <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span> : <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                     </div>
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
@@ -5031,7 +5072,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                 {editingSub?.id === s.id && (
                                   <div style={{ margin: "0 16px 10px 19px", padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
                                     <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>Edit Submission</div>
-                                    {s.krType !== "tracker" ? (<>
+                                    {s.krType !== "tracker" && s.krType !== "progress" ? (<>
                                       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                                         <button onClick={() => setEditingSub(p => ({ ...p, answer: "yes", actual: String(s.krTarget ?? "") }))} style={{ background: editingSub.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingSub.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "yes" ? T.ok : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
                                         <button onClick={() => setEditingSub(p => ({ ...p, answer: "no" }))} style={{ background: editingSub.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingSub.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "7px 18px", cursor: "pointer", color: editingSub.answer === "no" ? T.bad : T.textMuted, fontSize: 14, fontWeight: 700, fontFamily: F.body }}>✗ No</button>
@@ -5044,21 +5085,22 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                       </div>
                                     </>) : (
                                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                                        <span style={{ fontSize: 12, color: T.textMuted }}>Recorded value:</span>
+                                        <span style={{ fontSize: 12, color: T.textMuted }}>{s.krType === "progress" ? "Recorded value:" : "Recorded value:"}</span>
                                         <Input value={editingSub.actual} onChange={e => setEditingSub(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                         {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                        {s.krType === "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                       </div>
                                     )}
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
-                                      <Btn primary small onClick={() => { const newAnswer = s.krType === "tracker" ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                      <Btn primary small onClick={() => { const newAnswer = (s.krType === "tracker" || s.krType === "progress") ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
                                     </div>
                                   </div>
                                 )}
                                 {editingApproved?.id === s.id && (
                                   <div style={{ margin: "0 16px 10px 19px", padding: "10px 12px", background: T.raised, borderRadius: 7, border: `1px solid ${T.border}` }}>
                                     <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Edit Submission — {s.approval === "approved" ? "Approved" : "Rejected"}</div>
-                                    {s.krType !== "tracker" && (
+                                    {s.krType !== "tracker" && s.krType !== "progress" && (
                                       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                                         <button onClick={() => setEditingApproved(p => ({ ...p, answer: "yes" }))} style={{ background: editingApproved.answer === "yes" ? T.okDim : T.surface, border: `1px solid ${editingApproved.answer === "yes" ? T.okBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "yes" ? T.ok : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✓ Yes</button>
                                         <button onClick={() => setEditingApproved(p => ({ ...p, answer: "no" }))} style={{ background: editingApproved.answer === "no" ? T.badDim : T.surface, border: `1px solid ${editingApproved.answer === "no" ? T.badBorder : T.border}`, borderRadius: 7, padding: "5px 16px", cursor: "pointer", color: editingApproved.answer === "no" ? T.bad : T.textMuted, fontSize: 13, fontWeight: 700, fontFamily: F.body }}>✗ No</button>
@@ -5068,7 +5110,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                       <span style={{ fontSize: 12, color: T.textMuted }}>Actual value:</span>
                                       <Input value={editingApproved.actual} onChange={e => setEditingApproved(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                                       {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                                      {s.krType !== "tracker" && <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                      {s.krType !== "tracker" && s.krType !== "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                      {s.krType === "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                     </div>
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
@@ -5105,7 +5148,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
               <div style={{ display: "flex", gap: 12 }}>
                 <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="Project name..." style={{ flex: 1 }} />
                 <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
-                <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0 } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
+                <Btn primary onClick={() => { if (!newProj.name) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name, status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); }}>Create</Btn>
               </div>
             </Card>
             {myProjects.map(p => {
@@ -5123,15 +5166,16 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <Btn small onClick={() => {
                         if (isEditing) { setEditProjId(null); return; }
                         setEditProjId(p.id);
-                        setEditProjForm({ progress: p.progress, status: p.status, log: p.log || "", due: p.due || "" });
+                        setEditProjForm({ progress: p.progress, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
                       }}>{isEditing ? "Cancel" : "Edit"}</Btn>
                     </div>
                   </div>
                   {!isEditing && (
                     <div style={{ padding: "12px 18px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: p.log ? 10 : 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: (p.log || p.contribution != null) ? 10 : 0 }}>
                         <Bar value={p.progress} status={ps} h={6} />
                         <span style={{ fontFamily: F.mono, fontSize: 15, fontWeight: 800, color: STATUS_THEME[ps].color, whiteSpace: "nowrap" }}>{p.progress}%</span>
+                        {p.contribution != null && <span style={{ fontSize: 12, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                       </div>
                       {p.log && <p style={{ margin: 0, fontSize: 14, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 7 }}>{p.log}</p>}
                     </div>
@@ -5160,13 +5204,18 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         </div>
                       </div>
                       <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution to Date ($)</div>
+                        <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                        <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
+                      </div>
+                      <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
                         <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Update on progress, blockers, milestones reached..." rows={3} />
                       </div>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
-                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: editProjForm.progress, status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           setEditProjId(null);
                         }}>Save</Btn>
                       </div>
@@ -5396,6 +5445,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Tracker · does not affect rate</span>}
+                      {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Progress · affects rate proportionally</span>}
                       {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Monthly Breakdown</span>}
                       <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{kr.period || "monthly"}</span>
                       {kr.type !== "tracker" && <Tag type={s} />}
@@ -5507,7 +5557,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
-                      <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)} target{kr.unit ? ` (${kr.unit})` : ""}</div></div>
+                      <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.type === "progress" ? "" : `${kr.operator || ">="} `}{fmt(kr.target)} target{kr.unit ? ` (${kr.unit})` : ""}</div></div>
                       <div style={{ flex: 1 }}><Bar value={r} status={s} h={10} /></div>
                       <div>
                         <div style={{ fontSize: 26, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</div>
@@ -5528,7 +5578,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
                             {hist.map(s => {
                               const leftCol = s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : s.answer !== null ? T.warn : T.border;
-                              const ansCol = s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === "submitted" ? "#7c3aed" : T.textDim;
+                              const ansCol = s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === "submitted" ? (s.krType === "progress" ? T.brand : "#7c3aed") : T.textDim;
                               const ansLabel = s.answer === "yes" ? "✓ Yes" : s.answer === "no" ? "✗ No" : s.answer === "submitted" ? "Recorded" : "Not answered";
                               return (
                                 <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", borderRadius: 7, background: T.raised, borderLeft: `3px solid ${leftCol}`, fontSize: 13, flexWrap: "wrap" }}>
@@ -5585,10 +5635,11 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
                   {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                   {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                  {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress · affects rate proportionally</span>}
                   {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Monthly Breakdown</span>}
                   {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                 </div>
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)}` : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)}` : kr.type === "progress" ? fmt(kr.target) : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
                 {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? fmt(curActual) : fmt(kr.actual)}</span>}
                 {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
                 {kr.type === "tracker" ? <span /> : hasSub ? <Bar value={pct} status={s} h={5} /> : <span />}
@@ -5693,7 +5744,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
                         {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Tracker</span>}
-                        {kr.type !== "tracker" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Progress</span>}
+                        {kr.type !== "tracker" && kr.type !== "progress" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         {kr.type === "tracker"
                           ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
@@ -5752,25 +5804,27 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         {pkPending.length === 0 && <span style={{ fontSize: 11, color: T.ok }}>✓ All answered</span>}
                       </div>
                   {pkPending.map(s => (
-                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
+                    <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.krType === "progress" ? T.brand : noReason?.id === s.id ? T.bad : yesConfirm?.id === s.id ? T.ok : T.warn}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
                             <span style={{ fontSize: 15, fontWeight: 700 }}>{s.krLabel}</span>
                             {s.krUnit && <span style={{ fontSize: 10, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 6px" }}>{s.krUnit}</span>}
-                            {s.krIsMonthly && s.krType !== "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc", borderRadius: 5, padding: "1px 6px" }}>Monthly</span>}
+                            {s.krIsMonthly && s.krType !== "tracker" && s.krType !== "progress" && <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", border: "1px solid #7dd3fc", borderRadius: 5, padding: "1px 6px" }}>Monthly</span>}
                             {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Tracker · does not affect rate</span>}
+                            {s.krType === "progress" && <span style={{ fontSize: 10, fontWeight: 700, background: T.brandDim, color: T.brand, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Progress · affects rate proportionally</span>}
                           </div>
                           <div style={{ fontSize: 12, color: T.textMuted }}>
-                            {s.krType !== "tracker" && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {(s.krType !== "tracker" && s.krType !== "progress") && <span>Performance Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                            {s.krType === "progress" && <span>Target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                             {s.krType === "tracker" && s.krUnit && <span>Unit: {s.krUnit}</span>}
                           </div>
                         </div>
-                        {s.krType === "tracker" ? (
+                        {(s.krType === "tracker" || s.krType === "progress") ? (
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                             <Input value={trackerInput[s.id] || ""} onChange={e => setTrackerInput(p => ({ ...p, [s.id]: e.target.value }))} placeholder="Enter value" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>Record</Btn>
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>{s.krType === "progress" ? "Record Progress" : "Record"}</Btn>
                           </div>
                         ) : (noReason?.id !== s.id && yesConfirm?.id !== s.id) ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -5785,7 +5839,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           </div>
                         ) : null}
                       </div>
-                      {s.krType !== "tracker" && yesConfirm?.id === s.id && (
+                      {s.krType !== "tracker" && s.krType !== "progress" && yesConfirm?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.okDim, borderRadius: 8, border: `1px solid ${T.okBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.ok, marginBottom: 8 }}>Enter your actual value</div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -5799,7 +5853,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           </div>
                         </div>
                       )}
-                      {s.krType !== "tracker" && noReason?.id === s.id && (
+                      {s.krType !== "tracker" && s.krType !== "progress" && noReason?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.badDim, borderRadius: 8, border: `1px solid ${T.badBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.bad, marginBottom: 8 }}>Why was this OKR not met?</div>
                           <TextArea value={noReason.reason} onChange={e => setNoReason(p => ({ ...p, reason: e.target.value }))} placeholder="Briefly explain why this target was not reached..." rows={2} />
@@ -5822,7 +5876,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   {pkAnswered.length > 0 && (
                     <div style={{ marginTop: pkPending.length > 0 ? 6 : 0 }}>
                       {pkAnswered.slice(0, 10).map(s => (
-                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
+                        <Card key={s.id} style={{ padding: "10px 14px", marginBottom: 4, borderLeft: `3px solid ${s.krType === "tracker" ? "#7c3aed" : s.krType === "progress" ? T.brand : s.answer === "yes" ? T.ok : T.bad}`, opacity: s.approval === "approved" ? 0.7 : 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
                               <span style={{ fontSize: 13, fontWeight: 600 }}>{s.krLabel}</span>
@@ -5831,6 +5885,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               {s.krType === "tracker"
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                                : s.krType === "progress"
+                                ? <span style={{ fontSize: 12, fontWeight: 700, color: T.brand }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}{s.krTarget ? ` (${Math.min(Math.round((Number(s.actualValue || 0) / Number(s.krTarget)) * 100), 100)}%)` : ""}</span>
                                 : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                               {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
@@ -5870,7 +5926,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 {filtered.length === 0 && <EmptyState text="No check-in submissions yet." />}
                 {filtered.map(s => {
                   const leftCol = s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : s.answer !== null ? T.warn : T.border;
-                  const ansCol = s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === "submitted" ? "#7c3aed" : T.textDim;
+                  const ansCol = s.answer === "yes" ? T.ok : s.answer === "no" ? T.bad : s.answer === "submitted" ? (s.krType === "progress" ? T.brand : "#7c3aed") : T.textDim;
                   const ansLabel = s.answer === "yes" ? "✓ Met target" : s.answer === "no" ? "✗ Missed target" : s.answer === "submitted" ? "Recorded" : "Not answered yet";
                   return (
                     <Card key={s.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${leftCol}` }}>
@@ -5881,6 +5937,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px", fontWeight: 700 }}>{s.period}</span>
                             <span style={{ fontSize: 12, color: T.textMuted }}>{s.dateRange || s.periodKey}</span>
                             {s.krType === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Tracker</span>}
+                            {s.krType === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Progress</span>}
                           </div>
                           <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: ansCol }}>{ansLabel}</div>
                           {s.answer === "no" && s.actualValue != null && (
