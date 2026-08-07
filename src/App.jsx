@@ -3894,20 +3894,23 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               {projects.length > 0 && <Metric label="Avg Progress" value={`${Math.round(projects.reduce((a, p) => a + p.progress, 0) / projects.length)}%`} />}
               {(() => { const tc = projects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
             </div>
-            {projects.length === 0 && <EmptyState text="No projects submitted by managers yet." />}
+            {projects.length === 0 && <EmptyState text="No projects yet." />}
             {projects.length > 0 && (() => {
-              return depts.map(dept => {
-                const deptManagers = users.filter(u => u.role === "manager" && u.deptId === dept.id);
-                const deptProjects = projects.filter(p => deptManagers.some(m => m.id === p.mgrId));
+              const ownerDept = p => users.find(u => u.id === p.mgrId)?.deptId || null;
+              const groups = [...depts.map(d => ({ id: d.id, name: d.name })), { id: null, name: "Other" }];
+              return groups.map(group => {
+                const deptProjects = group.id
+                  ? projects.filter(p => ownerDept(p) === group.id)
+                  : projects.filter(p => !ownerDept(p));
                 if (deptProjects.length === 0) return null;
                 return (
-                  <div key={dept.id} style={{ marginBottom: 24 }}>
+                  <div key={group.id ?? "__other"} style={{ marginBottom: 24 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, paddingBottom: 8, borderBottom: `2px solid ${T.border}` }}>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{dept.name}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{group.name}</div>
                       <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>{deptProjects.length} project{deptProjects.length !== 1 ? "s" : ""}</span>
                     </div>
                     {deptProjects.map(p => {
-                      const mgr = deptManagers.find(m => m.id === p.mgrId);
+                      const mgr = users.find(u => u.id === p.mgrId);
                       const draftProg = progressEdits[p.id] ?? p.progress;
                       const ps = draftProg >= 70 ? "green" : draftProg >= 35 ? "yellow" : "red";
                       const progChanged = progressEdits[p.id] !== undefined;
