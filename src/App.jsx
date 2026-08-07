@@ -4182,9 +4182,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     rawRows = admParseCSV(await file.text());
                   } else {
                     const { default: readXlsxFile } = await import("read-excel-file/browser");
-                    const sheet = await readXlsxFile(file);
-                    const headers = (sheet[0] || []).map(h => String(h ?? ""));
-                    rawRows = sheet.slice(1).map(row => { const r = {}; headers.forEach((h, i) => { r[h] = row[i] != null ? String(row[i]) : ""; }); return r; });
+                    const result = await readXlsxFile(file);
+                    const rows = result[0]?.data || [];
+                    const headers = (rows[0] || []).map(h => String(h ?? ""));
+                    rawRows = rows.slice(1).map(row => { const r = {}; headers.forEach((h, i) => { r[h] = row[i] != null ? String(row[i]) : ""; }); return r; });
                   }
                   if (rawRows.length > 10000) { setAdmError("File has more than 10,000 records. Please split into smaller batches."); return; }
                   setAdmParsed(admAnalyze(rawRows, file.name, file.size, admRecords));
