@@ -383,12 +383,20 @@ const supabase = createClient(
 );
 
 async function dbGet() {
-  const { data, error } = await supabase.from("app_data").select("collection, id, doc").limit(10000);
-  if (error) throw new Error(error.message);
   const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], okrSubmissions: [], emailLogs: [], settings: [] };
-  for (const row of data) {
-    if (result[row.collection]) result[row.collection].push(row.doc);
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc").range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) {
+      if (result[row.collection]) result[row.collection].push(row.doc);
+    }
+    if (data.length < PAGE) break;
+    offset += PAGE;
   }
+  console.log(`[DB] loaded ${Object.values(result).flat().length} rows`);
   return result;
 }
 
