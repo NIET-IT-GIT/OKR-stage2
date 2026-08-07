@@ -4578,7 +4578,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
-  const myProjects = projects.filter(p => p.mgrId === user.id);
+  const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
 
   function mgrTriggerSync(deptId, teamId) {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -5240,25 +5240,30 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
-                      {user.projectAccess && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
+                      {user.projectAccess && p.mgrId === user.id && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
                     </div>
                   </div>
                   <div style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${T.border}` }}>
                     <Bar value={draftProg} status={ps} h={6} />
-                    <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                    <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
-                    {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
-                    <Btn primary small disabled={!progChanged} onClick={() => {
-                      dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
-                      setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
-                    }}>Save</Btn>
+                    {p.mgrId === user.id ? <>
+                      <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                      <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
+                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                      <Btn primary small disabled={!progChanged} onClick={() => {
+                        dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                        setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                      }}>Save</Btn>
+                    </> : <>
+                      <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
+                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                    </>}
                   </div>
                   {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
-                  {user.projectAccess && (
+                  {user.projectAccess && p.mgrId === user.id && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
@@ -5473,7 +5478,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
 
-  const { memberData, monthlyReports, depts, projects = [] } = state;
+  const { memberData, monthlyReports, depts, projects = [], users } = state;
   const kd = memberData[user.id] || { krs: [] };
   const myDept = depts.find(d => d.id === user.deptId);
   const myTeam = myDept?.teams.find(t => t.id === user.teamId);
@@ -5484,7 +5489,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const rate = hasRateKrs ? calcMemberRate(user.id, kd.krs, state.okrSubmissions || []) : null;
   const st = getStatus(rate);
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
-  const myProjects = projects.filter(p => p.mgrId === user.id);
+  const myOwnProjects = projects.filter(p => p.mgrId === user.id);
+  const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
   const navItems = [
     { id: "mykpis",       icon: "◎", label: "My OKRs"          },
     { id: "checkin",      icon: "✓", label: "OKR Check-In"     },
@@ -5517,14 +5523,14 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             </div>
             {kd.krs.length === 0 && (
               <div style={{ padding: "28px 20px", textAlign: "center", color: T.textMuted, background: T.raised, borderRadius: 10, border: `1px dashed ${T.border}` }}>
-                {user.projectAccess && myProjects.length > 0 ? (<>
+                {user.projectAccess && myOwnProjects.length > 0 ? (<>
                   <div style={{ fontSize: 32, marginBottom: 10 }}>◫</div>
                   <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: T.text }}>No OKRs — contribution tracked via Projects</div>
-                  <div style={{ fontSize: 13, marginBottom: 16 }}>You have {myProjects.length} project{myProjects.length > 1 ? "s" : ""}. Your contribution is tracked through the Projects section.</div>
+                  <div style={{ fontSize: 13, marginBottom: 16 }}>You have {myOwnProjects.length} project{myOwnProjects.length > 1 ? "s" : ""}. Your contribution is tracked through the Projects section.</div>
                   <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
-                    <Metric label="Total Projects" value={myProjects.length} />
-                    <Metric label="Active" value={myProjects.filter(p => p.status === "active").length} />
-                    <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
+                    <Metric label="Total Projects" value={myOwnProjects.length} />
+                    <Metric label="Active" value={myOwnProjects.filter(p => p.status === "active").length} />
+                    <Metric label="Avg Progress" value={`${Math.round(myOwnProjects.reduce((a, p) => a + p.progress, 0) / myOwnProjects.length)}%`} />
                   </div>
                   <Btn primary onClick={() => setPage("projects")}>Go to Projects →</Btn>
                 </>) : user.projectAccess ? (<>
@@ -6137,25 +6143,30 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
-                      {user.projectAccess && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
+                      {user.projectAccess && p.mgrId === user.id && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
                     </div>
                   </div>
                   <div style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${T.border}` }}>
                     <Bar value={draftProg} status={ps} h={6} />
-                    <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                    <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
-                    {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
-                    <Btn primary small disabled={!progChanged} onClick={() => {
-                      dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
-                      setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
-                    }}>Save</Btn>
+                    {p.mgrId === user.id ? <>
+                      <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                      <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
+                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                      <Btn primary small disabled={!progChanged} onClick={() => {
+                        dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                        setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                      }}>Save</Btn>
+                    </> : <>
+                      <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
+                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                    </>}
                   </div>
                   {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
-                  {user.projectAccess && (
+                  {user.projectAccess && p.mgrId === user.id && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
