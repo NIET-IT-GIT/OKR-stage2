@@ -400,11 +400,14 @@ async function dbUpsert(collection, item) {
     .eq("id", item.id)
     .select("id");
   if (updErr) throw new Error(`dbUpsert update (${collection}/${item.id}): ${updErr.message}`);
-  if (updated?.length) return;
-  const { error: insErr } = await supabase
+  if (updated?.length) { console.log(`[DB] updated ${collection}/${item.id}`); return; }
+  const { data: inserted, error: insErr } = await supabase
     .from("app_data")
-    .insert({ collection, id: item.id, doc: item });
+    .insert({ collection, id: item.id, doc: item })
+    .select("id");
   if (insErr) throw new Error(`dbUpsert insert (${collection}/${item.id}): ${insErr.message}`);
+  if (!inserted?.length) throw new Error(`dbUpsert insert (${collection}/${item.id}): silent failure — 0 rows written, check Supabase table permissions`);
+  console.log(`[DB] inserted ${collection}/${item.id}`);
 }
 
 async function dbDelete(collection, id) {
