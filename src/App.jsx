@@ -2103,18 +2103,6 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       if (window.location.pathname !== target) window.history.replaceState(null, '', target);
     }
   }, [selDept, page]);
-  useEffect(() => {
-    if (page === "admissions" && !admLoaded && !admLoading) {
-      setAdmLoading(true);
-      dbGetAdmissions().then(r => {
-        setAdmRecords(r.admissions_enrolments);
-        setAdmBatches(r.admissions_batches);
-        setAdmError(null);
-        setAdmLoaded(true);
-        setAdmLoading(false);
-      }).catch(e => { setAdmError(e.message); setAdmLoading(false); });
-    }
-  }, [page, admLoaded, admLoading]);
   const [selTeam, setSelTeam] = useState(null);
   const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false });
   const [addTarget, setAddTarget] = useState(null);
@@ -2137,6 +2125,18 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [admParsed, setAdmParsed] = useState(null);
   const [admImporting, setAdmImporting] = useState(false);
   const [admError, setAdmError] = useState(null);
+  useEffect(() => {
+    if (page === "admissions" && !admLoaded && !admLoading) {
+      setAdmLoading(true);
+      dbGetAdmissions().then(r => {
+        setAdmRecords(r.admissions_enrolments);
+        setAdmBatches(r.admissions_batches);
+        setAdmError(null);
+        setAdmLoaded(true);
+        setAdmLoading(false);
+      }).catch(e => { setAdmError(e.message); setAdmLoading(false); });
+    }
+  }, [page, admLoaded, admLoading]);
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const dragColRef = useRef(null);
