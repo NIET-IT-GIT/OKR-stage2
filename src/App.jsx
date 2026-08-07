@@ -387,7 +387,7 @@ async function dbGet() {
   const PAGE = 1000;
   let offset = 0;
   while (true) {
-    const { data, error } = await supabase.from("app_data").select("collection, id, doc").range(offset, offset + PAGE - 1);
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc").in("collection", Object.keys(result)).range(offset, offset + PAGE - 1);
     if (error) throw new Error(error.message);
     if (!data?.length) break;
     for (const row of data) {
@@ -421,6 +421,37 @@ async function dbUpsert(collection, item) {
 async function dbDelete(collection, id) {
   const { error } = await supabase.from("app_data").delete().eq("collection", collection).eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+async function dbGetAdmissions() {
+  const result = { admissions_enrolments: [], admissions_batches: [] };
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
+      .in("collection", ["admissions_enrolments", "admissions_batches"])
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return result;
+}
+
+async function dbBulkInsert(collection, items) {
+  const CHUNK = 200;
+  for (let i = 0; i < items.length; i += CHUNK) {
+    const rows = items.slice(i, i + CHUNK).map(item => ({ collection, id: item.id, doc: item }));
+    const { error } = await supabase.from("app_data").insert(rows);
+    if (error) throw new Error(`dbBulkInsert(${collection}): ${error.message}`);
+  }
+}
+
+async function dbDeleteCollection(collection) {
+  const { error } = await supabase.from("app_data").delete().eq("collection", collection);
+  if (error) throw new Error(`dbDeleteCollection(${collection}): ${error.message}`);
 }
 
 async function dbSeed(data) {
@@ -1971,6 +2002,79 @@ function ActionReviewCard({ action, submissions, onConfirm, onCancel }) {
 /* ─────────────────────────────────────────────────────────────
    ADMIN PORTAL
    ───────────────────────────────────────────────────────────── */
+// ── Admissions helpers ──────────────────────────────────────────────────────
+const ADM_ORGS = ["Educare", "AAI", "CB", "Rhodes"];
+const ADM_FIELD_ALIASES = {
+  studentId:       ["studentid","studentnumber","studentno","learnerid","id"],
+  studentName:     ["studentname","learnername","fullname","name"],
+  programme:       ["programme","program","course","qualification","cbqualification"],
+  organisation:    ["organisation","organization","provider","campus","partner"],
+  week:            ["week","reportingweek","reportweek","period"],
+  enrolmentStatus: ["enrolmentstatus","enrollmentstatus","pathwaystatus","status"],
+};
+function admNormH(h) { return String(h).toLowerCase().replace(/[\s_\-.]/g, ""); }
+function admMapFields(raw) {
+  const out = { studentId: "", studentName: "", programme: "", organisation: "", week: "", enrolmentStatus: "" };
+  for (const [field, aliases] of Object.entries(ADM_FIELD_ALIASES)) {
+    const key = Object.keys(raw).find(k => aliases.includes(admNormH(k)));
+    if (key) out[field] = String(raw[key] ?? "").trim();
+  }
+  return out;
+}
+function admDetectOrg(filename) {
+  const f = filename.toLowerCase();
+  return ADM_ORGS.find(o => f.includes(o.toLowerCase())) || null;
+}
+function admDetectWeek(filename) {
+  const m = filename.match(/week[_\s\-]?(\d+)/i) || filename.match(/[_\s\-]w(\d+)/i);
+  if (m) return `W${m[1]}`;
+  const iso = filename.match(/(\d{4})[_\s\-]?[Ww](\d{1,2})/);
+  if (iso) return `${iso[1]}-W${iso[2].padStart(2, "0")}`;
+  return null;
+}
+function admCurrentISOWeek() {
+  const d = new Date(), jan4 = new Date(d.getFullYear(), 0, 4);
+  const start = new Date(jan4); start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1);
+  const wk = Math.ceil(((d - start) / 86400000 + 1) / 7);
+  return `${d.getFullYear()}-W${String(wk).padStart(2, "0")}`;
+}
+function admParseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const parseRow = line => {
+    const vals = []; let cur = "", inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
+      else if (c === ',' && !inQ) { vals.push(cur.trim()); cur = ""; }
+      else { cur += c; }
+    }
+    vals.push(cur.trim()); return vals;
+  };
+  const headers = parseRow(lines[0]);
+  return lines.slice(1).map(line => { const v = parseRow(line); const r = {}; headers.forEach((h, i) => { r[h] = v[i] ?? ""; }); return r; });
+}
+function admAnalyze(rawRows, fileName, fileSize, existingRecords) {
+  const detectedOrg = admDetectOrg(fileName);
+  const detectedWeek = admDetectWeek(fileName);
+  const existingKeys = new Set(existingRecords.map(r => `${r.studentId}||${r.week}`));
+  const analyzed = rawRows.map(raw => {
+    const m = admMapFields(raw);
+    if (!m.organisation && detectedOrg) m.organisation = detectedOrg;
+    if (!m.week) m.week = detectedWeek || admCurrentISOWeek();
+    m.source = fileName;
+    const valid = !!m.studentId;
+    const dup = valid && existingKeys.has(`${m.studentId}||${m.week}`);
+    return { ...m, _valid: valid && !dup, _dup: dup, _reason: !m.studentId ? "Missing Student ID" : dup ? "Duplicate" : "" };
+  });
+  const valid = analyzed.filter(r => r._valid);
+  const invalid = analyzed.filter(r => !r._valid && !r._dup);
+  const batchId = `b${Date.now()}`;
+  const withIds = valid.map((r, i) => ({ ...r, id: `${batchId}_${i}` }));
+  return { fileName, fileSize, total: rawRows.length, valid: withIds, invalid, duplicateCount: analyzed.filter(r => r._dup).length, detectedOrg, detectedWeek: detectedWeek || admCurrentISOWeek(), previewRows: analyzed.slice(0, 25), batchId };
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
@@ -1999,6 +2103,18 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       if (window.location.pathname !== target) window.history.replaceState(null, '', target);
     }
   }, [selDept, page]);
+  useEffect(() => {
+    if (page === "admissions" && !admLoaded && !admLoading) {
+      setAdmLoading(true);
+      dbGetAdmissions().then(r => {
+        setAdmRecords(r.admissions_enrolments);
+        setAdmBatches(r.admissions_batches);
+        setAdmError(null);
+        setAdmLoaded(true);
+        setAdmLoading(false);
+      }).catch(e => { setAdmError(e.message); setAdmLoading(false); });
+    }
+  }, [page, admLoaded, admLoading]);
   const [selTeam, setSelTeam] = useState(null);
   const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false });
   const [addTarget, setAddTarget] = useState(null);
@@ -2009,6 +2125,18 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [subFilter, setSubFilter] = useState("all");
+  const [admTab, setAdmTab] = useState("overview");
+  const [admRecords, setAdmRecords] = useState([]);
+  const [admBatches, setAdmBatches] = useState([]);
+  const [admLoaded, setAdmLoaded] = useState(false);
+  const [admLoading, setAdmLoading] = useState(false);
+  const [admSearch, setAdmSearch] = useState("");
+  const [admFilterOrg, setAdmFilterOrg] = useState("all");
+  const [admFilterWeek, setAdmFilterWeek] = useState("all");
+  const [admFilterStatus, setAdmFilterStatus] = useState("all");
+  const [admParsed, setAdmParsed] = useState(null);
+  const [admImporting, setAdmImporting] = useState(false);
+  const [admError, setAdmError] = useState(null);
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const dragColRef = useRef(null);
@@ -2350,6 +2478,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     { id: "submissions",      icon: "✉", label: "OKR Submissions"   },
     { id: "reports",          icon: "⊞", label: "OKR Reports"       },
     { id: "projects",         icon: "⚡", label: "Projects"          },
+    { id: "admissions",       icon: "◈", label: "Admissions"        },
     { id: "leaderboard",      icon: "▲", label: "Leaderboard"       },
     { id: "users",            icon: "⊹", label: "User Management"   },
     { id: "email-templates",  icon: "✦", label: "Email Templates"   },
@@ -4000,6 +4129,246 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   </div>
                 );
               });
+            })()}
+          </Pane>
+        </>)}
+
+        {page === "admissions" && (<>
+          <Header title="Admissions Reporting" sub="Weekly enrolment imports and tracking" />
+          <Pane>
+            {admError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{admError}</div>}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+              {[["overview","Overview"],["imports","Imports"],["students","Students"],["reports","Reports"]].map(([v, label]) => (
+                <Btn key={v} small primary={admTab === v} onClick={() => setAdmTab(v)}>{label}</Btn>
+              ))}
+            </div>
+            {admLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading admissions data…</div>}
+            {!admLoading && admTab === "overview" && (() => {
+              const recentBatches = [...admBatches].sort((a, b) => new Date(b.importedAt) - new Date(a.importedAt)).slice(0, 8);
+              const uniqueStudents = new Set(admRecords.map(r => r.studentId)).size;
+              return (<>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                  <Metric label="Total Enrolments" value={admRecords.length} />
+                  <Metric label="Unique Students" value={uniqueStudents} />
+                  <Metric label="Import Batches" value={admBatches.length} />
+                  {ADM_ORGS.map(org => { const n = admRecords.filter(r => r.organisation === org).length; return n > 0 ? <Metric key={org} label={org} value={n} /> : null; })}
+                </div>
+                <SectionLabel>Recent Imports</SectionLabel>
+                {recentBatches.length === 0 && <EmptyState text="No imports yet. Go to Imports to upload a file." />}
+                {recentBatches.map(b => (
+                  <Card key={b.id} style={{ padding: "12px 18px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{b.fileName}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>{b.organisation || "—"} · Week {b.week || "—"} · {b.importedAt}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 14, fontSize: 13, fontFamily: F.mono }}>
+                      <span style={{ color: T.ok }}>{b.imported} imported</span>
+                      {b.duplicate > 0 && <span style={{ color: T.warn }}>{b.duplicate} dup</span>}
+                      {b.invalid > 0 && <span style={{ color: T.bad }}>{b.invalid} invalid</span>}
+                    </div>
+                  </Card>
+                ))}
+              </>);
+            })()}
+            {!admLoading && admTab === "imports" && (() => {
+              const handleFile = async file => {
+                if (!file) return;
+                if (file.size > 10 * 1024 * 1024) { setAdmError("File exceeds 10 MB limit."); return; }
+                setAdmError(null);
+                try {
+                  let rawRows;
+                  const ext = file.name.toLowerCase();
+                  if (ext.endsWith(".csv")) {
+                    rawRows = admParseCSV(await file.text());
+                  } else {
+                    const { default: readXlsxFile } = await import("read-excel-file/browser");
+                    const sheet = await readXlsxFile(file);
+                    const headers = (sheet[0] || []).map(h => String(h ?? ""));
+                    rawRows = sheet.slice(1).map(row => { const r = {}; headers.forEach((h, i) => { r[h] = row[i] != null ? String(row[i]) : ""; }); return r; });
+                  }
+                  if (rawRows.length > 10000) { setAdmError("File has more than 10,000 records. Please split into smaller batches."); return; }
+                  setAdmParsed(admAnalyze(rawRows, file.name, file.size, admRecords));
+                } catch (e) { setAdmError(`Parse error: ${e.message}`); }
+              };
+              const doImport = async () => {
+                if (!admParsed || admParsed.valid.length === 0) return;
+                setAdmImporting(true);
+                try {
+                  const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                  const batch = { id: admParsed.batchId, fileName: admParsed.fileName, fileSize: admParsed.fileSize, organisation: admParsed.detectedOrg || "Unknown", week: admParsed.detectedWeek || "", total: admParsed.total, imported: admParsed.valid.length, duplicate: admParsed.duplicateCount, invalid: admParsed.invalid.length, importedAt: now };
+                  const records = admParsed.valid.map(r => { const { _valid, _dup, _reason, ...clean } = r; return { ...clean, importedAt: now, batchId: admParsed.batchId }; });
+                  await dbUpsert("admissions_batches", batch);
+                  await dbBulkInsert("admissions_enrolments", records);
+                  setAdmRecords(prev => [...prev, ...records]);
+                  setAdmBatches(prev => [...prev, batch]);
+                  setAdmParsed(null);
+                  setAdmError(null);
+                } catch (e) { setAdmError(`Import failed: ${e.message}`); }
+                finally { setAdmImporting(false); }
+              };
+              const thCss = { padding: "6px 10px", textAlign: "left", borderBottom: `1px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
+              const tdCss = { padding: "5px 10px", borderBottom: `1px solid ${T.border}`, fontSize: 12 };
+              return (<>
+                {!admParsed && (
+                  <Card style={{ padding: 32, textAlign: "center", border: `2px dashed ${T.border}`, cursor: "pointer" }}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}>
+                    <div style={{ fontSize: 30, marginBottom: 8 }}>⬆</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Drop file here or browse</div>
+                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>.xlsx · .xls · .csv · max 10 MB · max 10,000 rows</div>
+                    <input type="file" accept=".xlsx,.xls,.csv" id="adm-file-input" style={{ display: "none" }} onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
+                    <Btn primary onClick={() => document.getElementById("adm-file-input").click()}>Browse files</Btn>
+                  </Card>
+                )}
+                {admParsed && (<>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
+                    <Metric label="Total rows" value={admParsed.total} />
+                    <Metric label="Valid" value={admParsed.valid.length} status="green" />
+                    <Metric label="Duplicates" value={admParsed.duplicateCount} status={admParsed.duplicateCount > 0 ? "yellow" : undefined} />
+                    <Metric label="Invalid" value={admParsed.invalid.length} status={admParsed.invalid.length > 0 ? "red" : undefined} />
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14 }}>
+                    {admParsed.fileName} · {(admParsed.fileSize / 1024).toFixed(1)} KB
+                    {admParsed.detectedOrg && ` · Org: ${admParsed.detectedOrg}`}
+                    {admParsed.detectedWeek && ` · Week: ${admParsed.detectedWeek}`}
+                  </div>
+                  <SectionLabel>Preview (first 25 rows)</SectionLabel>
+                  <div style={{ overflowX: "auto", marginBottom: 16 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>
+                        {["","Student ID","Student Name","Programme","Organisation","Week","Status"].map(h => <th key={h} style={thCss}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {admParsed.previewRows.map((r, i) => (
+                          <tr key={i} style={{ background: r._dup ? T.warnDim : r._valid ? "transparent" : T.badDim }}>
+                            <td style={tdCss}>{r._dup ? <span style={{ color: T.warn, fontWeight: 700 }}>DUP</span> : r._valid ? <span style={{ color: T.ok }}>✓</span> : <span style={{ color: T.bad }}>✗</span>}</td>
+                            <td style={{ ...tdCss, fontFamily: F.mono }}>{r.studentId || <span style={{ color: T.bad, fontStyle: "italic" }}>missing</span>}</td>
+                            <td style={tdCss}>{r.studentName}</td>
+                            <td style={tdCss}>{r.programme}</td>
+                            <td style={tdCss}>{r.organisation}</td>
+                            <td style={{ ...tdCss, fontFamily: F.mono }}>{r.week}</td>
+                            <td style={tdCss}>{r.enrolmentStatus}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn onClick={() => { setAdmParsed(null); setAdmError(null); }}>Cancel</Btn>
+                    <Btn primary disabled={admParsed.valid.length === 0 || admImporting} onClick={doImport}>
+                      {admImporting ? "Importing…" : `Import ${admParsed.valid.length} records`}
+                    </Btn>
+                  </div>
+                </>)}
+                {admBatches.length > 0 && (<>
+                  <SectionLabel style={{ marginTop: 28 }}>Import History</SectionLabel>
+                  {[...admBatches].sort((a, b) => new Date(b.importedAt) - new Date(a.importedAt)).map(b => (
+                    <Card key={b.id} style={{ padding: "10px 18px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <div><div style={{ fontSize: 13, fontWeight: 700 }}>{b.fileName}</div><div style={{ fontSize: 12, color: T.textMuted }}>{b.importedAt} · {b.organisation} · Week {b.week}</div></div>
+                      <div style={{ fontSize: 12, fontFamily: F.mono, color: T.textMuted }}>{b.imported}/{b.total} imported · {b.duplicate} dup · {b.invalid} invalid</div>
+                    </Card>
+                  ))}
+                </>)}
+              </>);
+            })()}
+            {!admLoading && admTab === "students" && (() => {
+              const weeks = [...new Set(admRecords.map(r => r.week).filter(Boolean))].sort();
+              const statuses = [...new Set(admRecords.map(r => r.enrolmentStatus).filter(Boolean))].sort();
+              const filtered = admRecords.filter(r => {
+                if (admSearch && !`${r.studentId} ${r.studentName}`.toLowerCase().includes(admSearch.toLowerCase())) return false;
+                if (admFilterOrg !== "all" && r.organisation !== admFilterOrg) return false;
+                if (admFilterWeek !== "all" && r.week !== admFilterWeek) return false;
+                if (admFilterStatus !== "all" && r.enrolmentStatus !== admFilterStatus) return false;
+                return true;
+              });
+              const exportCSV = () => {
+                const hdr = ["Student ID","Student Name","Programme","Organisation","Week","Enrolment Status","Source","Imported At"];
+                const rows = filtered.map(r => [r.studentId,r.studentName,r.programme,r.organisation,r.week,r.enrolmentStatus,r.source,r.importedAt]);
+                const csv = [hdr,...rows].map(r => r.map(v => `"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+                const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv],{type:"text/csv"})), download: "admissions_students.csv" });
+                a.click(); URL.revokeObjectURL(a.href);
+              };
+              const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
+              return (<>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+                  <Input value={admSearch} onChange={e => setAdmSearch(e.target.value)} placeholder="Search student ID or name…" style={{ flex: 1, minWidth: 200 }} />
+                  <select value={admFilterOrg} onChange={e => setAdmFilterOrg(e.target.value)} style={selCss}>
+                    <option value="all">All organisations</option>
+                    {ADM_ORGS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  <select value={admFilterWeek} onChange={e => setAdmFilterWeek(e.target.value)} style={selCss}>
+                    <option value="all">All weeks</option>
+                    {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                  </select>
+                  <select value={admFilterStatus} onChange={e => setAdmFilterStatus(e.target.value)} style={selCss}>
+                    <option value="all">All statuses</option>
+                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <Btn small onClick={exportCSV}>Export CSV</Btn>
+                </div>
+                <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {admRecords.length} records</div>
+                {filtered.length === 0 && <EmptyState text={admRecords.length === 0 ? "No records yet. Import a file to get started." : "No records match the current filters."} />}
+                {filtered.length > 0 && (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead><tr>{["Student ID","Student Name","Programme","Organisation","Week","Status"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {filtered.slice(0, 200).map((r, i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                            <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td>
+                            <td style={{ padding: "7px 12px" }}>{r.studentName}</td>
+                            <td style={{ padding: "7px 12px" }}>{r.programme}</td>
+                            <td style={{ padding: "7px 12px" }}>{r.organisation}</td>
+                            <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.week}</td>
+                            <td style={{ padding: "7px 12px" }}>{r.enrolmentStatus}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {filtered.length > 200 && <div style={{ fontSize: 12, color: T.textMuted, padding: "8px 12px", textAlign: "center" }}>Showing first 200 rows. Export CSV for all {filtered.length} records.</div>}
+                  </div>
+                )}
+              </>);
+            })()}
+            {!admLoading && admTab === "reports" && (() => {
+              const byOrg = ADM_ORGS.map(org => ({ org, total: admRecords.filter(r => r.organisation === org).length, unique: new Set(admRecords.filter(r => r.organisation === org).map(r => r.studentId)).size })).filter(r => r.total > 0);
+              const progCounts = admRecords.reduce((m, r) => { if (r.programme) m[r.programme] = (m[r.programme] || 0) + 1; return m; }, {});
+              const byProg = Object.entries(progCounts).sort((a, b) => b[1] - a[1]).slice(0, 20);
+              const statusCounts = admRecords.reduce((m, r) => { if (r.enrolmentStatus) m[r.enrolmentStatus] = (m[r.enrolmentStatus] || 0) + 1; return m; }, {});
+              const byStatus = Object.entries(statusCounts).sort((a, b) => b[1] - a[1]);
+              const exportCSV = (headers, rows, filename) => {
+                const csv = [headers, ...rows].map(r => r.map(v => `"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+                const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv],{type:"text/csv"})), download: filename });
+                a.click(); URL.revokeObjectURL(a.href);
+              };
+              const rowStyle = { padding: "9px 16px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" };
+              return (<>
+                <SectionLabel>By Organisation</SectionLabel>
+                {byOrg.length === 0 && <EmptyState text="No data yet." />}
+                {byOrg.map(r => <Card key={r.org} style={rowStyle}><span style={{ fontSize: 14, fontWeight: 700 }}>{r.org}</span><span style={{ fontSize: 13, fontFamily: F.mono, color: T.textMuted }}>{r.total} enrolments · {r.unique} unique students</span></Card>)}
+                {byOrg.length > 0 && <Btn small onClick={() => exportCSV(["Organisation","Total","Unique Students"], byOrg.map(r => [r.org, r.total, r.unique]), "admissions_by_org.csv")} style={{ marginBottom: 20 }}>Export CSV</Btn>}
+                <SectionLabel>By Programme</SectionLabel>
+                {byProg.length === 0 && <EmptyState text="No data yet." />}
+                {byProg.map(([prog, n]) => <Card key={prog} style={rowStyle}><span style={{ fontSize: 13 }}>{prog}</span><span style={{ fontSize: 13, fontFamily: F.mono }}>{n}</span></Card>)}
+                {byProg.length > 0 && <Btn small onClick={() => exportCSV(["Programme","Count"], byProg, "admissions_by_programme.csv")} style={{ marginBottom: 20 }}>Export CSV</Btn>}
+                <SectionLabel>By Status</SectionLabel>
+                {byStatus.length === 0 && <EmptyState text="No data yet." />}
+                {byStatus.map(([s, n]) => <Card key={s} style={rowStyle}><span style={{ fontSize: 13 }}>{s}</span><span style={{ fontSize: 13, fontFamily: F.mono }}>{n}</span></Card>)}
+                {byStatus.length > 0 && <Btn small onClick={() => exportCSV(["Status","Count"], byStatus, "admissions_by_status.csv")} style={{ marginBottom: 24 }}>Export CSV</Btn>}
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Danger Zone</div>
+                  <Btn danger small onClick={async () => {
+                    if (!window.confirm("Delete ALL admissions records and import history? This cannot be undone.")) return;
+                    if (!window.confirm("Are you sure? All enrolment data will be permanently deleted.")) return;
+                    try {
+                      await dbDeleteCollection("admissions_enrolments");
+                      await dbDeleteCollection("admissions_batches");
+                      setAdmRecords([]); setAdmBatches([]); setAdmError(null);
+                    } catch (e) { setAdmError(`Clear failed: ${e.message}`); }
+                  }}>Clear all admissions data</Btn>
+                </div>
+              </>);
             })()}
           </Pane>
         </>)}
