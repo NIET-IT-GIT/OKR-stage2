@@ -2005,8 +2005,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", log: "", due: "", contribution: "" });
+  const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", due: "", contribution: "" });
   const [progressEdits, setProgressEdits] = useState({});
+  const [logDrafts, setLogDrafts] = useState({});
   const [subFilter, setSubFilter] = useState("all");
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
@@ -2222,7 +2223,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
       let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}% | Due: ${p.due || "TBD"}${overdue}`;
       if (p.contribution != null) line += ` | Contribution: ${fmtMoney(p.contribution)}`;
-      if (p.log) line += `\n    Note: ${p.log.slice(0, 100)}${p.log.length > 100 ? "…" : ""}`;
+      const logEntries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
+      if (logEntries.length) line += `\n    Latest Log: ${logEntries[0].text.slice(0, 100)}${logEntries[0].text.length > 100 ? "…" : ""}`;
       return line;
     };
     const projectSection = [
@@ -3937,12 +3939,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
                             }}>Save</Btn>
                           </div>
-                          {p.log && !isDetailsOpen && <div style={{ padding: "8px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{p.log}</div>}
+                          {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "8px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
                           <div style={{ padding: "8px 18px" }}>
                             <button onClick={() => {
                               if (isDetailsOpen) { setEditProjId(null); return; }
                               setEditProjId(p.id);
-                              setEditProjForm({ name: p.name, status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                              setEditProjForm({ name: p.name, status: p.status, due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
                             }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                               {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                             </button>
@@ -3971,14 +3973,22 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
                                 <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
                               </div>
-                              <div style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
-                                <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Notes, updates, observations..." rows={3} />
+                              <div style={{ marginBottom: 16 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Project Logbook</div>
+                                <TextArea value={logDrafts[p.id] || ""} onChange={e => setLogDrafts(d => ({ ...d, [p.id]: e.target.value }))} placeholder="Add a log entry..." rows={2} />
+                                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6, marginBottom: 10 }}>
+                                  <Btn primary small disabled={!logDrafts[p.id]?.trim()} onClick={() => {
+                                    const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
+                                    dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { log: [{ text: logDrafts[p.id].trim(), date: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) }, ...entries] } });
+                                    setLogDrafts(d => { const n = { ...d }; delete n[p.id]; return n; });
+                                  }}>Add Entry</Btn>
+                                </div>
+                                {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>{e.text}</div></div>); })()}
                               </div>
                               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                                 <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                                 <Btn primary small disabled={!editProjForm.name.trim()} onClick={() => {
-                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                                   setEditProjId(null);
                                 }}>Save Details</Btn>
                               </div>
@@ -4534,8 +4544,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [newProj, setNewProj] = useState({ name: "", due: "" });
   const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ status: "active", log: "", due: "", contribution: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", due: "", contribution: "" });
   const [progressEdits, setProgressEdits] = useState({});
+  const [logDrafts, setLogDrafts] = useState({});
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
   const [syncNote, setSyncNote] = useState(null);
@@ -5246,13 +5257,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
                     }}>Save</Btn>
                   </div>
-                  {p.log && !isDetailsOpen && <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{p.log}</div>}
+                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
                   {user.projectAccess && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
                         setEditProjId(p.id);
-                        setEditProjForm({ status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                        setEditProjForm({ status: p.status, due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
                       }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                         {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                       </button>
@@ -5278,14 +5289,22 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
                         <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
                       </div>
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
-                        <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Update on progress, blockers, milestones reached..." rows={3} />
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Project Logbook</div>
+                        <TextArea value={logDrafts[p.id] || ""} onChange={e => setLogDrafts(d => ({ ...d, [p.id]: e.target.value }))} placeholder="Add a log entry..." rows={2} />
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6, marginBottom: 10 }}>
+                          <Btn primary small disabled={!logDrafts[p.id]?.trim()} onClick={() => {
+                            const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { log: [{ text: logDrafts[p.id].trim(), date: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) }, ...entries] } });
+                            setLogDrafts(d => { const n = { ...d }; delete n[p.id]; return n; });
+                          }}>Add Entry</Btn>
+                        </div>
+                        {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>{e.text}</div></div>); })()}
                       </div>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
-                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           setEditProjId(null);
                         }}>Save Details</Btn>
                       </div>
@@ -5450,8 +5469,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [newProj, setNewProj] = useState({ name: "", due: "" });
   const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ status: "active", log: "", due: "", contribution: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", due: "", contribution: "" });
   const [progressEdits, setProgressEdits] = useState({});
+  const [logDrafts, setLogDrafts] = useState({});
 
   const { memberData, monthlyReports, depts, projects = [] } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -6134,13 +6154,13 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
                     }}>Save</Btn>
                   </div>
-                  {p.log && !isDetailsOpen && <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{p.log}</div>}
+                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
                   {user.projectAccess && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
                         setEditProjId(p.id);
-                        setEditProjForm({ status: p.status, log: p.log || "", due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                        setEditProjForm({ status: p.status, due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
                       }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                         {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                       </button>
@@ -6166,14 +6186,22 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
                         <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
                       </div>
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Log / Notes</div>
-                        <TextArea value={editProjForm.log} onChange={e => setEditProjForm(f => ({ ...f, log: e.target.value }))} placeholder="Update on progress, blockers, milestones reached..." rows={3} />
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Project Logbook</div>
+                        <TextArea value={logDrafts[p.id] || ""} onChange={e => setLogDrafts(d => ({ ...d, [p.id]: e.target.value }))} placeholder="Add a log entry..." rows={2} />
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6, marginBottom: 10 }}>
+                          <Btn primary small disabled={!logDrafts[p.id]?.trim()} onClick={() => {
+                            const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { log: [{ text: logDrafts[p.id].trim(), date: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) }, ...entries] } });
+                            setLogDrafts(d => { const n = { ...d }; delete n[p.id]; return n; });
+                          }}>Add Entry</Btn>
+                        </div>
+                        {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>{e.text}</div></div>); })()}
                       </div>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
-                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, log: editProjForm.log, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           setEditProjId(null);
                         }}>Save Details</Btn>
                       </div>
