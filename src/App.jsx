@@ -4230,8 +4230,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   const rows = result[0]?.data || [];
                   const parsed = enrParseMarketerSheet(rows, file.name);
                   if (parsed.error) { setEnrError(parsed.error); return; }
-                  const dupBatch = enrBatches.find(b => b.week === parsed.week) || null;
-                  setEnrParsed({ ...parsed, fileName: file.name, fileSize: file.size, dupBatch });
+                  const existingWeekRtos = new Set(enrRecords.filter(r => r.week === parsed.week).map(r => r.rto));
+                  const overlappingRtos = parsed.rtos.filter(rto => existingWeekRtos.has(rto));
+                  setEnrParsed({ ...parsed, fileName: file.name, fileSize: file.size, weekAlreadyHasData: existingWeekRtos.size > 0, overlappingRtos, existingRtos: [...existingWeekRtos] });
                 } catch (e) { setEnrError(`Parse error: ${e.message}`); }
               };
               const doImport = async () => {
@@ -4272,9 +4273,14 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     <Metric label="Marketers" value={enrParsed.marketers.length} />
                     <Metric label="RTOs" value={enrParsed.rtos.length} />
                   </div>
-                  {enrParsed.dupBatch && (
-                    <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 7, fontSize: 13, color: T.warn, marginBottom: 14 }}>
-                      ⚠ Week {enrParsed.week} was already imported on {enrParsed.dupBatch.importedAt} ({enrParsed.dupBatch.totalEnrolments} enrolments). Importing again will add on top of the existing data.
+                  {enrParsed.weekAlreadyHasData && enrParsed.overlappingRtos.length === 0 && (
+                    <div style={{ padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand, marginBottom: 14, lineHeight: 1.5 }}>
+                      ℹ Week {enrParsed.week} already has data for: {enrParsed.existingRtos.sort().join(", ")}. This file adds new RTOs ({enrParsed.rtos.join(", ")}) — safe to combine.
+                    </div>
+                  )}
+                  {enrParsed.weekAlreadyHasData && enrParsed.overlappingRtos.length > 0 && (
+                    <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 7, fontSize: 13, color: T.warn, marginBottom: 14, lineHeight: 1.5 }}>
+                      ⚠ Week {enrParsed.week} already has data for: {enrParsed.overlappingRtos.join(", ")}. Importing again will double-count these RTOs. Cancel if this is a re-upload of the same file.
                     </div>
                   )}
                   <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>{enrParsed.fileName} · {(enrParsed.fileSize / 1024).toFixed(1)} KB</div>
