@@ -423,13 +423,13 @@ async function dbDelete(collection, id) {
   if (error) throw new Error(error.message);
 }
 
-async function dbGetAdmissions() {
-  const result = { admissions_enrolments: [], admissions_batches: [] };
+async function dbGetEnrolments() {
+  const result = { enrolment_records: [], enrolment_batches: [] };
   const PAGE = 1000;
   let offset = 0;
   while (true) {
     const { data, error } = await supabase.from("app_data").select("collection, id, doc")
-      .in("collection", ["admissions_enrolments", "admissions_batches"])
+      .in("collection", ["enrolment_records", "enrolment_batches"])
       .range(offset, offset + PAGE - 1);
     if (error) throw new Error(error.message);
     if (!data?.length) break;
@@ -2002,78 +2002,61 @@ function ActionReviewCard({ action, submissions, onConfirm, onCancel }) {
 /* ─────────────────────────────────────────────────────────────
    ADMIN PORTAL
    ───────────────────────────────────────────────────────────── */
-// ── Admissions helpers ──────────────────────────────────────────────────────
-const ADM_ORGS = ["Educare", "AAI", "CB", "Rhodes"];
-const ADM_FIELD_ALIASES = {
-  studentId:       ["studentid","studentnumber","studentno","learnerid","id"],
-  studentName:     ["studentname","learnername","fullname","name"],
-  programme:       ["programme","program","course","qualification","cbqualification"],
-  organisation:    ["organisation","organization","provider","campus","partner"],
-  week:            ["week","reportingweek","reportweek","period"],
-  enrolmentStatus: ["enrolmentstatus","enrollmentstatus","pathwaystatus","status"],
-};
-function admNormH(h) { return String(h).toLowerCase().replace(/[\s_\-.]/g, ""); }
-function admMapFields(raw) {
-  const out = { studentId: "", studentName: "", programme: "", organisation: "", week: "", enrolmentStatus: "" };
-  for (const [field, aliases] of Object.entries(ADM_FIELD_ALIASES)) {
-    const key = Object.keys(raw).find(k => aliases.includes(admNormH(k)));
-    if (key) out[field] = String(raw[key] ?? "").trim();
-  }
-  return out;
-}
-function admDetectOrg(filename) {
-  const f = filename.toLowerCase();
-  return ADM_ORGS.find(o => f.includes(o.toLowerCase())) || null;
-}
-function admDetectWeek(filename) {
-  const m = filename.match(/week[_\s\-]?(\d+)/i) || filename.match(/[_\s\-]w(\d+)/i);
-  if (m) return `W${m[1]}`;
-  const iso = filename.match(/(\d{4})[_\s\-]?[Ww](\d{1,2})/);
-  if (iso) return `${iso[1]}-W${iso[2].padStart(2, "0")}`;
-  return null;
-}
-function admCurrentISOWeek() {
-  const d = new Date(), jan4 = new Date(d.getFullYear(), 0, 4);
-  const start = new Date(jan4); start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1);
-  const wk = Math.ceil(((d - start) / 86400000 + 1) / 7);
-  return `${d.getFullYear()}-W${String(wk).padStart(2, "0")}`;
-}
-function admParseCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return [];
-  const parseRow = line => {
-    const vals = []; let cur = "", inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
-      else if (c === ',' && !inQ) { vals.push(cur.trim()); cur = ""; }
-      else { cur += c; }
-    }
-    vals.push(cur.trim()); return vals;
-  };
-  const headers = parseRow(lines[0]);
-  return lines.slice(1).map(line => { const v = parseRow(line); const r = {}; headers.forEach((h, i) => { r[h] = v[i] ?? ""; }); return r; });
-}
-function admAnalyze(rawRows, fileName, fileSize, existingRecords) {
-  const detectedOrg = admDetectOrg(fileName);
-  const detectedWeek = admDetectWeek(fileName);
-  const existingKeys = new Set(existingRecords.map(r => `${r.studentId}||${r.week}`));
-  const analyzed = rawRows.map(raw => {
-    const m = admMapFields(raw);
-    if (!m.organisation && detectedOrg) m.organisation = detectedOrg;
-    if (!m.week) m.week = detectedWeek || admCurrentISOWeek();
-    m.source = fileName;
-    const valid = !!m.studentId;
-    const dup = valid && existingKeys.has(`${m.studentId}||${m.week}`);
-    return { ...m, _valid: valid && !dup, _dup: dup, _reason: !m.studentId ? "Missing Student ID" : dup ? "Duplicate" : "" };
+// ── Enrolment helpers ────────────────────────────────────────────────────────
+function enrSortWeeksDesc(weeks) {
+  return [...weeks].sort((a, b) => {
+    const p = w => { const m = w.match(/(\d{4})[_\-]?W(\d+)/i); return m ? parseInt(m[1]) * 1000 + parseInt(m[2]) : 0; };
+    return p(b) - p(a);
   });
-  const valid = analyzed.filter(r => r._valid);
-  const invalid = analyzed.filter(r => !r._valid && !r._dup);
-  const batchId = `b${Date.now()}`;
-  const withIds = valid.map((r, i) => ({ ...r, id: `${batchId}_${i}` }));
-  return { fileName, fileSize, total: rawRows.length, valid: withIds, invalid, duplicateCount: analyzed.filter(r => r._dup).length, detectedOrg, detectedWeek: detectedWeek || admCurrentISOWeek(), previewRows: analyzed.slice(0, 25), batchId };
 }
-// ────────────────────────────────────────────────────────────────────────────
+function enrParseMarketerSheet(rows, fileName) {
+  const result = { week: "", records: [], error: null, totalEnrolments: 0, marketers: [], rtos: [] };
+  // Find week from "Week Number" row (search first 10 rows)
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const cell = String(rows[i]?.[0] ?? "").trim().toLowerCase();
+    if (cell.includes("week number") || cell.includes("weeknumber")) {
+      const wv = String(rows[i]?.[1] ?? "").trim();
+      if (wv.startsWith("(")) { result.error = `Select a single week in the Excel slicer before uploading (current value: "${wv}").`; return result; }
+      result.week = wv;
+      break;
+    }
+  }
+  // Fallback: try to extract week from filename
+  if (!result.week) {
+    const fm = String(fileName || "").match(/(\d{4})[_\-\s]?[Ww](\d{1,2})/);
+    if (fm) result.week = `${fm[1]}-W${fm[2].padStart(2, "0")}`;
+  }
+  if (!result.week) { result.error = "Could not find 'Week Number' in the Marketer sheet. Check the file format."; return result; }
+  // Find header row: col A = "Marketer" (case-insensitive)
+  let hIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i]?.[0] ?? "").trim().toLowerCase() === "marketer") { hIdx = i; break; }
+  }
+  if (hIdx < 0) { result.error = "Could not find 'Marketer' header row. Check the sheet format."; return result; }
+  // Extract RTO columns — skip first (Marketer) and any "Grand Total" column
+  const hRow = rows[hIdx] || [];
+  const rtoCols = [];
+  for (let c = 1; c < hRow.length; c++) {
+    const h = String(hRow[c] ?? "").trim();
+    if (h && h.toLowerCase() !== "grand total") rtoCols.push({ name: h, idx: c });
+  }
+  if (rtoCols.length === 0) { result.error = "No RTO columns found in the Marketer header row."; return result; }
+  result.rtos = rtoCols.map(r => r.name);
+  // Parse data rows
+  for (let i = hIdx + 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const m = String(row[0] ?? "").trim();
+    if (!m || m.toLowerCase() === "grand total") continue;
+    if (!result.marketers.includes(m)) result.marketers.push(m);
+    for (const { name: rto, idx } of rtoCols) {
+      const n = Number(row[idx]) || 0;
+      if (n > 0) { result.records.push({ marketerName: m, rto, count: n }); result.totalEnrolments += n; }
+    }
+  }
+  if (result.records.length === 0) result.error = "No enrolment data found. The sheet may be empty or fully filtered out.";
+  return result;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
@@ -2113,30 +2096,29 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [subFilter, setSubFilter] = useState("all");
-  const [admTab, setAdmTab] = useState("overview");
-  const [admRecords, setAdmRecords] = useState([]);
-  const [admBatches, setAdmBatches] = useState([]);
-  const [admLoaded, setAdmLoaded] = useState(false);
-  const [admLoading, setAdmLoading] = useState(false);
-  const [admSearch, setAdmSearch] = useState("");
-  const [admFilterOrg, setAdmFilterOrg] = useState("all");
-  const [admFilterWeek, setAdmFilterWeek] = useState("all");
-  const [admFilterStatus, setAdmFilterStatus] = useState("all");
-  const [admParsed, setAdmParsed] = useState(null);
-  const [admImporting, setAdmImporting] = useState(false);
-  const [admError, setAdmError] = useState(null);
+  const [enrTab, setEnrTab] = useState("overview");
+  const [enrRecords, setEnrRecords] = useState([]);
+  const [enrBatches, setEnrBatches] = useState([]);
+  const [enrLoaded, setEnrLoaded] = useState(false);
+  const [enrLoading, setEnrLoading] = useState(false);
+  const [enrFilterWeek, setEnrFilterWeek] = useState("all");
+  const [enrFilterMarketer, setEnrFilterMarketer] = useState("all");
+  const [enrFilterRto, setEnrFilterRto] = useState("all");
+  const [enrParsed, setEnrParsed] = useState(null);
+  const [enrImporting, setEnrImporting] = useState(false);
+  const [enrError, setEnrError] = useState(null);
   useEffect(() => {
-    if (page === "admissions" && !admLoaded && !admLoading) {
-      setAdmLoading(true);
-      dbGetAdmissions().then(r => {
-        setAdmRecords(r.admissions_enrolments);
-        setAdmBatches(r.admissions_batches);
-        setAdmError(null);
-        setAdmLoaded(true);
-        setAdmLoading(false);
-      }).catch(e => { setAdmError(e.message); setAdmLoading(false); });
+    if (page === "admissions" && !enrLoaded && !enrLoading) {
+      setEnrLoading(true);
+      dbGetEnrolments().then(r => {
+        setEnrRecords(r.enrolment_records);
+        setEnrBatches(r.enrolment_batches);
+        setEnrError(null);
+        setEnrLoaded(true);
+        setEnrLoading(false);
+      }).catch(e => { setEnrError(e.message); setEnrLoading(false); });
     }
-  }, [page, admLoaded, admLoading]);
+  }, [page, enrLoaded, enrLoading]);
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const dragColRef = useRef(null);
@@ -2478,7 +2460,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     { id: "submissions",      icon: "✉", label: "OKR Submissions"   },
     { id: "reports",          icon: "⊞", label: "OKR Reports"       },
     { id: "projects",         icon: "⚡", label: "Projects"          },
-    { id: "admissions",       icon: "◈", label: "Admissions"        },
+    { id: "admissions",       icon: "◈", label: "Enrolments"         },
     { id: "leaderboard",      icon: "▲", label: "Leaderboard"       },
     { id: "users",            icon: "⊹", label: "User Management"   },
     { id: "email-templates",  icon: "✦", label: "Email Templates"   },
@@ -4134,240 +4116,317 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         </>)}
 
         {page === "admissions" && (<>
-          <Header title="Admissions Reporting" sub="Weekly enrolment imports and tracking" />
+          <Header title="Weekly Enrolment Dashboard" sub="Marketer enrolment tracking by RTO" />
           <Pane>
-            {admError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{admError}</div>}
+            {enrError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{enrError}</div>}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
-              {[["overview","Overview"],["imports","Imports"],["students","Students"],["reports","Reports"]].map(([v, label]) => (
-                <Btn key={v} small primary={admTab === v} onClick={() => setAdmTab(v)}>{label}</Btn>
+              {[["overview","Overview"],["imports","Imports"],["dashboard","Dashboard"],["data","Data"]].map(([v, label]) => (
+                <Btn key={v} small primary={enrTab === v} onClick={() => setEnrTab(v)}>{label}</Btn>
               ))}
             </div>
-            {admLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading admissions data…</div>}
-            {!admLoading && admTab === "overview" && (() => {
-              const recentBatches = [...admBatches].sort((a, b) => new Date(b.importedAt) - new Date(a.importedAt)).slice(0, 8);
-              const uniqueStudents = new Set(admRecords.map(r => r.studentId)).size;
+            {enrLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading enrolment data…</div>}
+            {!enrLoading && enrTab === "overview" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const selWeek = enrFilterWeek !== "all" && weeks.includes(enrFilterWeek) ? enrFilterWeek : (weeks[0] || null);
+              const weekRecs = selWeek ? enrRecords.filter(r => r.week === selWeek) : [];
+              const marketers = [...new Set(weekRecs.map(r => r.marketerName))].sort();
+              const rtos = [...new Set(weekRecs.map(r => r.rto))].sort();
+              const total = weekRecs.reduce((s, r) => s + r.count, 0);
+              const matrix = {};
+              weekRecs.forEach(r => { if (!matrix[r.marketerName]) matrix[r.marketerName] = {}; matrix[r.marketerName][r.rto] = (matrix[r.marketerName][r.rto] || 0) + r.count; });
+              const prevWeekIdx = selWeek ? weeks.indexOf(selWeek) + 1 : -1;
+              const prevWeek = prevWeekIdx > 0 && prevWeekIdx < weeks.length ? weeks[prevWeekIdx] : null;
+              const prevTotal = prevWeek ? enrRecords.filter(r => r.week === prevWeek).reduce((s, r) => s + r.count, 0) : null;
+              const diff = prevTotal !== null ? total - prevTotal : null;
+              const selCss = { padding: "7px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const thCss = { padding: "8px 14px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+              const tdCss = { padding: "8px 14px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
               return (<>
-                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                  <Metric label="Total Enrolments" value={admRecords.length} />
-                  <Metric label="Unique Students" value={uniqueStudents} />
-                  <Metric label="Import Batches" value={admBatches.length} />
-                  {ADM_ORGS.map(org => { const n = admRecords.filter(r => r.organisation === org).length; return n > 0 ? <Metric key={org} label={org} value={n} /> : null; })}
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                  <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                  {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
+                    <select value={selWeek || ""} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
+                      {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                  )}
+                  {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek}</span>}
                 </div>
-                <SectionLabel>Recent Imports</SectionLabel>
-                {recentBatches.length === 0 && <EmptyState text="No imports yet. Go to Imports to upload a file." />}
-                {recentBatches.map(b => (
-                  <Card key={b.id} style={{ padding: "12px 18px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>{b.fileName}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>{b.organisation || "—"} · Week {b.week || "—"} · {b.importedAt}</div>
+                {weeks.length === 0 ? <EmptyState text="No enrolment data yet. Go to Imports to upload a file." /> : (<>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                    <Metric label="Total Enrolments" value={total} status={total > 0 ? "green" : undefined} />
+                    <Metric label="Marketers" value={marketers.length} />
+                    <Metric label="RTOs" value={rtos.length} />
+                  </div>
+                  {weekRecs.length === 0 ? <EmptyState text="No records for this week." /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead>
+                          <tr>
+                            <th style={thCss}>Marketer</th>
+                            {rtos.map(rto => <th key={rto} style={{ ...thCss, textAlign: "right", color: T.brand }}>{rto}</th>)}
+                            <th style={{ ...thCss, textAlign: "right" }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {marketers.map(m => {
+                            const rowTotal = rtos.reduce((s, rto) => s + (matrix[m]?.[rto] || 0), 0);
+                            return (
+                              <tr key={m}>
+                                <td style={{ ...tdCss, fontWeight: 600 }}>{m}</td>
+                                {rtos.map(rto => <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: matrix[m]?.[rto] ? T.text : T.textMuted }}>{matrix[m]?.[rto] || "—"}</td>)}
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.brand }}>{rowTotal}</td>
+                              </tr>
+                            );
+                          })}
+                          <tr style={{ background: T.raised }}>
+                            <td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Grand Total</td>
+                            {rtos.map(rto => { const n = weekRecs.filter(r => r.rto === rto).reduce((s, r) => s + r.count, 0); return <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, borderBottom: "none" }}>{n}</td>; })}
+                            <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{total}</td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
-                    <div style={{ display: "flex", gap: 14, fontSize: 13, fontFamily: F.mono }}>
-                      <span style={{ color: T.ok }}>{b.imported} imported</span>
-                      {b.duplicate > 0 && <span style={{ color: T.warn }}>{b.duplicate} dup</span>}
-                      {b.invalid > 0 && <span style={{ color: T.bad }}>{b.invalid} invalid</span>}
+                  )}
+                  {weeks.length > 1 && (<>
+                    <SectionLabel style={{ marginTop: 28 }}>All Weeks</SectionLabel>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr>{["Week","Total","Marketers","Top Marketer"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {weeks.map(w => {
+                            const wR = enrRecords.filter(r => r.week === w);
+                            const wTot = wR.reduce((s, r) => s + r.count, 0);
+                            const mMap = {}; wR.forEach(r => { mMap[r.marketerName] = (mMap[r.marketerName] || 0) + r.count; });
+                            const topM = Object.entries(mMap).sort((a, b) => b[1] - a[1])[0];
+                            return (
+                              <tr key={w} style={{ cursor: "pointer", background: w === selWeek ? T.brandDim : "transparent" }} onClick={() => setEnrFilterWeek(w)}>
+                                <td style={{ ...tdCss, fontWeight: w === selWeek ? 700 : 400, color: w === selWeek ? T.brand : T.text }}>{w}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700 }}>{wTot}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono }}>{new Set(wR.map(r => r.marketerName)).size}</td>
+                                <td style={tdCss}>{topM ? `${topM[0]} (${topM[1]})` : "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                  </Card>
-                ))}
+                  </>)}
+                </>)}
               </>);
             })()}
-            {!admLoading && admTab === "imports" && (() => {
+            {!enrLoading && enrTab === "imports" && (() => {
               const handleFile = async file => {
                 if (!file) return;
-                if (file.size > 10 * 1024 * 1024) { setAdmError("File exceeds 10 MB limit."); return; }
-                setAdmError(null);
+                if (file.size > 10 * 1024 * 1024) { setEnrError("File exceeds 10 MB."); return; }
+                setEnrError(null);
                 try {
-                  let rawRows;
-                  const ext = file.name.toLowerCase();
-                  if (ext.endsWith(".csv")) {
-                    rawRows = admParseCSV(await file.text());
-                  } else {
-                    const { default: readXlsxFile } = await import("read-excel-file/browser");
-                    const result = await readXlsxFile(file);
-                    const rows = result[0]?.data || [];
-                    const headers = (rows[0] || []).map(h => String(h ?? ""));
-                    rawRows = rows.slice(1).map(row => { const r = {}; headers.forEach((h, i) => { r[h] = row[i] != null ? String(row[i]) : ""; }); return r; });
+                  const { default: readXlsxFile } = await import("read-excel-file/browser");
+                  let result;
+                  try { result = await readXlsxFile(file, { sheets: ["Marketer"] }); }
+                  catch (e) {
+                    if (e.message?.toLowerCase().includes("not found") || e.constructor?.name === "SheetNotFoundError") throw new Error('Sheet "Marketer" not found. Check the file has a worksheet named exactly "Marketer".');
+                    throw e;
                   }
-                  if (rawRows.length > 10000) { setAdmError("File has more than 10,000 records. Please split into smaller batches."); return; }
-                  setAdmParsed(admAnalyze(rawRows, file.name, file.size, admRecords));
-                } catch (e) { setAdmError(`Parse error: ${e.message}`); }
+                  const rows = result[0]?.data || [];
+                  const parsed = enrParseMarketerSheet(rows, file.name);
+                  if (parsed.error) { setEnrError(parsed.error); return; }
+                  const dupBatch = enrBatches.find(b => b.week === parsed.week) || null;
+                  setEnrParsed({ ...parsed, fileName: file.name, fileSize: file.size, dupBatch });
+                } catch (e) { setEnrError(`Parse error: ${e.message}`); }
               };
               const doImport = async () => {
-                if (!admParsed || admParsed.valid.length === 0) return;
-                setAdmImporting(true);
+                if (!enrParsed) return;
+                setEnrImporting(true);
                 try {
                   const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-                  const batch = { id: admParsed.batchId, fileName: admParsed.fileName, fileSize: admParsed.fileSize, organisation: admParsed.detectedOrg || "Unknown", week: admParsed.detectedWeek || "", total: admParsed.total, imported: admParsed.valid.length, duplicate: admParsed.duplicateCount, invalid: admParsed.invalid.length, importedAt: now };
-                  const records = admParsed.valid.map(r => { const { _valid, _dup, _reason, ...clean } = r; return { ...clean, importedAt: now, batchId: admParsed.batchId }; });
-                  await dbUpsert("admissions_batches", batch);
-                  await dbBulkInsert("admissions_enrolments", records);
-                  setAdmRecords(prev => [...prev, ...records]);
-                  setAdmBatches(prev => [...prev, batch]);
-                  setAdmParsed(null);
-                  setAdmError(null);
-                } catch (e) { setAdmError(`Import failed: ${e.message}`); }
-                finally { setAdmImporting(false); }
+                  const batchId = `enr${Date.now()}`;
+                  const batch = { id: batchId, fileName: enrParsed.fileName, fileSize: enrParsed.fileSize, week: enrParsed.week, totalEnrolments: enrParsed.totalEnrolments, importedAt: now };
+                  const records = enrParsed.records.map((r, i) => ({ ...r, id: `${batchId}_${i}`, week: enrParsed.week, batchId, importedAt: now }));
+                  await dbUpsert("enrolment_batches", batch);
+                  await dbBulkInsert("enrolment_records", records);
+                  setEnrRecords(prev => [...prev, ...records]);
+                  setEnrBatches(prev => [...prev, batch]);
+                  setEnrParsed(null);
+                  setEnrError(null);
+                } catch (e) { setEnrError(`Import failed: ${e.message}`); }
+                finally { setEnrImporting(false); }
               };
-              const thCss = { padding: "6px 10px", textAlign: "left", borderBottom: `1px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
-              const tdCss = { padding: "5px 10px", borderBottom: `1px solid ${T.border}`, fontSize: 12 };
+              const thCss = { padding: "6px 12px", textAlign: "left", borderBottom: `1px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
+              const tdCss = { padding: "7px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
               return (<>
-                {!admParsed && (
+                {!enrParsed && (
                   <Card style={{ padding: 32, textAlign: "center", border: `2px dashed ${T.border}`, cursor: "pointer" }}
                     onDragOver={e => e.preventDefault()}
                     onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}>
                     <div style={{ fontSize: 30, marginBottom: 8 }}>⬆</div>
                     <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Drop file here or browse</div>
-                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>.xlsx · .xls · .csv · max 10 MB · max 10,000 rows</div>
-                    <input type="file" accept=".xlsx,.xls,.csv" id="adm-file-input" style={{ display: "none" }} onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
-                    <Btn primary onClick={() => document.getElementById("adm-file-input").click()}>Browse files</Btn>
+                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>.xlsx · Marketer worksheet · max 10 MB</div>
+                    <input type="file" accept=".xlsx,.xls" id="enr-file-input" style={{ display: "none" }} onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
+                    <Btn primary onClick={() => document.getElementById("enr-file-input").click()}>Browse files</Btn>
                   </Card>
                 )}
-                {admParsed && (<>
-                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
-                    <Metric label="Total rows" value={admParsed.total} />
-                    <Metric label="Valid" value={admParsed.valid.length} status="green" />
-                    <Metric label="Duplicates" value={admParsed.duplicateCount} status={admParsed.duplicateCount > 0 ? "yellow" : undefined} />
-                    <Metric label="Invalid" value={admParsed.invalid.length} status={admParsed.invalid.length > 0 ? "red" : undefined} />
+                {enrParsed && (<>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
+                    <Metric label="Week" value={enrParsed.week} />
+                    <Metric label="Total Enrolments" value={enrParsed.totalEnrolments} status="green" />
+                    <Metric label="Marketers" value={enrParsed.marketers.length} />
+                    <Metric label="RTOs" value={enrParsed.rtos.length} />
                   </div>
-                  <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14 }}>
-                    {admParsed.fileName} · {(admParsed.fileSize / 1024).toFixed(1)} KB
-                    {admParsed.detectedOrg && ` · Org: ${admParsed.detectedOrg}`}
-                    {admParsed.detectedWeek && ` · Week: ${admParsed.detectedWeek}`}
-                  </div>
-                  <SectionLabel>Preview (first 25 rows)</SectionLabel>
+                  {enrParsed.dupBatch && (
+                    <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 7, fontSize: 13, color: T.warn, marginBottom: 14 }}>
+                      ⚠ Week {enrParsed.week} was already imported on {enrParsed.dupBatch.importedAt} ({enrParsed.dupBatch.totalEnrolments} enrolments). Importing again will add on top of the existing data.
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>{enrParsed.fileName} · {(enrParsed.fileSize / 1024).toFixed(1)} KB</div>
+                  <SectionLabel>Preview</SectionLabel>
                   <div style={{ overflowX: "auto", marginBottom: 16 }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead><tr>
-                        {["","Student ID","Student Name","Programme","Organisation","Week","Status"].map(h => <th key={h} style={thCss}>{h}</th>)}
-                      </tr></thead>
+                    <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                      <thead>
+                        <tr>
+                          <th style={thCss}>Marketer</th>
+                          {enrParsed.rtos.map(rto => <th key={rto} style={{ ...thCss, textAlign: "right" }}>{rto}</th>)}
+                          <th style={{ ...thCss, textAlign: "right" }}>Total</th>
+                        </tr>
+                      </thead>
                       <tbody>
-                        {admParsed.previewRows.map((r, i) => (
-                          <tr key={i} style={{ background: r._dup ? T.warnDim : r._valid ? "transparent" : T.badDim }}>
-                            <td style={tdCss}>{r._dup ? <span style={{ color: T.warn, fontWeight: 700 }}>DUP</span> : r._valid ? <span style={{ color: T.ok }}>✓</span> : <span style={{ color: T.bad }}>✗</span>}</td>
-                            <td style={{ ...tdCss, fontFamily: F.mono }}>{r.studentId || <span style={{ color: T.bad, fontStyle: "italic" }}>missing</span>}</td>
-                            <td style={tdCss}>{r.studentName}</td>
-                            <td style={tdCss}>{r.programme}</td>
-                            <td style={tdCss}>{r.organisation}</td>
-                            <td style={{ ...tdCss, fontFamily: F.mono }}>{r.week}</td>
-                            <td style={tdCss}>{r.enrolmentStatus}</td>
-                          </tr>
-                        ))}
+                        {enrParsed.marketers.map(m => {
+                          const mRecs = enrParsed.records.filter(r => r.marketerName === m);
+                          const mTotal = mRecs.reduce((s, r) => s + r.count, 0);
+                          return (
+                            <tr key={m}>
+                              <td style={{ ...tdCss, fontWeight: 600 }}>{m}</td>
+                              {enrParsed.rtos.map(rto => { const n = mRecs.find(r => r.rto === rto)?.count; return <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: n ? T.text : T.textMuted }}>{n || "—"}</td>; })}
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.brand }}>{mTotal}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr style={{ background: T.raised }}>
+                          <td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Total</td>
+                          {enrParsed.rtos.map(rto => { const n = enrParsed.records.filter(r => r.rto === rto).reduce((s, r) => s + r.count, 0); return <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, borderBottom: "none" }}>{n || "—"}</td>; })}
+                          <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{enrParsed.totalEnrolments}</td>
+                        </tr>
                       </tbody>
                     </table>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <Btn onClick={() => { setAdmParsed(null); setAdmError(null); }}>Cancel</Btn>
-                    <Btn primary disabled={admParsed.valid.length === 0 || admImporting} onClick={doImport}>
-                      {admImporting ? "Importing…" : `Import ${admParsed.valid.length} records`}
-                    </Btn>
+                    <Btn onClick={() => { setEnrParsed(null); setEnrError(null); }}>Cancel</Btn>
+                    <Btn primary disabled={enrImporting} onClick={doImport}>{enrImporting ? "Importing…" : `Import ${enrParsed.totalEnrolments} enrolments`}</Btn>
                   </div>
                 </>)}
-                {admBatches.length > 0 && (<>
+                {enrBatches.length > 0 && (<>
                   <SectionLabel style={{ marginTop: 28 }}>Import History</SectionLabel>
-                  {[...admBatches].sort((a, b) => new Date(b.importedAt) - new Date(a.importedAt)).map(b => (
+                  {[...enrBatches].sort((a, b) => String(b.id).localeCompare(String(a.id))).map(b => (
                     <Card key={b.id} style={{ padding: "10px 18px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                      <div><div style={{ fontSize: 13, fontWeight: 700 }}>{b.fileName}</div><div style={{ fontSize: 12, color: T.textMuted }}>{b.importedAt} · {b.organisation} · Week {b.week}</div></div>
-                      <div style={{ fontSize: 12, fontFamily: F.mono, color: T.textMuted }}>{b.imported}/{b.total} imported · {b.duplicate} dup · {b.invalid} invalid</div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{b.fileName}</div>
+                        <div style={{ fontSize: 12, color: T.textMuted }}>{b.importedAt} · Week {b.week}</div>
+                      </div>
+                      <div style={{ fontSize: 13, fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>{b.totalEnrolments} enrolments</div>
                     </Card>
                   ))}
                 </>)}
               </>);
             })()}
-            {!admLoading && admTab === "students" && (() => {
-              const weeks = [...new Set(admRecords.map(r => r.week).filter(Boolean))].sort();
-              const statuses = [...new Set(admRecords.map(r => r.enrolmentStatus).filter(Boolean))].sort();
-              const filtered = admRecords.filter(r => {
-                if (admSearch && !`${r.studentId} ${r.studentName}`.toLowerCase().includes(admSearch.toLowerCase())) return false;
-                if (admFilterOrg !== "all" && r.organisation !== admFilterOrg) return false;
-                if (admFilterWeek !== "all" && r.week !== admFilterWeek) return false;
-                if (admFilterStatus !== "all" && r.enrolmentStatus !== admFilterStatus) return false;
+            {!enrLoading && enrTab === "dashboard" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const selW = enrFilterWeek;
+              const filtered = selW === "all" ? enrRecords : enrRecords.filter(r => r.week === selW);
+              const mMap = {}; filtered.forEach(r => { mMap[r.marketerName] = (mMap[r.marketerName] || 0) + r.count; });
+              const byMarketer = Object.entries(mMap).sort((a, b) => b[1] - a[1]);
+              const maxM = byMarketer[0]?.[1] || 1;
+              const rMap = {}; filtered.forEach(r => { rMap[r.rto] = (rMap[r.rto] || 0) + r.count; });
+              const byRto = Object.entries(rMap).sort((a, b) => b[1] - a[1]);
+              const maxR = byRto[0]?.[1] || 1;
+              const selCss = { padding: "7px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const barRow = (label, n, max, color) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                  <div style={{ width: 150, fontSize: 13, textAlign: "right", color: T.text, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+                  <div style={{ flex: 1, height: 20, background: T.raised, borderRadius: 4, overflow: "hidden", border: `1px solid ${T.border}` }}>
+                    <div style={{ width: `${(n / max) * 100}%`, height: "100%", background: color, borderRadius: 4, minWidth: n > 0 ? 4 : 0 }} />
+                  </div>
+                  <div style={{ width: 36, fontSize: 13, fontFamily: F.mono, textAlign: "right", fontWeight: 700, flexShrink: 0 }}>{n}</div>
+                </div>
+              );
+              return (<>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                  <span style={{ fontSize: 13, color: T.textMuted }}>Filter:</span>
+                  <select value={selW} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
+                    <option value="all">All Weeks</option>
+                    {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                  </select>
+                </div>
+                {filtered.length === 0 ? <EmptyState text={enrRecords.length === 0 ? "No data yet. Import a file to get started." : "No data for this week."} /> : (<>
+                  <SectionLabel>By Marketer</SectionLabel>
+                  <div style={{ marginBottom: 24 }}>{byMarketer.map(([name, n]) => barRow(name, n, maxM, T.brand))}</div>
+                  <SectionLabel>By RTO</SectionLabel>
+                  <div style={{ marginBottom: 8 }}>{byRto.map(([name, n]) => barRow(name, n, maxR, T.ok))}</div>
+                </>)}
+              </>);
+            })()}
+            {!enrLoading && enrTab === "data" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const marketers = [...new Set(enrRecords.map(r => r.marketerName))].sort();
+              const rtos = [...new Set(enrRecords.map(r => r.rto))].sort();
+              const filtered = enrRecords.filter(r => {
+                if (enrFilterWeek !== "all" && r.week !== enrFilterWeek) return false;
+                if (enrFilterMarketer !== "all" && r.marketerName !== enrFilterMarketer) return false;
+                if (enrFilterRto !== "all" && r.rto !== enrFilterRto) return false;
                 return true;
-              });
+              }).sort((a, b) => b.week.localeCompare(a.week) || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
               const exportCSV = () => {
-                const hdr = ["Student ID","Student Name","Programme","Organisation","Week","Enrolment Status","Source","Imported At"];
-                const rows = filtered.map(r => [r.studentId,r.studentName,r.programme,r.organisation,r.week,r.enrolmentStatus,r.source,r.importedAt]);
-                const csv = [hdr,...rows].map(r => r.map(v => `"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
-                const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv],{type:"text/csv"})), download: "admissions_students.csv" });
+                const hdr = ["Week","Marketer","RTO","Count"];
+                const rows = filtered.map(r => [r.week, r.marketerName, r.rto, r.count]);
+                const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+                const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "enrolments.csv" });
                 a.click(); URL.revokeObjectURL(a.href);
               };
               const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
               const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
               return (<>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
-                  <Input value={admSearch} onChange={e => setAdmSearch(e.target.value)} placeholder="Search student ID or name…" style={{ flex: 1, minWidth: 200 }} />
-                  <select value={admFilterOrg} onChange={e => setAdmFilterOrg(e.target.value)} style={selCss}>
-                    <option value="all">All organisations</option>
-                    {ADM_ORGS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                  <select value={admFilterWeek} onChange={e => setAdmFilterWeek(e.target.value)} style={selCss}>
+                  <select value={enrFilterWeek} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
                     <option value="all">All weeks</option>
                     {weeks.map(w => <option key={w} value={w}>{w}</option>)}
                   </select>
-                  <select value={admFilterStatus} onChange={e => setAdmFilterStatus(e.target.value)} style={selCss}>
-                    <option value="all">All statuses</option>
-                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                  <select value={enrFilterMarketer} onChange={e => setEnrFilterMarketer(e.target.value)} style={selCss}>
+                    <option value="all">All marketers</option>
+                    {marketers.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <select value={enrFilterRto} onChange={e => setEnrFilterRto(e.target.value)} style={selCss}>
+                    <option value="all">All RTOs</option>
+                    {rtos.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                   <Btn small onClick={exportCSV}>Export CSV</Btn>
                 </div>
-                <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {admRecords.length} records</div>
-                {filtered.length === 0 && <EmptyState text={admRecords.length === 0 ? "No records yet. Import a file to get started." : "No records match the current filters."} />}
-                {filtered.length > 0 && (
+                <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {enrRecords.length} records</div>
+                {filtered.length === 0 ? <EmptyState text={enrRecords.length === 0 ? "No records yet. Import a file to get started." : "No records match the current filters."} /> : (
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                      <thead><tr>{["Student ID","Student Name","Programme","Organisation","Week","Status"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                      <thead><tr>{["Week","Marketer","RTO","Count"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
                       <tbody>
-                        {filtered.slice(0, 200).map((r, i) => (
-                          <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
-                            <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td>
-                            <td style={{ padding: "7px 12px" }}>{r.studentName}</td>
-                            <td style={{ padding: "7px 12px" }}>{r.programme}</td>
-                            <td style={{ padding: "7px 12px" }}>{r.organisation}</td>
+                        {filtered.map((r, i) => (
+                          <tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}>
                             <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.week}</td>
-                            <td style={{ padding: "7px 12px" }}>{r.enrolmentStatus}</td>
+                            <td style={{ padding: "7px 12px" }}>{r.marketerName}</td>
+                            <td style={{ padding: "7px 12px" }}>{r.rto}</td>
+                            <td style={{ padding: "7px 12px", fontFamily: F.mono, fontWeight: 700, textAlign: "right" }}>{r.count}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                    {filtered.length > 200 && <div style={{ fontSize: 12, color: T.textMuted, padding: "8px 12px", textAlign: "center" }}>Showing first 200 rows. Export CSV for all {filtered.length} records.</div>}
                   </div>
                 )}
-              </>);
-            })()}
-            {!admLoading && admTab === "reports" && (() => {
-              const byOrg = ADM_ORGS.map(org => ({ org, total: admRecords.filter(r => r.organisation === org).length, unique: new Set(admRecords.filter(r => r.organisation === org).map(r => r.studentId)).size })).filter(r => r.total > 0);
-              const progCounts = admRecords.reduce((m, r) => { if (r.programme) m[r.programme] = (m[r.programme] || 0) + 1; return m; }, {});
-              const byProg = Object.entries(progCounts).sort((a, b) => b[1] - a[1]).slice(0, 20);
-              const statusCounts = admRecords.reduce((m, r) => { if (r.enrolmentStatus) m[r.enrolmentStatus] = (m[r.enrolmentStatus] || 0) + 1; return m; }, {});
-              const byStatus = Object.entries(statusCounts).sort((a, b) => b[1] - a[1]);
-              const exportCSV = (headers, rows, filename) => {
-                const csv = [headers, ...rows].map(r => r.map(v => `"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
-                const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv],{type:"text/csv"})), download: filename });
-                a.click(); URL.revokeObjectURL(a.href);
-              };
-              const rowStyle = { padding: "9px 16px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" };
-              return (<>
-                <SectionLabel>By Organisation</SectionLabel>
-                {byOrg.length === 0 && <EmptyState text="No data yet." />}
-                {byOrg.map(r => <Card key={r.org} style={rowStyle}><span style={{ fontSize: 14, fontWeight: 700 }}>{r.org}</span><span style={{ fontSize: 13, fontFamily: F.mono, color: T.textMuted }}>{r.total} enrolments · {r.unique} unique students</span></Card>)}
-                {byOrg.length > 0 && <Btn small onClick={() => exportCSV(["Organisation","Total","Unique Students"], byOrg.map(r => [r.org, r.total, r.unique]), "admissions_by_org.csv")} style={{ marginBottom: 20 }}>Export CSV</Btn>}
-                <SectionLabel>By Programme</SectionLabel>
-                {byProg.length === 0 && <EmptyState text="No data yet." />}
-                {byProg.map(([prog, n]) => <Card key={prog} style={rowStyle}><span style={{ fontSize: 13 }}>{prog}</span><span style={{ fontSize: 13, fontFamily: F.mono }}>{n}</span></Card>)}
-                {byProg.length > 0 && <Btn small onClick={() => exportCSV(["Programme","Count"], byProg, "admissions_by_programme.csv")} style={{ marginBottom: 20 }}>Export CSV</Btn>}
-                <SectionLabel>By Status</SectionLabel>
-                {byStatus.length === 0 && <EmptyState text="No data yet." />}
-                {byStatus.map(([s, n]) => <Card key={s} style={rowStyle}><span style={{ fontSize: 13 }}>{s}</span><span style={{ fontSize: 13, fontFamily: F.mono }}>{n}</span></Card>)}
-                {byStatus.length > 0 && <Btn small onClick={() => exportCSV(["Status","Count"], byStatus, "admissions_by_status.csv")} style={{ marginBottom: 24 }}>Export CSV</Btn>}
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
+                <div style={{ marginTop: 32, paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Danger Zone</div>
                   <Btn danger small onClick={async () => {
-                    if (!window.confirm("Delete ALL admissions records and import history? This cannot be undone.")) return;
+                    if (!window.confirm("Delete ALL enrolment records and import history? This cannot be undone.")) return;
                     if (!window.confirm("Are you sure? All enrolment data will be permanently deleted.")) return;
                     try {
-                      await dbDeleteCollection("admissions_enrolments");
-                      await dbDeleteCollection("admissions_batches");
-                      setAdmRecords([]); setAdmBatches([]); setAdmError(null);
-                    } catch (e) { setAdmError(`Clear failed: ${e.message}`); }
-                  }}>Clear all admissions data</Btn>
+                      await dbDeleteCollection("enrolment_records");
+                      await dbDeleteCollection("enrolment_batches");
+                      setEnrRecords([]); setEnrBatches([]); setEnrError(null);
+                    } catch (e) { setEnrError(`Clear failed: ${e.message}`); }
+                  }}>Clear all enrolment data</Btn>
                 </div>
               </>);
             })()}
