@@ -871,7 +871,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
 /* ─────────────────────────────────────────────────────────────
    USER MANAGEMENT PAGE
    ───────────────────────────────────────────────────────────── */
-const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [] };
+const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false };
 
 function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -895,6 +895,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
       ...((form.role === "member" || form.role === "manager") && form.teamId && { teamId: form.teamId }),
       ...(form.role === "manager" && form.teamIds?.length && { teamIds: form.teamIds }),
       ...(form.role === "manager" && form.mgrDeptIds?.length && { mgrDeptIds: form.mgrDeptIds }),
+      ...(form.role === "manager" && form.canApprovePeers && { canApprovePeers: true }),
     };
     dispatch({ type: "ADD_USER", user: newUser });
     setForm(BLANK_FORM); setFormErr(""); setShowAdd(false);
@@ -902,7 +903,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
 
   function startEdit(u) {
     setEditId(u.id);
-    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], mgrDeptIds: u.mgrDeptIds || [], secondTeamId: u.secondTeamId || "" });
+    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], mgrDeptIds: u.mgrDeptIds || [], secondTeamId: u.secondTeamId || "", canApprovePeers: !!u.canApprovePeers });
   }
 
   function saveEdit() {
@@ -914,6 +915,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
       teamIds: editForm.role === "manager" ? (editForm.teamIds?.length ? editForm.teamIds : undefined) : undefined,
       mgrDeptIds: editForm.role === "manager" ? (editForm.mgrDeptIds?.length ? editForm.mgrDeptIds : undefined) : undefined,
       secondTeamId: editForm.role === "member" ? (editForm.secondTeamId || undefined) : undefined,
+      canApprovePeers: editForm.role === "manager" ? (editForm.canApprovePeers || undefined) : undefined,
     }});
     setEditId(null);
   }
@@ -996,6 +998,16 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
                 ))}
               </div>
               <div style={{ fontSize: 11, color: T.textDim, marginTop: 5 }}>Manager can view and approve submissions from these departments (full dept access).</div>
+            </div>
+          )}
+          {form.role === "manager" && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: T.text }}>
+                <input type="checkbox" checked={!!form.canApprovePeers}
+                  onChange={e => setForm(p => ({ ...p, canApprovePeers: e.target.checked }))} />
+                Can approve same-department managers' submissions
+              </label>
+              <div style={{ fontSize: 11, color: T.textDim, marginTop: 5 }}>When enabled, this manager can view and approve pending check-ins from other managers in the same department.</div>
             </div>
           )}
           {formErr && <div style={{ padding: "8px 12px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, fontSize: 13, color: T.bad, marginBottom: 12 }}>{formErr}</div>}
@@ -1117,6 +1129,16 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
                       ))}
                     </div>
                     <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>Manager can view and approve submissions from these departments (full dept access, no team filter).</div>
+                  </div>
+                )}
+                {editForm.role === "manager" && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: T.text }}>
+                      <input type="checkbox" checked={!!editForm.canApprovePeers}
+                        onChange={e => setEditForm(p => ({ ...p, canApprovePeers: e.target.checked }))} />
+                      Can approve same-department managers' submissions
+                    </label>
+                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>When enabled, this manager can view and approve pending check-ins from other managers in the same department.</div>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
@@ -3650,7 +3672,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 return pendingMgrSubs.length > 0 ? (
                   <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, background: "#ede9fe", border: "1px solid #c4b5fd", color: "#6d28d9", display: "flex", alignItems: "center", gap: 8 }}>
                     <span>⚑</span>
-                    <span>{pendingMgrSubs.length} manager submission{pendingMgrSubs.length !== 1 ? "s" : ""} awaiting your approval — these are not visible to any Manager and can only be approved here</span>
+                    <span>{pendingMgrSubs.length} manager submission{pendingMgrSubs.length !== 1 ? "s" : ""} awaiting your approval — visible only to admins and same-department managers with "Can approve peers" enabled</span>
                   </div>
                 ) : null;
               })()}
@@ -5133,9 +5155,12 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const myTeamMemberIds = users.filter(u => u.role === "member" && (
     (u.deptId === user.deptId && overseeFilter(u)) || extraDeptIds.includes(u.deptId)
   )).map(u => u.id);
+  const peerManagerIds = user.canApprovePeers
+    ? users.filter(u => u.role === "manager" && u.deptId === user.deptId && u.id !== user.id).map(u => u.id)
+    : [];
   const myOkrSubs = allOkrSubs.filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
-  const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId));
+  const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId) || peerManagerIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
 
