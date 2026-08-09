@@ -2107,6 +2107,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [enrParsed, setEnrParsed] = useState(null);
   const [enrImporting, setEnrImporting] = useState(false);
   const [enrError, setEnrError] = useState(null);
+  const [enrChartTooltip, setEnrChartTooltip] = useState(null);
   useEffect(() => {
     if (page === "admissions" && !enrLoaded && !enrLoading) {
       setEnrLoading(true);
@@ -4157,6 +4158,98 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     <Metric label="Marketers" value={marketers.length} />
                     <Metric label="RTOs" value={rtos.length} />
                   </div>
+                  {weeks.length >= 2 && (() => {
+                    const LINE_COLORS = ["#4C8BF5","#E8542A","#2DB66F","#F5A623","#9B59B6","#1ABC9C","#E74C3C","#F39C12"];
+                    const chartWeeks = [...weeks].reverse();
+                    const allMarketers = [...new Set(enrRecords.map(r => r.marketerName))];
+                    const mTotals = allMarketers.map(m => [m, enrRecords.filter(r => r.marketerName === m).reduce((s, r) => s + r.count, 0)]);
+                    mTotals.sort((a, b) => b[1] - a[1]);
+                    const topMarketers = mTotals.slice(0, 8).map(x => x[0]);
+                    const weeklyTotals = {};
+                    topMarketers.forEach(m => { weeklyTotals[m] = {}; });
+                    enrRecords.forEach(r => { if (weeklyTotals[r.marketerName] !== undefined) weeklyTotals[r.marketerName][r.week] = (weeklyTotals[r.marketerName][r.week] || 0) + r.count; });
+                    const maxVal = Math.max(...topMarketers.flatMap(m => chartWeeks.map(w => weeklyTotals[m][w] || 0)));
+                    const yMax = Math.ceil(maxVal / 5) * 5 || 5;
+                    const PAD_L = 36, PAD_R = 16, PAD_T = 16, PAD_B = 68;
+                    const SVG_W = 700, SVG_H = 260;
+                    const cW = SVG_W - PAD_L - PAD_R, cH = SVG_H - PAD_T - PAD_B;
+                    const xPos = i => PAD_L + (i / (chartWeeks.length - 1)) * cW;
+                    const yPos = v => PAD_T + cH - (v / yMax) * cH;
+                    const buildPath = m => {
+                      let d = "", prevHad = false;
+                      chartWeeks.forEach((w, i) => {
+                        const v = weeklyTotals[m][w];
+                        if (v !== undefined) {
+                          const x = xPos(i).toFixed(1), y = yPos(v).toFixed(1);
+                          d += prevHad ? ` L ${x} ${y}` : `M ${x} ${y}`;
+                          prevHad = true;
+                        } else { prevHad = false; }
+                      });
+                      return d;
+                    };
+                    const yTicks = [0,1,2,3,4,5].map(i => Math.round((yMax / 5) * i));
+                    return (<>
+                      <SectionLabel style={{ marginTop: 4, marginBottom: 8 }}>Enrolment Trend</SectionLabel>
+                      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 8px 4px", marginBottom: 20 }}>
+                        <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} width="100%" style={{ display: "block" }}>
+                          {yTicks.map(v => {
+                            const y = yPos(v);
+                            return (
+                              <g key={v}>
+                                <line x1={PAD_L} y1={y} x2={PAD_L + cW} y2={y} stroke={T.border} strokeDasharray={v === 0 ? "0" : "3,3"} strokeWidth="1" />
+                                <text x={PAD_L - 6} y={y + 4} textAnchor="end" fontSize="10" fill={T.textMuted}>{v}</text>
+                              </g>
+                            );
+                          })}
+                          <line x1={PAD_L} y1={PAD_T + cH} x2={PAD_L + cW} y2={PAD_T + cH} stroke={T.border} strokeWidth="1" />
+                          {chartWeeks.map((w, i) => (
+                            <text key={w} x={xPos(i).toFixed(1)} y={PAD_T + cH + 10} textAnchor="end" fontSize="10" fill={T.textMuted}
+                              transform={`rotate(-40, ${xPos(i).toFixed(1)}, ${PAD_T + cH + 10})`}>{w}</text>
+                          ))}
+                          {topMarketers.map((m, mi) => {
+                            const color = LINE_COLORS[mi];
+                            return (
+                              <g key={m}>
+                                <path d={buildPath(m)} stroke={color} strokeWidth="2.2" fill="none" strokeLinejoin="round" />
+                                {chartWeeks.map((w, i) => {
+                                  const v = weeklyTotals[m][w];
+                                  if (v === undefined) return null;
+                                  return (
+                                    <circle key={w} cx={xPos(i).toFixed(1)} cy={yPos(v).toFixed(1)} r="4.5" fill={color} stroke={T.surface} strokeWidth="1.5"
+                                      style={{ cursor: "pointer" }}
+                                      onMouseEnter={() => setEnrChartTooltip({ marketer: m, week: w, count: v, x: xPos(i), y: yPos(v) })}
+                                      onMouseLeave={() => setEnrChartTooltip(null)} />
+                                  );
+                                })}
+                              </g>
+                            );
+                          })}
+                          {enrChartTooltip && (() => {
+                            const { marketer, week, count, x, y } = enrChartTooltip;
+                            const tipW = 152, tipH = 46;
+                            const tx = x > SVG_W / 2 ? x - tipW - 10 : x + 12;
+                            const ty = Math.max(PAD_T, Math.min(y - tipH / 2, PAD_T + cH - tipH));
+                            return (
+                              <g style={{ pointerEvents: "none" }}>
+                                <rect x={tx} y={ty} width={tipW} height={tipH} rx="5" fill={T.raised} stroke={T.border} strokeWidth="1" />
+                                <text x={tx + 9} y={ty + 17} fontSize="11" fontWeight="700" fill={T.text}>{marketer}</text>
+                                <text x={tx + 9} y={ty + 33} fontSize="11" fill={T.textMuted}>{week} · {count} enrolments</text>
+                              </g>
+                            );
+                          })()}
+                        </svg>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "0 8px 8px", marginTop: 2 }}>
+                          {topMarketers.map((m, i) => (
+                            <div key={m} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <div style={{ width: 14, height: 3, background: LINE_COLORS[i], borderRadius: 2, flexShrink: 0 }} />
+                              <span style={{ fontSize: 11, color: T.textMuted }}>{m}</span>
+                            </div>
+                          ))}
+                          {allMarketers.length > 8 && <span style={{ fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>· Showing top 8 marketers</span>}
+                        </div>
+                      </div>
+                    </>);
+                  })()}
                   {weekRecs.length === 0 ? <EmptyState text="No records for this week." /> : (
                     <div style={{ overflowX: "auto" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
