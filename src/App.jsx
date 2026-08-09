@@ -2109,7 +2109,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [enrError, setEnrError] = useState(null);
   const [enrChartTooltip, setEnrChartTooltip] = useState(null);
   useEffect(() => {
-    if (page === "admissions" && !enrLoaded && !enrLoading) {
+    if (!enrLoaded && !enrLoading) {
       setEnrLoading(true);
       dbGetEnrolments().then(r => {
         setEnrRecords(r.enrolment_records);
@@ -2117,9 +2117,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         setEnrError(null);
         setEnrLoaded(true);
         setEnrLoading(false);
-      }).catch(e => { setEnrError(e.message); setEnrLoading(false); });
+      }).catch(e => { setEnrError(e.message); setEnrLoading(false); setEnrLoaded(true); });
     }
-  }, [page, enrLoaded, enrLoading]);
+  }, [enrLoaded, enrLoading]);
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const dragColRef = useRef(null);
@@ -2344,6 +2344,36 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
     ].filter(Boolean).join("\n");
 
+    // Weekly Enrolment data
+    let enrolmentSection;
+    if (!enrLoaded) {
+      enrolmentSection = "WEEKLY ENROLMENTS: Data not yet loaded this session.";
+    } else if (enrError && enrRecords.length === 0) {
+      enrolmentSection = `WEEKLY ENROLMENTS: Failed to load — ${enrError}`;
+    } else if (enrRecords.length === 0) {
+      enrolmentSection = "WEEKLY ENROLMENTS: No enrolment data imported yet.";
+    } else {
+      const enrWeeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+      const enrMarketers = [...new Set(enrRecords.map(r => r.marketerName))].sort();
+      const enrRtos = [...new Set(enrRecords.map(r => r.rto))].sort();
+      const weekLines = enrWeeks.map(w => {
+        const wRecs = enrRecords.filter(r => r.week === w);
+        const wTotal = wRecs.reduce((s, r) => s + r.count, 0);
+        const mLines = enrMarketers.map(m => {
+          const mRecs = wRecs.filter(r => r.marketerName === m);
+          if (!mRecs.length) return null;
+          const mTotal = mRecs.reduce((s, r) => s + r.count, 0);
+          const rtoParts = mRecs.map(r => `${r.rto}:${r.count}`).join(", ");
+          return `    ${m}: ${rtoParts} (total:${mTotal})`;
+        }).filter(Boolean);
+        return `  ${w} — ${wTotal} enrolments:\n${mLines.join("\n")}`;
+      });
+      enrolmentSection = [
+        `WEEKLY ENROLMENTS: ${enrWeeks.length} weeks | Marketers: ${enrMarketers.join(", ")} | RTOs: ${enrRtos.join(", ")}`,
+        weekLines.join("\n"),
+      ].join("\n");
+    }
+
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
@@ -2352,6 +2382,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
       `\n${pendingSection}`,
       `\n${projectSection}`,
+      `\n${enrolmentSection}`,
     ].join("\n");
   }
 
