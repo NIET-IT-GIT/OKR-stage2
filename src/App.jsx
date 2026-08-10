@@ -2275,6 +2275,7 @@ DATA RULES:
 - Status thresholds: green ≥ 66.7%, yellow ≥ 60%, red < 60%.
 - A member shown as "no data this month" has not yet received or answered a check-in — do not treat them as 0% performers.
 - Tracker KRs record numerical values only and do not affect completion rates.
+- Yes/no KRs may include a reported actual value (e.g. total sales revenue). When a yes/no KR actual value and a tracker KR cover a similar metric, the yes/no KR actual is the confirmed reported figure and takes precedence over the tracker value.
 - Progress KRs record a cumulative running total toward a target and contribute proportionally to completion rate (actual ÷ target × 100%). They are used for project-oriented goals like annual profit targets where multiple check-ins occur through the year.
 - Financial data (Income, Net Profit, Expenses) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
 - Project data includes all manager-owned projects: name, department, responsible manager, status (active/completed), progress (0–100%), due date, and optional contribution ($). Proactively flag projects that are overdue or have low progress close to their due date.
@@ -2332,7 +2333,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         const entries = krSubs.map(s => `${s.actualValue ?? 0}${kr.unit ? " " + kr.unit : ""} (${s.dateRange || s.periodKey})`).join(", ");
         return `    Tracker — ${kr.label}: ${entries}`;
       }).filter(Boolean);
-      return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines };
+      const krLines = kd.krs.filter(kr => kr.type !== "tracker" && kr.type !== "manager-fill").map(kr => {
+        const latest = okrSubmissions.filter(s => s.memberId === u.id && s.krId === kr.id && s.answer !== null)
+          .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+        if (!latest || latest.actualValue == null) return null;
+        return `    KR — ${kr.label}: ${latest.answer === "yes" ? "✓ Yes" : "✗ No"} · actual ${latest.actualValue}${kr.unit ? " " + kr.unit : ""} (${latest.dateRange || latest.periodKey})`;
+      }).filter(Boolean);
+      return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines, krLines };
     });
 
     // Dept rates = average of eligible member rates (same as Company Overview deptRanks)
@@ -2356,6 +2363,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       if (m.answered || m.pending) line += ` — ${m.answered} answered, ${m.pending} awaiting`;
       else line += ` — no check-ins sent this month`;
       if (m.trackerLines.length) line += "\n" + m.trackerLines.join("\n");
+      if (m.krLines.length) line += "\n" + m.krLines.join("\n");
       return line;
     }).join("\n");
 
