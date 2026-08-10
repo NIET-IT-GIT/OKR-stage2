@@ -5468,10 +5468,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                     {t.krs.map(kr => {
                       const pct = krCompletion(kr); const st = getStatus(pct);
-                      const trackerVal = kr.type === "tracker"
-                        ? (allOkrSubs.some(s => s.krId === kr.id && s.answer !== null) || (kr.actual != null && kr.actual !== 0)
-                            ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null)
-                        : null;
+                      const trackerVal = (kr.type === "tracker" && kr.actual != null && kr.actual !== 0)
+                        ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null;
                       return (
                       <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
@@ -6569,10 +6567,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                     {t.krs.map(kr => {
                       const pct = krCompletion(kr); const st = getStatus(pct);
-                      const trackerVal = kr.type === "tracker"
-                        ? ((state.okrSubmissions || []).some(s => s.krId === kr.id && s.answer !== null) || (kr.actual != null && kr.actual !== 0)
-                            ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null)
-                        : null;
+                      const trackerVal = (kr.type === "tracker" && kr.actual != null && kr.actual !== 0)
+                        ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null;
                       return (
                       <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
