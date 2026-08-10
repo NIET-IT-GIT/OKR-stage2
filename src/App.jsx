@@ -5001,8 +5001,11 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
           );
           return (
             <div style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 860, margin: "0 auto" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 32px 14px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "14px 16px 12px" : "18px 32px 14px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {isMobile && (
+                    <button onClick={() => setDrawerOpen(true)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.textSoft, padding: "2px 6px", lineHeight: 1, flexShrink: 0, fontFamily: F.body }}>☰</button>
+                  )}
                   <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0071E3,#6B47DC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 800, letterSpacing: "0.02em", boxShadow: "0 2px 10px rgba(0,113,227,0.3)" }}>NP</div>
                   <div>
                     <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.01em" }}>NIET Pilot</div>
@@ -5017,7 +5020,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               {chatPromptOpen && (() => {
                 const saved = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
                 return (
-                  <div style={{ margin: "12px 32px 0", padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 12 }}>
+                  <div style={{ margin: isMobile ? "12px 16px 0" : "12px 32px 0", padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 12 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>System Prompt</div>
                     <textarea key="sysPrompt" defaultValue={saved} rows={5} id="chatSysPromptTA"
                       style={{ width: "100%", padding: "9px 12px", fontSize: 13, fontFamily: F.mono, background: T.surface, border: `1px solid ${T.brandBorder}`, borderRadius: 8, color: T.text, outline: "none", resize: "vertical", lineHeight: 1.55, boxSizing: "border-box" }}
@@ -5029,7 +5032,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   </div>
                 );
               })()}
-              <div style={{ flex: 1, overflowY: "auto", padding: "0 32px" }}>
+              <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "0 16px" : "0 32px" }}>
                 {chatHistory.length === 0 && (
                   <div style={{ paddingTop: 40, paddingBottom: 24 }}>
                     <div style={{ textAlign: "center", marginBottom: 40 }}>
@@ -5105,7 +5108,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 )}
                 <div ref={chatEndRef} />
               </div>
-              <div style={{ padding: "14px 32px 24px", flexShrink: 0 }}>
+              <div style={{ padding: isMobile ? "12px 16px 24px" : "14px 32px 24px", flexShrink: 0 }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 16, padding: "8px 8px 8px 16px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}
                   onFocusCapture={e => { e.currentTarget.style.borderColor = T.borderFocus; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.brandDim}`; }}
                   onBlurCapture={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.06)"; }}>
