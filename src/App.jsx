@@ -2538,6 +2538,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   }
   const [adminSelDept, setAdminSelDept] = useState(null);
   const [ovExpandedDept, setOvExpandedDept] = useState(null);
+  const [logPopup, setLogPopup] = useState(null);
+  useEffect(() => { if (!logPopup) return; const h = e => { if (e.key === "Escape") setLogPopup(null); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [logPopup]);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], emailLogs = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
@@ -2858,6 +2860,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   return (
     <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
+      {logPopup && <div onClick={() => setLogPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, width: "100%", maxWidth: 640, maxHeight: "75vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}><div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}><div><div style={{ fontSize: 15, fontWeight: 700 }}>{logPopup.projName}</div>{logPopup.date && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{logPopup.date}</div>}</div><button onClick={() => setLogPopup(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "0 2px", marginLeft: 12 }}>✕</button></div><div style={{ padding: "16px 20px", overflowY: "auto", fontSize: 14, lineHeight: 1.65, color: T.text, whiteSpace: "pre-wrap" }}>{logPopup.text}</div></div></div>}
       {checkinPreview && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div style={{ background: T.surface, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "100%", maxWidth: 620, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
@@ -4121,7 +4124,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
                             }}>Save</Btn>
                           </div>
-                          {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const preview = latest.text.length > 160 ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "8px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}</div>; })()}
+                          {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const truncated = latest.text.length > 160; const preview = truncated ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "8px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}{truncated && <button onClick={e => { e.stopPropagation(); setLogPopup({ text: latest.text, date: latest.date, projName: p.name }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, padding: "0 0 0 4px", fontFamily: F.body }}>Read more →</button>}</div>; })()}
                           <div style={{ padding: "8px 18px" }}>
                             <button onClick={() => {
                               if (isDetailsOpen) { setEditProjId(null); return; }
@@ -5167,6 +5170,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [mgrKpiPeriodKeys, setMgrKpiPeriodKeys] = useState({});
   const [trackerInput, setTrackerInput] = useState({});
   const [syncing, setSyncing] = useState(false);
+  const [logPopup, setLogPopup] = useState(null);
+  useEffect(() => { if (!logPopup) return; const h = e => { if (e.key === "Escape") setLogPopup(null); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [logPopup]);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
 
   const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
@@ -5240,6 +5245,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   return (
     <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
+      {logPopup && <div onClick={() => setLogPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, width: "100%", maxWidth: 640, maxHeight: "75vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}><div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}><div><div style={{ fontSize: 15, fontWeight: 700 }}>{logPopup.projName}</div>{logPopup.date && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{logPopup.date}</div>}</div><button onClick={() => setLogPopup(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "0 2px", marginLeft: 12 }}>✕</button></div><div style={{ padding: "16px 20px", overflowY: "auto", fontSize: 14, lineHeight: 1.65, color: T.text, whiteSpace: "pre-wrap" }}>{logPopup.text}</div></div></div>}
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingOkrSubs.length, checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
@@ -5878,7 +5884,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                     </>}
                   </div>
-                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const preview = latest.text.length > 160 ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}</div>; })()}
+                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const truncated = latest.text.length > 160; const preview = truncated ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}{truncated && <button onClick={e => { e.stopPropagation(); setLogPopup({ text: latest.text, date: latest.date, projName: p.name }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, padding: "0 0 0 4px", fontFamily: F.body }}>Read more →</button>}</div>; })()}
                   {user.projectAccess && p.mgrId === user.id && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
@@ -6149,6 +6155,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [editProjForm, setEditProjForm] = useState({ status: "active", due: "", contribution: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
+  const [logPopup, setLogPopup] = useState(null);
+  useEffect(() => { if (!logPopup) return; const h = e => { if (e.key === "Escape") setLogPopup(null); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [logPopup]);
 
   const { memberData, monthlyReports, depts, projects = [], users } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -6175,6 +6183,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   return (
     <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
+      {logPopup && <div onClick={() => setLogPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, width: "100%", maxWidth: 640, maxHeight: "75vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}><div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}><div><div style={{ fontSize: 15, fontWeight: 700 }}>{logPopup.projName}</div>{logPopup.date && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{logPopup.date}</div>}</div><button onClick={() => setLogPopup(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "0 2px", marginLeft: 12 }}>✕</button></div><div style={{ padding: "16px 20px", overflowY: "auto", fontSize: 14, lineHeight: 1.65, color: T.text, whiteSpace: "pre-wrap" }}>{logPopup.text}</div></div></div>}
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
@@ -6841,7 +6850,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                     </>}
                   </div>
-                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const preview = latest.text.length > 160 ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}</div>; })()}
+                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const truncated = latest.text.length > 160; const preview = truncated ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}{truncated && <button onClick={e => { e.stopPropagation(); setLogPopup({ text: latest.text, date: latest.date, projName: p.name }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, padding: "0 0 0 4px", fontFamily: F.body }}>Read more →</button>}</div>; })()}
                   {user.projectAccess && p.mgrId === user.id && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
