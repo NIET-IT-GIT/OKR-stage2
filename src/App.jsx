@@ -1225,7 +1225,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
    ───────────────────────────────────────────────────────────── */
 const BLANK_DEPT = { name: "", obj: "", head: "", college: "" };
 
-function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
+function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onViewKrs }) {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(BLANK_DEPT);
   const [addErr, setAddErr] = useState("");
@@ -1297,7 +1297,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
   const labelStyle = { fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 };
 
   return (<>
-    <Header title="Departments" sub="Manage department structure and descriptions"
+    <Header title="OKR Management" sub="Manage department structure, teams, and key results"
       right={<Btn primary onClick={() => { setShowAdd(p => !p); setAddErr(""); setAddForm(BLANK_DEPT); }}>{showAdd ? "Cancel" : "+ Add Department"}</Btn>} />
     <Pane>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
@@ -1335,12 +1335,11 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
       )}
 
       <Card style={{ overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 200px 80px 80px 110px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-          <span>Department / Description</span><span>Head · College</span><span>Teams</span><span>Completion (This Month)</span><span style={{ textAlign: "right" }}>Actions</span>
+        <div style={{ display: "grid", gridTemplateColumns: `1fr 200px 80px${onViewKrs ? " 110px" : ""} 160px`, padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+          <span>Department / Description</span><span>Head · College</span><span>Teams</span>{onViewKrs && <span>Key Results</span>}<span style={{ textAlign: "right" }}>Actions</span>
         </div>
         {depts.length === 0 && <EmptyState text="No departments yet. Add one above." />}
         {depts.map((d, i) => {
-          const r = calcDeptRate(d.id); const s = getStatus(r);
           if (editId === d.id) {
             return (
               <div key={d.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "14px 18px" }}>
@@ -1360,7 +1359,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
           const isSelected = selDept === d.id;
           return (
             <div key={d.id}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 200px 80px 80px 110px", padding: "12px 18px", gap: 10, alignItems: "center", background: isSelected ? T.brandDim : i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: `1fr 200px 80px${onViewKrs ? " 110px" : ""} 160px`, padding: "12px 18px", gap: 10, alignItems: "center", background: isSelected ? T.brandDim : i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                 <div style={{ cursor: "pointer" }} onClick={() => { setSelDept(isSelected ? null : d.id); }}>
                   <div style={{ fontWeight: 700, color: isSelected ? T.brand : T.text }}>{d.name}</div>
                   {d.obj && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{d.obj}</div>}
@@ -1370,7 +1369,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch }) {
                   <div style={{ fontSize: 12, color: T.textMuted }}>{d.college || ""}</div>
                 </div>
                 <span style={{ fontSize: 13, color: T.textSoft }}>{d.teams.length} team{d.teams.length !== 1 ? "s" : ""}</span>
-                <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 14, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</span>
+                {onViewKrs && <button onClick={() => onViewKrs(d.id)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>KR Editor →</button>}
                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                   <button onClick={() => startEdit(d)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
                   {confirmDel === d.id ? (<>
@@ -2538,14 +2537,14 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     setResendingEmail(null);
   }
   const [adminSelDept, setAdminSelDept] = useState(null);
+  const [ovExpandedDept, setOvExpandedDept] = useState(null);
 
   const { depts, memberData, mgrSprints, monthlyReports, projects, weeklySubs, okrSubmissions = [], emailLogs = [], users, settings } = state;
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
     { id: "ai-chat",          icon: "⬡", label: "NIET Pilot"        },
     { id: "overview",         icon: "⬡", label: "Company Overview"  },
-    { id: "departments",      icon: "⬡", label: "Departments"       },
-    { id: "okr-review",       icon: "⬡", label: "OKR Review"        },
+    { id: "okr-mgmt",         icon: "⬡", label: "OKR Management"    },
     { id: "submissions",      icon: "⬡", label: "OKR Submissions"   },
     { id: "reports",          icon: "⬡", label: "OKR Reports"       },
     { id: "projects",         icon: "⬡", label: "Projects"          },
@@ -2915,8 +2914,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
           </div>
         </div>
       )}
-      <Side items={navItems} active={page} onSelect={p => { setPage(p); setSelDept(null); }} user={user} onLogout={onLogout}
-        subItems={deptSubItems} subItemsFor="departments" activeSubItem={selDept ? "__setup__" : "__all__"} onSelectSubItem={id => { setPage("departments"); if (id === "__setup__") { setSelDept(depts[0]?.id || null); } else { setSelDept(null); } setSelTeam(null); setAddTarget(null); }} />
+      <Side items={navItems} active={page} onSelect={p => { setPage(p); setSelDept(null); setAdminSelDept(null); }} user={user} onLogout={onLogout}
+        subItems={deptSubItems} subItemsFor="okr-mgmt" activeSubItem={adminSelDept ? "__setup__" : "__all__"} onSelectSubItem={id => { setPage("okr-mgmt"); if (id === "__setup__") { setAdminSelDept(depts[0]?.id || null); } else { setAdminSelDept(null); } setSelTeam(null); setAddTarget(null); setExpandedMonthlyKr(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} onImpersonate={onImpersonate} />}
@@ -2953,17 +2952,47 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               <SectionLabel>Department Rankings</SectionLabel>
               {ovSubs.length === 0
                 ? <Card style={{ padding: "18px 20px", color: T.textMuted, textAlign: "center", fontSize: 14 }}>No check-in submissions for this period yet — send check-ins to see department rankings.</Card>
-                : deptRanks.map((d, i) => (
-                <Card key={d.id} onClick={() => { setSelDept(d.id); setPage("departments"); }} style={{ padding: "16px 20px", marginBottom: 8 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 60px 180px 80px", alignItems: "center", gap: 14 }}>
-                    <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: i === 0 ? T.ok : i === deptRanks.length - 1 ? T.bad : T.textMuted }}>#{i + 1}</span>
-                    <div><div style={{ fontSize: 16, fontWeight: 700 }}>{d.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{d.college} · {d.head} · {d.teams.length} teams</div></div>
-                    <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
-                    <Bar value={d.rate} status={d.status} h={7} />
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={d.status} /></div>
-                  </div>
-                </Card>
-              ))}
+                : deptRanks.map((d, i) => {
+                  const isExpanded = ovExpandedDept === d.id;
+                  const deptMembers = isExpanded ? users
+                    .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
+                    .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = memberHasRateKrs(kd.krs) ? calcMemberRate(u.id, filtKrs(kd.krs), ovSubs) : null; return { ...u, rate: mr, status: getStatus(mr) }; })
+                    .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1)) : [];
+                  return (
+                    <Card key={d.id} style={{ marginBottom: 8, overflow: "hidden" }}>
+                      <div onClick={() => setOvExpandedDept(p => p === d.id ? null : d.id)} style={{ padding: "16px 20px", cursor: "pointer", display: "grid", gridTemplateColumns: "36px 1fr 60px 180px 80px 24px", alignItems: "center", gap: 14 }}>
+                        <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: i === 0 ? T.ok : i === deptRanks.length - 1 ? T.bad : T.textMuted }}>#{i + 1}</span>
+                        <div><div style={{ fontSize: 16, fontWeight: 700 }}>{d.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{d.college} · {d.head} · {d.teams.length} teams</div></div>
+                        <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
+                        <Bar value={d.rate} status={d.status} h={7} />
+                        <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={d.status} /></div>
+                        <span style={{ fontSize: 11, color: T.textMuted, textAlign: "right" }}>{isExpanded ? "▲" : "▼"}</span>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ borderTop: `1px solid ${T.border}`, padding: "14px 20px", background: T.bgSoft }}>
+                          {deptMembers.length === 0
+                            ? <div style={{ fontSize: 13, color: T.textMuted }}>No members in this department yet.</div>
+                            : deptMembers.map((m, mi) => (
+                              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: mi < deptMembers.length - 1 ? `1px solid ${T.border}` : "none" }}>
+                                <span style={{ fontSize: 13, fontWeight: 400, color: T.textMuted, fontFamily: F.mono, width: 20, textAlign: "right", flexShrink: 0 }}>#{mi + 1}</span>
+                                <Avatar letters={m.av || m.name?.slice(0, 2)} size={30} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+                                  <div style={{ fontSize: 12, color: T.textMuted }}>{m.title || ""}</div>
+                                </div>
+                                {m.rate !== null ? (<>
+                                  <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 14, color: STATUS_THEME[m.status].color, flexShrink: 0 }}>{m.rate.toFixed(1)}%</span>
+                                  <div style={{ width: 100, flexShrink: 0 }}><Bar value={m.rate} status={m.status} h={5} /></div>
+                                  <Tag type={m.status} small />
+                                </>) : <span style={{ fontSize: 12, color: T.textDim }}>No data</span>}
+                              </div>
+                            ))
+                          }
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
             </div>
             </>)}
 
@@ -2972,7 +3001,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
           </Pane>
         </>)}
 
-        {page === "okr-review" && (() => {
+        {page === "okr-mgmt" && (() => {
           const PERIODS = [{ id: "all", label: "All" }, { id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }, { id: "quarterly", label: "Quarterly" }, { id: "biannual", label: "Bi-Annual" }, { id: "annual", label: "Annual" }];
           const filterP = krs => {
             const byPeriod = adminOkrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === adminOkrPeriod);
@@ -3092,14 +3121,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
             const teamStats = (d.teams || []).map(t => { const tKrs = filterP(t.krs); return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) }; });
             const totalKrs = dKrs.length + teamStats.reduce((s, t) => s + t.krs.length, 0);
             return (<>
-              <Header title="OKR Review" sub={`${d.name} · ${adminOkrPeriod === "all" ? "All periods" : adminOkrPeriod} key results`} right={<Tag type={deptStatus} />} />
+              <Header title="OKR Management" sub={`${d.name} · ${adminOkrPeriod === "all" ? "All periods" : adminOkrPeriod} key results`} right={<Tag type={deptStatus} />} />
               <Pane>
                 <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
                   {PERIODS.map(p => <Btn key={p.id} primary={adminOkrPeriod === p.id} small onClick={() => setAdminOkrPeriod(p.id)}>{p.label}</Btn>)}
                 </div>
                 <DeptNav />
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                  <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} sub={`Target: ${TP}%`} />
                   <Metric label="KRs this period" value={totalKrs} />
                   <Metric label="Teams" value={(d.teams || []).length} />
                 </div>
@@ -3126,57 +3154,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               </Pane>
             </>);
           }
-          const allDeptStats = depts.map(d => {
-            const dKrs = filterP(d.krs || []);
-            const teamKrCount = (d.teams || []).reduce((s, t) => s + filterP(t.krs || []).length, 0);
-            const rate = calcRate(dKrs);
-            const status = getStatus(rate);
-            return { ...d, dKrCount: dKrs.length, teamKrCount, totalKrs: dKrs.length + teamKrCount, rate, status };
-          });
-          const overallRate = allDeptStats.length ? allDeptStats.reduce((s, d) => s + d.rate, 0) / allDeptStats.length : 0;
-          const totalTeams = depts.reduce((s, d) => s + (d.teams || []).length, 0);
-          const totalAllKrs = allDeptStats.reduce((s, d) => s + d.totalKrs, 0);
-          return (<>
-            <Header title="OKR Review" sub="All departments · Key results overview" right={<Tag type={getStatus(overallRate)} />} />
-            <Pane>
-              <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
-                {PERIODS.map(p => <Btn key={p.id} primary={adminOkrPeriod === p.id} small onClick={() => setAdminOkrPeriod(p.id)}>{p.label}</Btn>)}
-              </div>
-              <DeptNav />
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <Metric label="Overall Completion" value={`${overallRate.toFixed(1)}%`} status={getStatus(overallRate)} sub={`Target: ${TP}%`} />
-                <Metric label="Departments" value={depts.length} />
-                <Metric label="Teams" value={totalTeams} />
-                <Metric label="KRs this period" value={totalAllKrs} />
-              </div>
-              {allDeptStats.map(d => (
-                <Card key={d.id} style={{ padding: "16px 20px", marginBottom: 10, cursor: "pointer" }} onClick={() => { setAdminSelDept(d.id); setExpandedMonthlyKr(null); }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 80px 180px 100px", alignItems: "center", gap: 14 }}>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{d.name}</div>
-                      {d.obj && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{d.obj}</div>}
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 2 }}>Teams</div>
-                      <div style={{ fontWeight: 700, fontFamily: F.mono }}>{(d.teams || []).length}</div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 2 }}>KRs</div>
-                      <div style={{ fontWeight: 700, fontFamily: F.mono }}>{d.totalKrs}</div>
-                    </div>
-                    <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
-                    <Bar value={d.rate} status={d.status} h={7} />
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}><Tag type={d.status} /><span style={{ fontSize: 12, color: T.brand, fontWeight: 600 }}>Detail →</span></div>
-                  </div>
-                </Card>
-              ))}
-            </Pane>
-          </>);
+          return <DeptMgmtPage depts={depts} users={users} memberData={memberData} okrSubmissions={okrSubmissions} dispatch={dispatch} onViewKrs={id => { setAdminSelDept(id); setExpandedMonthlyKr(null); }} />;
         })()}
 
-        {page === "departments" && (!selDept ? (
-          <DeptMgmtPage depts={depts} users={users} memberData={memberData} okrSubmissions={okrSubmissions} dispatch={dispatch} />
-        ) : (() => {
+        {false && false && (() => {
           const dept = depts.find(d => d.id === selDept);
           if (!dept) return null;
           const COLS_DEF = [
@@ -3565,7 +3546,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               {renderPersonalSection()}
             </Pane>
           </>);
-        })())}
+        })()}
 
         {page === "submissions" && (() => {
           const PERIOD_TABS = [
