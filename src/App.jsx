@@ -257,7 +257,7 @@ function periodDisplayLabel(period, key) {
   return key;
 }
 function calcSubmissionRate(okrSubs, memberId, monthKey) {
-  const relevant = okrSubs.filter(s => s.memberId === memberId && s.answer !== null && (s.periodKey || "").slice(0, 7) === monthKey);
+  const relevant = okrSubs.filter(s => s.memberId === memberId && s.answer !== null && !s.managerFilled && (s.periodKey || "").slice(0, 7) === monthKey);
   if (!relevant.length) return null;
   return (relevant.filter(s => s.answer === "yes").length / relevant.length) * 100;
 }
@@ -2699,6 +2699,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       ? { ...baseKr, type: "tracker", target: 0, actual: null }
       : newKr.krType === "progress"
       ? { ...baseKr, type: "progress", target: Number(newKr.target), actual: null }
+      : newKr.krType === "manager-fill"
+      ? { ...baseKr, type: "manager-fill", target: Number(newKr.target), actual: null }
       : newKr.useMonthlyTargets
         ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
         : { ...baseKr, target: Number(newKr.target), actual: null };
@@ -2820,7 +2822,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         if (!krList.length) continue;
         const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
-        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`) && kr.type !== "manager-fill");
         if (!freshKrs.length) continue;
         const monthKey = period === "monthly" ? periodKey
           : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
@@ -3061,12 +3063,15 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                   {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
                   {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress · affects rate proportionally</span>}
+                  {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Mgr Fill · manager assesses</span>}
                   {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Monthly Breakdown</span>}
                   {adminOkrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                 </div>
                 {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)} this mo.` : kr.type === "progress" ? fmt(kr.target) : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
                 {kr.type === "tracker"
                   ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span>
+                  : kr.type === "manager-fill"
+                  ? <span style={{ textAlign: "right", fontFamily: F.mono, color: "#d97706", fontSize: 12 }}>via mgr</span>
                   : isMonthly
                   ? <Input value={curActual} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: Number(e.target.value) || 0 }); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                   : <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
@@ -3357,6 +3362,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: "#0771e3", fontWeight: 600 }}>
                           <input type="checkbox" checked={newKr.krType === "progress"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "progress" : "", useMonthlyTargets: false }))} style={{ accentColor: "#0771e3" }} />
                           Progress — records cumulative progress toward target; affects rate proportionally
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: "#d97706", fontWeight: 600 }}>
+                          <input type="checkbox" checked={newKr.krType === "manager-fill"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "manager-fill" : "", useMonthlyTargets: false }))} style={{ accentColor: "#d97706" }} />
+                          Manager Fill — manager enters actual value; member does not receive a check-in
                         </label>
                       </div>
                     </div>
@@ -4736,6 +4745,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={kr.label}>{kr.label}</span>
                                               {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
                                               {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress</span>}
+                                              {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Mgr Fill</span>}
                                               {isMonthly && kr.type !== "tracker" && kr.type !== "progress" && <span style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, padding: "1px 5px", display: "inline-block", marginLeft: 4 }}>Monthly</span>}
                                             </div>
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>N/A</span>
@@ -5192,6 +5202,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [editingSub, setEditingSub] = useState(null);
   const [editingApproved, setEditingApproved] = useState(null);
   const [mgrKpiPeriodKeys, setMgrKpiPeriodKeys] = useState({});
+  const [mgrAssess, setMgrAssess] = useState({});
   const [trackerInput, setTrackerInput] = useState({});
   const [syncing, setSyncing] = useState(false);
   const [logPopup, setLogPopup] = useState(null);
@@ -5489,7 +5500,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
                         {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Tracker</span>}
-                        {kr.type !== "tracker" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Mgr Fill</span>}
+                        {kr.type !== "tracker" && kr.type !== "manager-fill" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         {kr.type === "tracker"
                           ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
@@ -5699,7 +5711,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     {pendingOkrSubs.length > 0 && <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{pendingOkrSubs.length} pending</span>}
                   </div>
                   {(() => {
-                    const answeredSubs = myOkrSubsForApproval.filter(s => s.answer !== null).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||(b.answeredAt||"").localeCompare(a.answeredAt||""); });
+                    const answeredSubs = myOkrSubsForApproval.filter(s => s.answer !== null && !s.managerFilled).sort((a,b) => { const o={pending:0,approved:1,rejected:2}; return o[a.approval]-o[b.approval]||(b.answeredAt||"").localeCompare(a.answeredAt||""); });
                     const order = [];
                     const groups = {};
                     answeredSubs.forEach(s => {
@@ -5997,7 +6009,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 const r = hasRateKrs ? calcMemberRate(m.id, krs, allOkrSubs) : null;
                 const s = getStatus(r);
                 const groups = {};
-                krs.forEach(kr => { const p = kr.period || "monthly"; if (!groups[p]) groups[p] = []; groups[p].push(kr); });
+                krs.filter(kr => kr.type !== "manager-fill").forEach(kr => { const p = kr.period || "monthly"; if (!groups[p]) groups[p] = []; groups[p].push(kr); });
+                const mgrFillKrs = krs.filter(kr => kr.type === "manager-fill");
                 const sortedPeriods = Object.keys(groups).sort((a, b) => PERIOD_ORDER.indexOf(a) - PERIOD_ORDER.indexOf(b));
                 return (
                   <Card key={m.id} style={{ marginBottom: 16, overflow: "hidden" }}>
@@ -6064,6 +6077,49 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           );
                         })
                     }
+                    {mgrFillKrs.length > 0 && (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px", background: "#fffbeb", borderBottom: `1px solid #fde68a`, borderTop: `1px solid ${T.border}` }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#d97706", textTransform: "uppercase", letterSpacing: "0.07em", flex: 1 }}>Manager Assessments</span>
+                          <span style={{ fontSize: 11, color: "#d97706" }}>Manager fills these — member does not receive check-ins</span>
+                        </div>
+                        {mgrFillKrs.map((kr, ki) => {
+                          const p = kr.period || "monthly";
+                          const pk = getPK(p);
+                          const existingSub = allOkrSubs.find(s => s.memberId === m.id && s.krId === kr.id && s.periodKey === pk && s.managerFilled);
+                          const aKey = `${m.id}:${kr.id}:${pk}`;
+                          const aState = mgrAssess[aKey] || { answer: existingSub?.answer || null, value: existingSub?.actualValue != null ? String(existingSub.actualValue) : "" };
+                          return (
+                            <div key={kr.id} style={{ padding: "12px 18px", borderBottom: `1px solid ${T.border}`, background: ki % 2 ? T.raised : "transparent" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
+                                <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{kr.label}</span>
+                                <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px" }}>Mgr Fill</span>
+                                <span style={{ fontSize: 11, color: T.textMuted, fontFamily: F.mono }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                <button
+                                  onClick={() => setMgrAssess(p2 => ({ ...p2, [aKey]: { ...aState, answer: aState.answer === "yes" ? null : "yes" } }))}
+                                  style={{ padding: "5px 14px", borderRadius: 6, border: `1px solid ${aState.answer === "yes" ? "#16a34a" : T.border}`, background: aState.answer === "yes" ? "#dcfce7" : T.surface, color: aState.answer === "yes" ? "#16a34a" : T.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                                  ✓ Yes
+                                </button>
+                                <button
+                                  onClick={() => setMgrAssess(p2 => ({ ...p2, [aKey]: { ...aState, answer: aState.answer === "no" ? null : "no" } }))}
+                                  style={{ padding: "5px 14px", borderRadius: 6, border: `1px solid ${aState.answer === "no" ? "#dc2626" : T.border}`, background: aState.answer === "no" ? "#fee2e2" : T.surface, color: aState.answer === "no" ? "#dc2626" : T.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                                  ✗ No
+                                </button>
+                                <Input value={aState.value} onChange={e => setMgrAssess(p2 => ({ ...p2, [aKey]: { ...aState, value: e.target.value } }))} placeholder={`Actual value${kr.unit ? ` (${kr.unit})` : ""}`} style={{ padding: "5px 8px", fontSize: 13, fontFamily: F.mono, width: 140 }} />
+                                <Btn small primary disabled={!aState.answer} onClick={() => {
+                                  if (!aState.answer) return;
+                                  dispatch({ type: "MANAGER_ASSESS_KR", memberId: m.id, memberName: m.name, deptId: m.deptId, kr, period: p, periodKey: pk, answer: aState.answer, actualValue: aState.value !== "" ? Number(aState.value) : null, approvedBy: user.id, newId: `ma_${m.id}_${kr.id}_${Date.now().toString(36)}` });
+                                }}>Save</Btn>
+                                {existingSub && <span style={{ fontSize: 12, color: T.textMuted }}>Last: <b style={{ color: existingSub.answer === "yes" ? T.ok : T.bad }}>{existingSub.answer}</b>{existingSub.actualValue != null ? ` · ${fmt(existingSub.actualValue)}${kr.unit ? ` ${kr.unit}` : ""}` : ""}</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </Card>
                 );
               })}
@@ -6290,9 +6346,11 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Tracker · does not affect rate</span>}
                       {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Progress · affects rate proportionally</span>}
+                      {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Mgr Fill · assessed by manager</span>}
                       {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Monthly Breakdown</span>}
                       <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{kr.period || "monthly"}</span>
-                      {kr.type !== "tracker" && <Tag type={s} />}
+                      {kr.type !== "tracker" && kr.type !== "manager-fill" && <Tag type={s} />}
+                      {kr.type === "manager-fill" && (() => { const mfSub = myOkrSubs.filter(s2 => s2.krId === kr.id && s2.managerFilled).sort((a,b)=>(b.answeredAt||"").localeCompare(a.answeredAt||""))[0]; return mfSub ? <Tag type={mfSub.answer === "yes" ? "green" : "red"} /> : <Tag type="none" />; })()}
                     </div>
                   </div>
                   {isMonthly ? (
@@ -6380,6 +6438,35 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         </div>
                       )}
                     </>
+                  ) : kr.type === "manager-fill" ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                      {(() => {
+                        const mfSub = myOkrSubs.filter(s2 => s2.krId === kr.id && s2.managerFilled).sort((a,b)=>(b.answeredAt||"").localeCompare(a.answeredAt||""))[0];
+                        if (!mfSub) return (
+                          <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "12px 18px" }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "#d97706" }}>Awaiting manager assessment</div>
+                            <div style={{ fontSize: 11, color: "#d97706", opacity: 0.8, marginTop: 3 }}>Your manager will fill in this KR</div>
+                          </div>
+                        );
+                        const isYes = mfSub.answer === "yes";
+                        return (<>
+                          <div>
+                            <div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: isYes ? T.ok : T.bad }}>{isYes ? "Yes" : "No"}</div>
+                            <div style={{ fontSize: 12, color: T.textMuted }}>Manager assessment</div>
+                          </div>
+                          {mfSub.actualValue != null && (
+                            <div>
+                              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: F.mono, color: isYes ? T.ok : T.bad }}>{fmt(mfSub.actualValue)}{kr.unit ? <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 5 }}>{kr.unit}</span> : null}</div>
+                              <div style={{ fontSize: 12, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)} target</div>
+                            </div>
+                          )}
+                          <div style={{ background: isYes ? "#dcfce7" : "#fee2e2", border: `1px solid ${isYes ? "#86efac" : "#fca5a5"}`, borderRadius: 8, padding: "6px 14px" }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: isYes ? "#16a34a" : "#dc2626" }}>{isYes ? "Met" : "Not Met"}</div>
+                            <div style={{ fontSize: 11, color: isYes ? "#16a34a" : "#dc2626", opacity: 0.8 }}>assessed by manager</div>
+                          </div>
+                        </>);
+                      })()}
+                    </div>
                   ) : kr.type === "tracker" ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
                       <div>
@@ -6416,7 +6503,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     return (
                       <div style={{ marginTop: 14, borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
                         <button onClick={() => setExpandedKrHistory(p => p === kr.id ? null : kr.id)} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 7, padding: "4px 12px", cursor: "pointer", color: T.textDim, fontSize: 12, fontWeight: 600, fontFamily: F.body }}>
-                          {isOpen ? "▲ Hide Check-In History" : `▼ Check-In History (${hist.length})`}
+                          {isOpen ? `▲ Hide ${kr.type === "manager-fill" ? "Assessment" : "Check-In"} History` : `▼ ${kr.type === "manager-fill" ? "Assessment" : "Check-In"} History (${hist.length})`}
                         </button>
                         {isOpen && (
                           <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
@@ -6431,7 +6518,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                   <span style={{ fontWeight: 700, color: ansCol, minWidth: 90, textAlign: "right" }}>{ansLabel}</span>
                                   {(s.answer === "no" || s.answer === "submitted") && s.actualValue != null && <span style={{ fontFamily: F.mono, fontSize: 12, color: s.answer === "submitted" ? "#7c3aed" : T.textMuted }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
                                   <Tag type={s.approval} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
-                                  {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
+                                  {s.managerFilled && <span style={{ fontSize: 9, fontWeight: 700, background: "#fef3c7", border: "1px solid #fde68a", color: "#d97706", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>MGR</span>}
+                                  {!s.managerFilled && s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
                                 </div>
                               );
                             })}
@@ -6604,7 +6692,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
                         {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Tracker</span>}
                         {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Progress</span>}
-                        {kr.type !== "tracker" && kr.type !== "progress" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Mgr Fill</span>}
+                        {kr.type !== "tracker" && kr.type !== "progress" && kr.type !== "manager-fill" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         {kr.type === "tracker"
                           ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
@@ -6624,7 +6713,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
 
         {page === "checkin" && (() => {
           const PERIOD_ORDER = ["daily", "weekly", "monthly", "quarterly", "biannual", "annual"];
-          const grouped = PERIOD_ORDER.map(p => ({ period: p, pending: myOkrSubs.filter(s => s.period === p && s.answer === null), answered: myOkrSubs.filter(s => s.period === p && s.answer !== null).sort((a,b) => (b.answeredAt||"").localeCompare(a.answeredAt||"")) })).filter(g => g.pending.length + g.answered.length > 0);
+          const grouped = PERIOD_ORDER.map(p => ({ period: p, pending: myOkrSubs.filter(s => s.period === p && s.answer === null && !s.managerFilled), answered: myOkrSubs.filter(s => s.period === p && s.answer !== null && !s.managerFilled).sort((a,b) => (b.answeredAt||"").localeCompare(a.answeredAt||"")) })).filter(g => g.pending.length + g.answered.length > 0);
           const PERIOD_COLORS = { daily: T.warn, weekly: T.brand, monthly: "#A78BFA", quarterly: "#F97316", biannual: "#06B6D4", annual: T.ok };
           const currentMonthKey = currentFYMonthKey();
           const subRate = calcSubmissionRate(myOkrSubs, user.id, currentMonthKey);
@@ -7144,6 +7233,38 @@ function appReducer(state, action) {
         return { ...d, krs: dKrs2, teams: dTeams2 };
       });
       return { ...state, okrSubmissions: newSubs, memberData: newMemberData, depts: newDepts };
+    }
+    case "MANAGER_ASSESS_KR": {
+      const { memberId, memberName, deptId, kr, period, periodKey, answer, actualValue, approvedBy, newId } = action;
+      const existingIdx = state.okrSubmissions.findIndex(s => s.memberId === memberId && s.krId === kr.id && s.periodKey === periodKey);
+      const now = new Date().toISOString();
+      const baseSub = existingIdx >= 0 ? state.okrSubmissions[existingIdx] : null;
+      const resolvedActual = actualValue != null ? actualValue : (answer === "yes" ? (Number(kr.target) || 0) : 0);
+      const newSub = {
+        id: baseSub ? baseSub.id : newId,
+        memberId, memberName, deptId,
+        krId: kr.id, krLabel: kr.label,
+        krTarget: Number(kr.target) || 0, krUnit: kr.unit || "", krOperator: kr.operator || ">=",
+        krType: "manager-fill", krIsMonthly: false,
+        period, periodKey, dateRange: "",
+        sentAt: baseSub ? baseSub.sentAt : now,
+        answeredAt: now,
+        answer,
+        actualValue: resolvedActual,
+        approval: "approved",
+        approvedBy,
+        reason: null,
+        managerFilled: true,
+      };
+      const newSubs = existingIdx >= 0
+        ? state.okrSubmissions.map((s, i) => i === existingIdx ? newSub : s)
+        : [...state.okrSubmissions, newSub];
+      const md2 = state.memberData[memberId];
+      const newMemberData = md2 ? {
+        ...state.memberData,
+        [memberId]: { ...md2, krs: (md2.krs || []).map(k => k.id !== kr.id ? k : { ...k, actual: resolvedActual }) }
+      } : state.memberData;
+      return { ...state, okrSubmissions: newSubs, memberData: newMemberData };
     }
     case "ADD_MEMBER_KR": {
       const md = state.memberData[action.memberId] || { krs: [] };
