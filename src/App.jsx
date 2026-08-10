@@ -1619,7 +1619,7 @@ function FinancialPerformancePage({ state, dispatch }) {
             </div>
             )}
             {derivedDivisions
-              ? <div style={{ padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand, lineHeight: 1.5 }}>Monthly values are auto-calculated as Revenue − Expense. Only the annual targets above need to be set manually.</div>
+              ? <div style={{ padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand, lineHeight: 1.5 }}>Monthly values are auto-calculated as Income − Expense. Only the annual targets above need to be set manually.</div>
               : (<>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Monthly {title} by Division ($)</div>
                   <div style={{ overflowX: "auto" }}>
@@ -1793,7 +1793,7 @@ function FinancialPerformancePage({ state, dispatch }) {
   };
 
   const FIN_MODULES = [
-    { key: "revenue",   label: "Revenue",    accent: "#0071e3", tab: "revenue"   },
+    { key: "revenue",   label: "Income",     accent: "#0071e3", tab: "revenue"   },
     { key: "expense",   label: "Expense",    accent: "#f59e0b", tab: "expense"   },
     { key: "netProfit", label: "Net Profit", accent: "#10B981", tab: "netProfit" },
   ];
@@ -1848,7 +1848,7 @@ function FinancialPerformancePage({ state, dispatch }) {
       </div>
 
       {/* ── Detail panel for selected module ── */}
-      {finTab === "revenue"   && renderModule("revenue",   "Revenue",    "revAreaGrad", revEditMode, setRevEditMode, revDraft, setRevDraft, 5000000, 7000000, false, "#0071e3")}
+      {finTab === "revenue"   && renderModule("revenue",   "Income",     "revAreaGrad", revEditMode, setRevEditMode, revDraft, setRevDraft, 5000000, 7000000, false, "#0071e3")}
       {finTab === "netProfit" && renderModule("netProfit", "Net Profit", "npAreaGrad",  npEditMode,  setNpEditMode,  npDraft,  setNpDraft,  2000000, 3000000, false, "#10B981", derivedNpDivisions)}
       {finTab === "expense"   && renderModule("expense",   "Expense",    "expAreaGrad", expEditMode, setExpEditMode, expDraft, setExpDraft,  0,       0,       true,  "#f59e0b")}
     </div>
@@ -2250,7 +2250,7 @@ DATA RULES:
 - A member shown as "no data this month" has not yet received or answered a check-in — do not treat them as 0% performers.
 - Tracker KRs record numerical values only and do not affect completion rates.
 - Progress KRs record a cumulative running total toward a target and contribute proportionally to completion rate (actual ÷ target × 100%). They are used for project-oriented goals like annual profit targets where multiple check-ins occur through the year.
-- Financial data (Revenue, Net Profit, Expense) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
+- Financial data (Income, Net Profit, Expense) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
 - Project data includes all manager-owned projects: name, department, responsible manager, status (active/completed), progress (0–100%), due date, and optional contribution ($). Proactively flag projects that are overdue or have low progress close to their due date.
 
 RESPONSE STYLE:
@@ -2348,7 +2348,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     const fmtMoney = v => v >= 1_000_000 ? `$${(v/1_000_000).toFixed(2)}M` : v >= 1_000 ? `$${(v/1_000).toFixed(1)}K` : `$${Math.round(v)}`;
     const mkDefault = () => ({ pt: 0, dt: 0, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
     const finModules = [
-      { key: "revenue",   label: "Revenue",    hasTargets: true  },
+      { key: "revenue",   label: "Income",     hasTargets: true  },
       { key: "expense",   label: "Expense",    hasTargets: false },
       { key: "netProfit", label: "Net Profit", hasTargets: true  },
     ];
@@ -5002,7 +5002,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
             { icon: "🔴", text: "How many members are in red status this month?" },
             { icon: "📋", text: "Which members haven't submitted their check-in this month?" },
             { icon: "💰", text: "How is the company tracking financially this FY?" },
-            { icon: "📈", text: "Which division contributes the most to revenue?" },
+            { icon: "📈", text: "Which division contributes the most to income?" },
           ];
           const NP_AVATAR = (
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0071E3,#6B47DC)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0, letterSpacing: "0.02em", boxShadow: "0 2px 8px rgba(0,113,227,0.35)" }}>NP</div>
@@ -6057,7 +6057,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
         })()}
 
         {page === "financial" && user.financeAccess && (<>
-          <Header title="Financial Performance" sub="Revenue, Net Profit and Expense tracking — FY2027" />
+          <Header title="Financial Performance" sub="Income, Net Profit and Expense tracking — FY2027" />
           <Pane>
             <FinErrorBoundary>
               <FinancialPerformancePage state={state} dispatch={dispatch} />
