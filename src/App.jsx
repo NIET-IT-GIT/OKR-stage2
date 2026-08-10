@@ -1555,17 +1555,24 @@ function FinancialPerformancePage({ state, dispatch }) {
   const nowFYMonth = (() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; })();
   const mkDefault = (pt, dt) => ({ pt, dt, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
 
-  const renderModule = (cfgKey, title, gradId, editMode, setEditMode, moduleDraft, setModuleDraft, defaultPt, defaultDt, noTargets, accentColor) => {
+  const derivedNpDivisions = (() => {
+    const r = state.settings?.revenue ?? mkDefault(0, 0);
+    const e = state.settings?.expense ?? mkDefault(0, 0);
+    return Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (r.divisions[d]?.[i] || 0) - (e.divisions[d]?.[i] || 0))]));
+  })();
+
+  const renderModule = (cfgKey, title, gradId, editMode, setEditMode, moduleDraft, setModuleDraft, defaultPt, defaultDt, noTargets, accentColor, derivedDivisions = null) => {
     const cfg = state.settings?.[cfgKey] ?? mkDefault(defaultPt, defaultDt);
     const draft = moduleDraft ?? cfg;
-    const monthlyGroup = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (cfg.divisions[d]?.[i] || 0), 0));
+    const dispDivs = derivedDivisions || cfg.divisions;
+    const monthlyGroup = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (dispDivs[d]?.[i] || 0), 0));
     const cumulative = monthlyGroup.map((_, i) => monthlyGroup.slice(0, i + 1).reduce((a, b) => a + b, 0));
     const selCum = cumulative[revMonth] || 0;
     const thisMonthTotal = monthlyGroup[revMonth] || 0;
     const ptPct = cfg.pt > 0 ? selCum / cfg.pt : 0;
     const dtPct = cfg.dt > 0 ? selCum / cfg.dt : 0;
-    const divCums = REV_DIVS.map(d => (cfg.divisions[d] || Array(12).fill(0)).slice(0, revMonth + 1).reduce((a, b) => a + b, 0));
-    const divAnnuals = REV_DIVS.map(d => (cfg.divisions[d] || Array(12).fill(0)).reduce((a, b) => a + b, 0));
+    const divCums = REV_DIVS.map(d => (dispDivs[d] || Array(12).fill(0)).slice(0, revMonth + 1).reduce((a, b) => a + b, 0));
+    const divAnnuals = REV_DIVS.map(d => (dispDivs[d] || Array(12).fill(0)).reduce((a, b) => a + b, 0));
     const CPad = { t: 28, r: 40, b: 38, l: 72 };
     const CW = 720, CH = 230;
     const PW = CW - CPad.l - CPad.r, PH = CH - CPad.t - CPad.b;
@@ -1591,7 +1598,7 @@ function FinancialPerformancePage({ state, dispatch }) {
               setModuleDraft(JSON.parse(JSON.stringify(cfg)));
               setEditMode(true);
             }
-          }}>{editMode ? "✓ Save Data" : "✎ Edit Data"}</Btn>
+          }}>{editMode ? "✓ Save" : derivedDivisions ? "✎ Set Targets" : "✎ Edit Data"}</Btn>
         </div>
 
         {editMode && (
@@ -1611,44 +1618,49 @@ function FinancialPerformancePage({ state, dispatch }) {
               ))}
             </div>
             )}
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Monthly {title} by Division ($)</div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 780 }}>
-                <thead>
-                  <tr>
-                    <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, minWidth: 85 }}>Division</td>
-                    {FY_MONTHS.map((m, mi) => <td key={m} style={{ padding: "4px 3px", fontWeight: 700, color: mi <= nowFYMonth ? T.text : T.textDim, textAlign: "center", minWidth: 65, fontSize: 11 }}>{m}</td>)}
-                    <td style={{ padding: "4px 6px 4px 12px", fontWeight: 700, color: T.text, textAlign: "right", minWidth: 90, fontSize: 11, borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>Annual Total</td>
-                  </tr>
-                </thead>
-                <tbody>
-                  {REV_DIVS.map((div, di) => (
-                    <tr key={div} style={{ background: di % 2 ? T.raised : "transparent" }}>
-                      <td style={{ padding: "3px 10px 3px 4px", fontWeight: 700, color: DIV_COLORS[div], fontSize: 12 }}>{div}</td>
-                      {FY_MONTHS.map((_, mi) => (
-                        <td key={mi} style={{ padding: "2px 3px" }}>
-                          <Input value={draft.divisions?.[div]?.[mi] || ""} placeholder="0"
-                            onChange={e => {
-                              const val = Number(String(e.target.value).replace(/,/g,"")) || 0;
-                              setModuleDraft(p => ({ ...p, divisions: { ...p.divisions, [div]: (p.divisions?.[div] || Array(12).fill(0)).map((v, j) => j === mi ? val : v) } }));
-                            }}
-                            style={{ width: 62, textAlign: "right", fontFamily: F.mono, fontSize: 11, padding: "3px 5px" }} />
-                        </td>
-                      ))}
-                      {(() => { const annTot = (draft.divisions?.[div] || Array(12).fill(0)).reduce((a, b) => a + b, 0); return <td style={{ padding: "3px 6px 3px 12px", fontFamily: F.mono, fontSize: 12, fontWeight: 700, color: annTot > 0 ? T.brand : T.textDim, textAlign: "right", borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>{annTot > 0 ? fmtMoney(annTot) : "—"}</td>; })()}
-                    </tr>
-                  ))}
-                  <tr style={{ borderTop: `2px solid ${T.border}` }}>
-                    <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, fontSize: 11 }}>Group Total</td>
-                    {FY_MONTHS.map((_, mi) => {
-                      const tot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d]?.[mi] || 0), 0);
-                      return <td key={mi} style={{ padding: "4px 3px", textAlign: "right", fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: tot > 0 ? T.text : T.textDim }}>{tot > 0 ? fmtMoney(tot) : "—"}</td>;
-                    })}
-                    {(() => { const grandTot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d] || Array(12).fill(0)).reduce((a, b) => a + b, 0), 0); return <td style={{ padding: "4px 6px 4px 12px", textAlign: "right", fontFamily: F.mono, fontSize: 12, fontWeight: 900, color: grandTot > 0 ? T.brand : T.textDim, borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>{grandTot > 0 ? fmtMoney(grandTot) : "—"}</td>; })()}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {derivedDivisions
+              ? <div style={{ padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand, lineHeight: 1.5 }}>Monthly values are auto-calculated as Revenue − Expense. Only the annual targets above need to be set manually.</div>
+              : (<>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Monthly {title} by Division ($)</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 780 }}>
+                      <thead>
+                        <tr>
+                          <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, minWidth: 85 }}>Division</td>
+                          {FY_MONTHS.map((m, mi) => <td key={m} style={{ padding: "4px 3px", fontWeight: 700, color: mi <= nowFYMonth ? T.text : T.textDim, textAlign: "center", minWidth: 65, fontSize: 11 }}>{m}</td>)}
+                          <td style={{ padding: "4px 6px 4px 12px", fontWeight: 700, color: T.text, textAlign: "right", minWidth: 90, fontSize: 11, borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>Annual Total</td>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {REV_DIVS.map((div, di) => (
+                          <tr key={div} style={{ background: di % 2 ? T.raised : "transparent" }}>
+                            <td style={{ padding: "3px 10px 3px 4px", fontWeight: 700, color: DIV_COLORS[div], fontSize: 12 }}>{div}</td>
+                            {FY_MONTHS.map((_, mi) => (
+                              <td key={mi} style={{ padding: "2px 3px" }}>
+                                <Input value={draft.divisions?.[div]?.[mi] || ""} placeholder="0"
+                                  onChange={e => {
+                                    const val = Number(String(e.target.value).replace(/,/g,"")) || 0;
+                                    setModuleDraft(p => ({ ...p, divisions: { ...p.divisions, [div]: (p.divisions?.[div] || Array(12).fill(0)).map((v, j) => j === mi ? val : v) } }));
+                                  }}
+                                  style={{ width: 62, textAlign: "right", fontFamily: F.mono, fontSize: 11, padding: "3px 5px" }} />
+                              </td>
+                            ))}
+                            {(() => { const annTot = (draft.divisions?.[div] || Array(12).fill(0)).reduce((a, b) => a + b, 0); return <td style={{ padding: "3px 6px 3px 12px", fontFamily: F.mono, fontSize: 12, fontWeight: 700, color: annTot > 0 ? T.brand : T.textDim, textAlign: "right", borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>{annTot > 0 ? fmtMoney(annTot) : "—"}</td>; })()}
+                          </tr>
+                        ))}
+                        <tr style={{ borderTop: `2px solid ${T.border}` }}>
+                          <td style={{ padding: "4px 10px 4px 4px", fontWeight: 700, color: T.textMuted, fontSize: 11 }}>Group Total</td>
+                          {FY_MONTHS.map((_, mi) => {
+                            const tot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d]?.[mi] || 0), 0);
+                            return <td key={mi} style={{ padding: "4px 3px", textAlign: "right", fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: tot > 0 ? T.text : T.textDim }}>{tot > 0 ? fmtMoney(tot) : "—"}</td>;
+                          })}
+                          {(() => { const grandTot = REV_DIVS.reduce((s, d) => s + (draft.divisions?.[d] || Array(12).fill(0)).reduce((a, b) => a + b, 0), 0); return <td style={{ padding: "4px 6px 4px 12px", textAlign: "right", fontFamily: F.mono, fontSize: 12, fontWeight: 900, color: grandTot > 0 ? T.brand : T.textDim, borderLeft: `2px solid ${T.border}`, whiteSpace: "nowrap" }}>{grandTot > 0 ? fmtMoney(grandTot) : "—"}</td>; })()}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </>)
+            }
           </Card>
         )}
 
@@ -1792,7 +1804,8 @@ function FinancialPerformancePage({ state, dispatch }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
         {FIN_MODULES.map(({ key, label, accent, tab: t }) => {
           const scfg = state.settings?.[key] ?? mkDefault(0, 0);
-          const smg = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (scfg.divisions[d]?.[i] || 0), 0));
+          const sdivs = key === "netProfit" ? derivedNpDivisions : scfg.divisions;
+          const smg = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (sdivs[d]?.[i] || 0), 0));
           const scum = smg.map((_, i) => smg.slice(0, i + 1).reduce((a, b) => a + b, 0));
           const sval = scum[revMonth] || 0;
           const isActive = finTab === t;
@@ -1836,7 +1849,7 @@ function FinancialPerformancePage({ state, dispatch }) {
 
       {/* ── Detail panel for selected module ── */}
       {finTab === "revenue"   && renderModule("revenue",   "Revenue",    "revAreaGrad", revEditMode, setRevEditMode, revDraft, setRevDraft, 5000000, 7000000, false, "#0071e3")}
-      {finTab === "netProfit" && renderModule("netProfit", "Net Profit", "npAreaGrad",  npEditMode,  setNpEditMode,  npDraft,  setNpDraft,  2000000, 3000000, false, "#10B981")}
+      {finTab === "netProfit" && renderModule("netProfit", "Net Profit", "npAreaGrad",  npEditMode,  setNpEditMode,  npDraft,  setNpDraft,  2000000, 3000000, false, "#10B981", derivedNpDivisions)}
       {finTab === "expense"   && renderModule("expense",   "Expense",    "expAreaGrad", expEditMode, setExpEditMode, expDraft, setExpDraft,  0,       0,       true,  "#f59e0b")}
     </div>
   );
@@ -2339,15 +2352,19 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       { key: "netProfit", label: "Net Profit", hasTargets: true  },
       { key: "expense",   label: "Expense",    hasTargets: false },
     ];
+    const _aiRevCfg = state.settings?.revenue ?? mkDefault();
+    const _aiExpCfg = state.settings?.expense ?? mkDefault();
+    const _aiNpDivs = Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (_aiRevCfg.divisions[d]?.[i] || 0) - (_aiExpCfg.divisions[d]?.[i] || 0))]));
     const finSection = finModules.map(({ key, label, hasTargets }) => {
       const cfg = state.settings?.[key] ?? mkDefault();
-      const monthly = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (cfg.divisions[d]?.[i] || 0), 0));
+      const divs = key === "netProfit" ? _aiNpDivs : cfg.divisions;
+      const monthly = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (divs[d]?.[i] || 0), 0));
       const cumulative = monthly.map((_, i) => monthly.slice(0, i + 1).reduce((a, b) => a + b, 0));
       const cum = cumulative[nowFYMonth] || 0;
       const ptPct = hasTargets && cfg.pt > 0 ? (cum / cfg.pt * 100).toFixed(1) + "%" : null;
       const dtPct = hasTargets && cfg.dt > 0 ? (cum / cfg.dt * 100).toFixed(1) + "%" : null;
       const divLines = REV_DIVS.map(div => {
-        const divCum = (cfg.divisions[div] || Array(12).fill(0)).slice(0, nowFYMonth + 1).reduce((a, b) => a + b, 0);
+        const divCum = (divs[div] || Array(12).fill(0)).slice(0, nowFYMonth + 1).reduce((a, b) => a + b, 0);
         const pct = cum > 0 ? (divCum / cum * 100).toFixed(1) + "%" : "0%";
         return `    ${div}: ${fmtMoney(divCum)} (${pct} of group)`;
       });
