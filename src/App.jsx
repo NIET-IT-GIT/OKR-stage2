@@ -4205,7 +4205,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 <Btn key={v} small primary={enrTab === v} onClick={() => setEnrTab(v)}>{label}</Btn>
               ))}
             </div>
-            {enrLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading enrolment data…</div>}
+            {enrLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading application data…</div>}
             {!enrLoading && enrTab === "overview" && (() => {
               const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
               const selWeek = enrFilterWeek !== "all" && weeks.includes(enrFilterWeek) ? enrFilterWeek : (weeks[0] || null);
@@ -4232,9 +4232,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   )}
                   {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek}</span>}
                 </div>
-                {weeks.length === 0 ? <EmptyState text="No enrolment data yet. Go to Imports to upload a file." /> : (<>
+                {weeks.length === 0 ? <EmptyState text="No application data yet. Go to Imports to upload a file." /> : (<>
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                    <Metric label="Total Enrolments" value={total} status={total > 0 ? "green" : undefined} />
+                    <Metric label="Total Applications" value={total} status={total > 0 ? "green" : undefined} />
                     <Metric label="Marketers" value={marketers.length} />
                     <Metric label="RTOs" value={rtos.length} />
                   </div>
@@ -4269,7 +4269,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     };
                     const yTicks = [0,1,2,3,4,5].map(i => Math.round((yMax / 5) * i));
                     return (<>
-                      <SectionLabel style={{ marginTop: 4, marginBottom: 8 }}>Enrolment Trend</SectionLabel>
+                      <SectionLabel style={{ marginTop: 4, marginBottom: 8 }}>Application Trend</SectionLabel>
                       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 8px 4px", marginBottom: 20 }}>
                         <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} width="100%" style={{ display: "block" }}>
                           {yTicks.map(v => {
@@ -4313,7 +4313,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <g style={{ pointerEvents: "none" }}>
                                 <rect x={tx} y={ty} width={tipW} height={tipH} rx="5" fill={T.raised} stroke={T.border} strokeWidth="1" />
                                 <text x={tx + 9} y={ty + 17} fontSize="11" fontWeight="700" fill={T.text}>{marketer}</text>
-                                <text x={tx + 9} y={ty + 33} fontSize="11" fill={T.textMuted}>{week} · {count} enrolments</text>
+                                <text x={tx + 9} y={ty + 33} fontSize="11" fill={T.textMuted}>{week} · {count} applications</text>
                               </g>
                             );
                           })()}
@@ -4442,7 +4442,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 {enrParsed && (<>
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
                     <Metric label="Week" value={enrParsed.week} />
-                    <Metric label="Total Enrolments" value={enrParsed.totalEnrolments} status="green" />
+                    <Metric label="Total Applications" value={enrParsed.totalEnrolments} status="green" />
                     <Metric label="Marketers" value={enrParsed.marketers.length} />
                     <Metric label="RTOs" value={enrParsed.rtos.length} />
                   </div>
@@ -4489,7 +4489,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn onClick={() => { setEnrParsed(null); setEnrError(null); }}>Cancel</Btn>
-                    <Btn primary disabled={enrImporting} onClick={doImport}>{enrImporting ? "Importing…" : `Import ${enrParsed.totalEnrolments} enrolments`}</Btn>
+                    <Btn primary disabled={enrImporting} onClick={doImport}>{enrImporting ? "Importing…" : `Import ${enrParsed.totalEnrolments} applications`}</Btn>
                   </div>
                 </>)}
                 {enrBatches.length > 0 && (<>
@@ -4500,7 +4500,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         <div style={{ fontSize: 13, fontWeight: 700 }}>{b.fileName}</div>
                         <div style={{ fontSize: 12, color: T.textMuted }}>{b.importedAt} · Week {b.week}</div>
                       </div>
-                      <div style={{ fontSize: 13, fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>{b.totalEnrolments} enrolments</div>
+                      <div style={{ fontSize: 13, fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>{b.totalEnrolments} applications</div>
                     </Card>
                   ))}
                 </>)}
@@ -4556,7 +4556,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 const hdr = ["Week","Marketer","RTO","Count"];
                 const rows = filtered.map(r => [r.week, r.marketerName, r.rto, r.count]);
                 const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-                const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "enrolments.csv" });
+                const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "applications.csv" });
                 a.click(); URL.revokeObjectURL(a.href);
               };
               const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
@@ -4598,14 +4598,14 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 <div style={{ marginTop: 32, paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Danger Zone</div>
                   <Btn danger small onClick={async () => {
-                    if (!window.confirm("Delete ALL enrolment records and import history? This cannot be undone.")) return;
-                    if (!window.confirm("Are you sure? All enrolment data will be permanently deleted.")) return;
+                    if (!window.confirm("Delete ALL application records and import history? This cannot be undone.")) return;
+                    if (!window.confirm("Are you sure? All application data will be permanently deleted.")) return;
                     try {
                       await dbDeleteCollection("enrolment_records");
                       await dbDeleteCollection("enrolment_batches");
                       setEnrRecords([]); setEnrBatches([]); setEnrError(null);
                     } catch (e) { setEnrError(`Clear failed: ${e.message}`); }
-                  }}>Clear all enrolment data</Btn>
+                  }}>Clear all application data</Btn>
                 </div>
               </>);
             })()}
