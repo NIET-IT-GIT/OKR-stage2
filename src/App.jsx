@@ -4121,7 +4121,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
                             }}>Save</Btn>
                           </div>
-                          {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "8px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
+                          {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const preview = latest.text.length > 160 ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "8px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}</div>; })()}
                           <div style={{ padding: "8px 18px" }}>
                             <button onClick={() => {
                               if (isDetailsOpen) { setEditProjId(null); return; }
@@ -4165,7 +4165,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                     setLogDrafts(d => { const n = { ...d }; delete n[p.id]; return n; });
                                   }}>Add Entry</Btn>
                                 </div>
-                                {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>{e.text}</div></div>); })()}
+                                {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>{e.text}</div></div>); })()}
                               </div>
                               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                                 <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
@@ -5878,7 +5878,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                     </>}
                   </div>
-                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
+                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const preview = latest.text.length > 160 ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}</div>; })()}
                   {user.projectAccess && p.mgrId === user.id && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
@@ -5920,7 +5920,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             setLogDrafts(d => { const n = { ...d }; delete n[p.id]; return n; });
                           }}>Add Entry</Btn>
                         </div>
-                        {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>{e.text}</div></div>); })()}
+                        {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>{e.text}</div></div>); })()}
                       </div>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
@@ -6841,7 +6841,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                     </>}
                   </div>
-                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; return latest ? <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{latest.text}</div> : null; })()}
+                  {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const preview = latest.text.length > 160 ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}</div>; })()}
                   {user.projectAccess && p.mgrId === user.id && (
                     <div style={{ padding: "6px 18px 10px" }}>
                       <button onClick={() => {
@@ -6883,7 +6883,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             setLogDrafts(d => { const n = { ...d }; delete n[p.id]; return n; });
                           }}>Add Entry</Btn>
                         </div>
-                        {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>{e.text}</div></div>); })()}
+                        {(() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); if (!entries.length) return <div style={{ fontSize: 12, color: T.textMuted }}>No log entries yet.</div>; return entries.map((e, i) => <div key={i} style={{ padding: "8px 10px", marginBottom: 6, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>{e.date && <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{e.date}</div>}<div style={{ fontSize: 13, color: T.text, lineHeight: 1.5, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>{e.text}</div></div>); })()}
                       </div>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
