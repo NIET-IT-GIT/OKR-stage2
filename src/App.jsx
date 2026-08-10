@@ -1794,8 +1794,8 @@ function FinancialPerformancePage({ state, dispatch }) {
 
   const FIN_MODULES = [
     { key: "revenue",   label: "Revenue",    accent: "#0071e3", tab: "revenue"   },
-    { key: "netProfit", label: "Net Profit", accent: "#10B981", tab: "netProfit" },
     { key: "expense",   label: "Expense",    accent: "#f59e0b", tab: "expense"   },
+    { key: "netProfit", label: "Net Profit", accent: "#10B981", tab: "netProfit" },
   ];
 
   return (
@@ -2349,8 +2349,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     const mkDefault = () => ({ pt: 0, dt: 0, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
     const finModules = [
       { key: "revenue",   label: "Revenue",    hasTargets: true  },
-      { key: "netProfit", label: "Net Profit", hasTargets: true  },
       { key: "expense",   label: "Expense",    hasTargets: false },
+      { key: "netProfit", label: "Net Profit", hasTargets: true  },
     ];
     const _aiRevCfg = state.settings?.revenue ?? mkDefault();
     const _aiExpCfg = state.settings?.expense ?? mkDefault();
