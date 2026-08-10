@@ -218,7 +218,7 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
     if (latest && (now - new Date(latest.sentAt).getTime()) >= 86400000) scores.push(0); // overdue → 0%
     // else < 24h grace period → excluded
   }
-  if (!scores.length) return 0;
+  if (!scores.length) return null;
   return scores.reduce((a, b) => a + b, 0) / scores.length;
 }
 function getStatus(r) { if (r == null) return "none"; return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
@@ -6214,7 +6214,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           <Header title="My OKRs" sub={`${user.title} · ${currentFYQuarter()}`} right={<Tag type={st} />} />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="My Completion" value={hasRateKrs ? `${rate.toFixed(1)}%` : "N/A"} status={st} sub={hasRateKrs ? `Time: ${TP}%` : undefined} />
+              <Metric label="My Completion" value={(hasRateKrs && rate !== null) ? `${rate.toFixed(1)}%` : "N/A"} status={(hasRateKrs && rate !== null) ? st : undefined} sub={(hasRateKrs && rate !== null) ? `Time: ${TP}%` : undefined} />
               <Metric label="KRs Tracked"    value={kd.krs.length} />
               <Metric label="Check-Ins" value={myPendingCheckins.length === 0 ? "All Done" : `${myPendingCheckins.length} Pending`} status={myPendingCheckins.length === 0 ? "green" : "yellow"} />
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
