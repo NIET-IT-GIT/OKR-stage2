@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment, Component } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment, Component, createContext, useContext } from "react";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
@@ -20,6 +20,16 @@ const T = {
   shadowSm: "0 1px 3px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.06)",
 };
 const F = { body: "-apple-system,'SF Pro Text',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif", mono: "'SF Mono','Fira Code','Cascadia Code',monospace" };
+const MobileContext = createContext({ isMobile: false, drawerOpen: false, setDrawerOpen: () => {} });
+function useIsMobile(bp = 768) {
+  const [v, setV] = useState(() => typeof window !== "undefined" && window.innerWidth < bp);
+  useEffect(() => {
+    const h = () => setV(p => { const n = window.innerWidth < bp; return p === n ? p : n; });
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, [bp]);
+  return v;
+}
 const TP = 66.7;
 
 const STATUS_THEME = {
@@ -641,12 +651,18 @@ function CountBadge({ count, color }) {
 }
 
 function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems, subItemsFor, activeSubItem, onSelectSubItem }) {
+  const { isMobile, drawerOpen, setDrawerOpen } = useContext(MobileContext);
   return (
-    <div style={{
-      width: 252, background: T.glass, borderRight: `1px solid ${T.border}`,
-      backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)",
-      display: "flex", flexDirection: "column", height: "100vh", flexShrink: 0,
-    }}>
+    <>
+      {isMobile && drawerOpen && (
+        <div onClick={() => setDrawerOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 299 }} />
+      )}
+      <div style={{
+        width: 252, background: T.glass, borderRight: `1px solid ${T.border}`,
+        backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)",
+        display: "flex", flexDirection: "column", height: "100vh", flexShrink: 0,
+        ...(isMobile ? { position: "fixed", top: 0, left: 0, zIndex: 300, transform: drawerOpen ? "none" : "translateX(-100%)", transition: "transform 0.25s ease", boxShadow: drawerOpen ? "4px 0 24px rgba(0,0,0,0.18)" : "none" } : {}),
+      }}>
       <div style={{ padding: "22px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
           <div style={{ width: 40, height: 40, borderRadius: 8, background: `linear-gradient(145deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", boxShadow: "0 2px 8px rgba(0,113,227,0.28)" }}>NIET</div>
@@ -666,7 +682,7 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
       <div style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
         {items.map(item => (
           <div key={item.id}>
-            <button onClick={() => onSelect(item.id)} style={{
+            <button onClick={() => { onSelect(item.id); if (isMobile) setDrawerOpen(false); }} style={{
               background: active === item.id ? "rgba(0,113,227,0.12)" : "transparent",
               borderTop: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
               borderRight: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
@@ -686,7 +702,7 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
             {active === item.id && item.id === subItemsFor && subItems && (
               <div style={{ paddingLeft: 10, marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                 {subItems.map(sub => (
-                  <button key={sub.id} onClick={() => onSelectSubItem(sub.id)} style={{
+                  <button key={sub.id} onClick={() => { onSelectSubItem(sub.id); if (isMobile) setDrawerOpen(false); }} style={{
                     background: activeSubItem === sub.id ? T.brandDim : "transparent",
                     border: activeSubItem === sub.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
                     borderRadius: 7, padding: "7px 10px", cursor: "pointer",
@@ -710,23 +726,31 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
         </button>
       </div>
     </div>
+    </>
   );
 }
 
 function Header({ title, sub, right }) {
+  const { isMobile, setDrawerOpen } = useContext(MobileContext);
   return (
-    <div style={{ padding: "26px 36px 22px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", background: T.glass, backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", position: "sticky", top: 0, zIndex: 10 }}>
-      <div>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: T.text, letterSpacing: "-0.03em" }}>{title}</h1>
-        {sub && <p style={{ margin: "3px 0 0", fontSize: 15, color: T.textMuted, fontWeight: 400 }}>{sub}</p>}
+    <div style={{ padding: isMobile ? "14px 16px 12px" : "26px 36px 22px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: T.glass, backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", position: "sticky", top: 0, zIndex: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+        {isMobile && (
+          <button onClick={() => setDrawerOpen(true)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.textSoft, padding: "2px 6px", lineHeight: 1, flexShrink: 0, fontFamily: F.body }}>☰</button>
+        )}
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 28, fontWeight: 700, color: T.text, letterSpacing: "-0.03em", whiteSpace: isMobile ? "nowrap" : "normal", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</h1>
+          {sub && <p style={{ margin: "3px 0 0", fontSize: isMobile ? 12 : 15, color: T.textMuted, fontWeight: 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</p>}
+        </div>
       </div>
-      {right}
+      {right && <div style={{ flexShrink: 0, marginLeft: 12 }}>{right}</div>}
     </div>
   );
 }
 
 function Pane({ children }) {
-  return <div style={{ padding: "32px 36px", display: "flex", flexDirection: "column", gap: 24 }}>{children}</div>;
+  const { isMobile } = useContext(MobileContext);
+  return <div style={{ padding: isMobile ? "20px 16px" : "32px 36px", display: "flex", flexDirection: "column", gap: isMobile ? 16 : 24 }}>{children}</div>;
 }
 
 class FinErrorBoundary extends Component {
@@ -2094,6 +2118,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     return p[1] === 'admin' && p[2] === 'departments' ? (p[3] || null) : null;
   });
   const setPage = useCallback(p => { window.history.pushState(null, '', `/admin/${p}`); setPageRaw(p); }, []);
+  const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => {
     if (window.location.pathname.split('/')[1] !== 'admin') {
       window.history.replaceState(null, '', `/admin/ai-chat`);
@@ -2826,6 +2852,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   }
 
   return (
+    <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
       {checkinPreview && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
@@ -5102,6 +5129,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         )}
       </div>
     </div>
+    </MobileContext.Provider>
   );
 }
 
@@ -5114,6 +5142,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     return p[1] === 'manager' ? (p[2] || 'dashboard') : 'dashboard';
   });
   const setPage = useCallback(p => { window.history.pushState(null, '', `/manager/${p}`); setPageRaw(p); }, []);
+  const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => {
     if (window.location.pathname.split('/')[1] !== 'manager') {
       window.history.replaceState(null, '', `/manager/dashboard`);
@@ -5211,6 +5241,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   ];
 
   return (
+    <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingOkrSubs.length, checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
@@ -6025,6 +6056,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
         )}
       </div>
     </div>
+    </MobileContext.Provider>
   );
 }
 
@@ -6037,6 +6069,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     return p[1] === 'member' ? (p[2] || 'mykpis') : 'mykpis';
   });
   const setPage = useCallback(p => { window.history.pushState(null, '', `/member/${p}`); setPageRaw(p); }, []);
+  const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => {
     if (window.location.pathname.split('/')[1] !== 'member') {
       window.history.replaceState(null, '', `/member/mykpis`);
@@ -6089,6 +6123,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   ];
 
   return (
+    <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
@@ -6860,6 +6895,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
         </>)}
       </div>
     </div>
+    </MobileContext.Provider>
   );
 }
 
