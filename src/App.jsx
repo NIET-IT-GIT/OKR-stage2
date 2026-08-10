@@ -2553,7 +2553,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     { id: "submissions",      icon: "⬡", label: "OKR Submissions"   },
     { id: "reports",          icon: "⬡", label: "OKR Reports"       },
     { id: "projects",         icon: "⬡", label: "Projects"          },
-    { id: "admissions",       icon: "⬡", label: "Enrolments"         },
+    { id: "admissions",       icon: "⬡", label: "Applications"       },
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
     { id: "users",            icon: "⬡", label: "User Management"   },
     { id: "email-templates",  icon: "⬡", label: "Email Templates"   },
@@ -4197,7 +4197,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         </>)}
 
         {page === "admissions" && (<>
-          <Header title="Weekly Enrolment Dashboard" sub="Marketer enrolment tracking by RTO" />
+          <Header title="Weekly Applications Dashboard" sub="Marketer application tracking by RTO" />
           <Pane>
             {enrError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{enrError}</div>}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
