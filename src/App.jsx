@@ -583,6 +583,32 @@ function Input({ value, onChange, placeholder, type, style: sx, ...props }) {
   );
 }
 
+function NumInput({ value, onChange, style: sx, ...props }) {
+  const toStr = v => (v == null) ? "" : String(v);
+  const [draft, setDraft] = useState(() => toStr(value));
+  const syncRef = useRef(parseFloat(toStr(value)));
+  useEffect(() => {
+    const n = parseFloat(toStr(value));
+    if ((isNaN(n) && !isNaN(syncRef.current)) || (!isNaN(n) && n !== syncRef.current)) {
+      syncRef.current = n;
+      setDraft(toStr(value));
+    }
+  }, [value]);
+  return (
+    <input value={draft}
+      onChange={e => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const n = parseFloat(raw);
+        if (!isNaN(n)) { syncRef.current = n; onChange(n); }
+        else if (raw === "" || raw === "-") { syncRef.current = 0; onChange(0); }
+      }}
+      style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", color: T.text, fontSize: 15, fontFamily: F.body, outline: "none", transition: "border-color 0.15s, box-shadow 0.15s", boxSizing: "border-box", boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)", ...sx }}
+      onFocus={e => { e.target.style.borderColor = T.brand; e.target.style.boxShadow = `0 0 0 3px rgba(0,113,227,0.12), inset 0 1px 2px rgba(0,0,0,0.04)`; }}
+      onBlur={e => { e.target.style.borderColor = T.border; e.target.style.boxShadow = "inset 0 1px 2px rgba(0,0,0,0.04)"; }}
+      {...props} />
+  );
+}
 function Select({ value, onChange, children, style: sx }) {
   return (
     <select value={value} onChange={onChange}
@@ -3073,8 +3099,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   : kr.type === "manager-fill"
                   ? <span style={{ textAlign: "right", fontFamily: F.mono, color: "#d97706", fontSize: 12 }}>via mgr</span>
                   : isMonthly
-                  ? <Input value={curActual} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: Number(e.target.value) || 0 }); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                  : <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
+                  ? <NumInput value={curActual} onChange={n => dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: n })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                  : <NumInput value={kr.actual} onChange={n => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: n }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                 <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
                 {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
                 {kr.type === "tracker" ? <span /> : hasSub ? <Bar value={pct} status={st} h={5} /> : <span />}
@@ -3108,7 +3134,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         </tr>
                         <tr>
                           <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Actual</td>
-                          {fyMs.map(({ key }) => { const isCur = key === curKey; const a = (kr.monthlyActuals || {})[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><Input value={a} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
+                          {fyMs.map(({ key }) => { const isCur = key === curKey; const a = (kr.monthlyActuals || {})[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><NumInput value={a} onChange={n => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: n }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
                           <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annActual)}</td>
                           <td style={{ padding: "4px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, textAlign: "center", color: T.textDim, fontSize: 12, borderLeft: `1px solid ${T.okBorder}` }}>—</td>
                         </tr>
@@ -3266,8 +3292,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                           if (key === "label") return <div key="label"><span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>{kr.type === "tracker" && <><span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Tracker · does not affect rate</span><label style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, cursor: "pointer", userSelect: "none" }}><input type="checkbox" checked={kr.showInOverview !== false} onChange={e => onTeamChange(kr.id, "showInOverview", e.target.checked)} style={{ accentColor: "#7c3aed" }} /><span style={{ fontSize: 10, color: "#7c3aed" }}>Show in portals' OKR Overview</span></label></>}{isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", marginTop: 2, display: "inline-block" }}>Monthly Breakdown</span>}{kr.type !== "tracker" && <label style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, cursor: "pointer", userSelect: "none" }}><input type="checkbox" checked={!!kr.autoApprove} onChange={e => onTeamChange(kr.id, "autoApprove", e.target.checked)} style={{ accentColor: T.ok }} /><span style={{ fontSize: 10, color: kr.autoApprove ? T.ok : T.textDim }}>Auto-approve ✓ Yes</span></label>}</div>;
                           if (key === "operator") return <span key="operator">{opSelect(kr.operator || ">=", e => onTeamChange(kr.id, "operator", e.target.value))}</span>;
                           if (key === "period") return <span key="period"><select value={kr.period || "monthly"} onChange={e => onTeamChange(kr.id, "period", e.target.value)} style={{ width: "100%", padding: "5px 4px", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontFamily: F.body }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Biannual</option><option value="annual">Annual</option></select></span>;
-                          if (key === "target") return kr.type === "tracker" ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : isMonthly ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(curTarget)} <span style={{ color: T.textDim }}>this mo.</span></span> : <Input key="target" value={kr.target} onChange={e => onTeamChange(kr.id, "target", Number(e.target.value) || 0)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
-                          if (key === "actual") return isMonthly ? <Input key="actual" value={curActual} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} /> : <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>;
+                          if (key === "target") return kr.type === "tracker" ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : isMonthly ? <span key="target" style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(curTarget)} <span style={{ color: T.textDim }}>this mo.</span></span> : <NumInput key="target" value={kr.target} onChange={n => onTeamChange(kr.id, "target", n)} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />;
+                          if (key === "actual") return isMonthly ? <NumInput key="actual" value={curActual} onChange={n => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: n }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} /> : <span key="actual" style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>;
                           if (key === "unit") return <Input key="unit" value={kr.unit || ""} onChange={e => onTeamChange(kr.id, "unit", e.target.value)} placeholder="e.g. %, students" style={{ padding: "5px 8px", fontSize: 13 }} />;
                           if (key === "dataSource") return <Input key="dataSource" value={kr.dataSource || ""} onChange={e => onTeamChange(kr.id, "dataSource", e.target.value)} placeholder="e.g. CRM, Manual" style={{ padding: "5px 8px", fontSize: 13 }} />;
                           return null;
@@ -3292,16 +3318,16 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <tbody>
                                 <tr>
                                   <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Perf. Target</td>
-                                  {fyMs.map(({ key }) => { const isCur = key === curKey; const t = kr.monthlyTargets[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><Input value={t} onChange={e => dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "target", value: Number(e.target.value) || 0 })} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
+                                  {fyMs.map(({ key }) => { const isCur = key === curKey; const t = kr.monthlyTargets[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><NumInput value={t} onChange={n => dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "target", value: n })} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
                                   <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annSumTarget)}</td>
                                   <td style={{ padding: "5px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, borderLeft: `1px solid ${T.okBorder}` }}>
-                                    <Input value={annDream} onChange={e => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "annualTarget", value: Number(e.target.value) || 0 })} style={{ padding: "4px 6px", fontSize: 13, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box", fontWeight: 700, background: T.surface, border: `1px solid ${T.okBorder}`, borderRadius: 4 }} />
+                                    <NumInput value={annDream} onChange={n => dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "annualTarget", value: n })} style={{ padding: "4px 6px", fontSize: 13, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box", fontWeight: 700, background: T.surface, border: `1px solid ${T.okBorder}`, borderRadius: 4 }} />
                                     {kr.unit && <div style={{ fontSize: 10, color: T.ok, textAlign: "center", marginTop: 2 }}>{kr.unit}</div>}
                                   </td>
                                 </tr>
                                 <tr>
                                   <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: T.text, background: T.surface, borderBottom: `1px solid ${T.border}` }}>Actual</td>
-                                  {fyMs.map(({ key }) => { const isCur = key === curKey; const a = (kr.monthlyActuals || {})[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><Input value={a} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
+                                  {fyMs.map(({ key }) => { const isCur = key === curKey; const a = (kr.monthlyActuals || {})[key] || 0; return <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}><NumInput value={a} onChange={n => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: n }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} /></td>; })}
                                   <td style={{ padding: "4px 10px", textAlign: "right", fontFamily: F.mono, fontWeight: 700, fontSize: 13, color: STATUS_THEME[annSt].color, background: T.surface, borderBottom: `1px solid ${T.border}` }}>{fmt(annActual)}</td>
                                   <td style={{ padding: "4px 8px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, textAlign: "center", color: T.textDim, fontSize: 12, borderLeft: `1px solid ${T.okBorder}` }}>—</td>
                                 </tr>
@@ -3489,10 +3515,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                         </select>
                                         {isTracker ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span>
                                           : isMonthly ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: T.brand }}>{fmt(mTgt)} <span style={{ color: T.textDim }}>this mo.</span></span>
-                                          : <Input value={kr.target || 0} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "target", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />}
+                                          : <NumInput value={kr.target || 0} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "target", value: n })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />}
                                         {isTracker ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted, fontSize: 12 }}>{fmt(kr.actual)}</span>
-                                          : isMonthly ? <Input value={mAct != null ? String(mAct) : "0"} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: Number(e.target.value) || 0 } })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />
-                                          : <Input value={kr.actual || 0} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />}
+                                          : isMonthly ? <NumInput value={mAct} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: n } })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />
+                                          : <NumInput value={kr.actual || 0} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "actual", value: n })} style={{ textAlign: "right", padding: "3px 6px", fontFamily: F.mono, fontSize: 13 }} />}
                                         <span style={{ fontSize: 12, color: T.textMuted }}>{kr.unit || "—"}</span>
                                         <select value={kr.period || "monthly"} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "period", value: e.target.value })} style={{ padding: "3px 4px", fontSize: 12, borderRadius: 4, border: `1px solid ${T.border}`, background: T.card, color: T.text, cursor: "pointer" }}>
                                           <option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Bi-Annual</option><option value="annual">Annual</option>
@@ -4753,8 +4779,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                               : kr.type === "progress" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                                               : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
-                                              : isMonthly ? <Input value={mAct != null ? String(mAct) : ""} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: Number(e.target.value) || 0 } })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
-                                              : <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
+                                              : isMonthly ? <NumInput value={mAct} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: n } })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
+                                              : <NumInput value={kr.actual} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: n })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
                                             {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
                                             <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
@@ -5326,8 +5352,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 {kr.type === "tracker"
                   ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span>
                   : isMonthly
-                  ? <Input value={curActual} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: Number(e.target.value) || 0 }); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                  : <Input value={kr.actual} onChange={e => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) mgrTriggerSync(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
+                  ? <NumInput value={curActual} onChange={n => dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: curKey, field: "actual", value: n })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                  : <NumInput value={kr.actual} onChange={n => { dispatch({ type: "UPDATE_KR", deptId, teamId, krId: kr.id, field: "actual", value: n }); if (teamId) mgrTriggerSync(deptId, teamId); }} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />}
                 <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
                 {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
                 {kr.type === "tracker" ? <span /> : hasSub ? <Bar value={pct} status={st} h={5} /> : <span />}
@@ -5376,7 +5402,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             const a = (kr.monthlyActuals || {})[key] || 0;
                             return (
                               <td key={key} style={{ padding: "3px 3px", background: isCur ? T.brandDim : "transparent", borderBottom: `1px solid ${T.border}` }}>
-                                <Input value={a} onChange={e => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: Number(e.target.value) || 0 }); if (teamId) mgrTriggerSync(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} />
+                                <NumInput value={a} onChange={n => { dispatch({ type: "UPDATE_KR_MONTHLY", deptId, teamId, krId: kr.id, monthKey: key, field: "actual", value: n }); if (teamId) mgrTriggerSync(deptId, teamId); }} style={{ padding: "3px 5px", fontSize: 12, fontFamily: F.mono, textAlign: "right", width: "100%", boxSizing: "border-box" }} />
                               </td>
                             );
                           })}
@@ -6048,7 +6074,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                         <span style={{ fontSize: 10, flexShrink: 0, color: "#0369a1", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, padding: "1px 5px" }}>Monthly</span>
                                       </div>
                                       <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(mTgt)}</span>
-                                      <Input value={mAct != null ? String(mAct) : ""} placeholder="—" onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: Number(e.target.value) || 0 } })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                                      <NumInput value={mAct} placeholder="—" onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: n } })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                                       <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
                                       <Bar value={cr} status={cs} h={5} />
                                     </div>
@@ -6067,7 +6093,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                       {sub && sub.approval === "pending" && <span style={{ fontSize: 10, flexShrink: 0, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, padding: "1px 5px" }}>Submitted</span>}
                                     </div>
                                     <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}</span>
-                                    <Input value={av != null ? String(av) : ""} placeholder="—" onChange={e => dispatch({ type: "MANAGER_SUBMIT_KR", memberId: m.id, memberName: m.name, deptId: m.deptId, kr, period, periodKey: pk, actualValue: Number(e.target.value) || 0, approvedBy: user.id, newId: `ms_${m.id}_${kr.id}_${Date.now().toString(36)}` })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                                    <NumInput value={av} placeholder="—" onChange={n => dispatch({ type: "MANAGER_SUBMIT_KR", memberId: m.id, memberName: m.name, deptId: m.deptId, kr, period, periodKey: pk, actualValue: n, approvedBy: user.id, newId: `ms_${m.id}_${kr.id}_${Date.now().toString(36)}` })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                                     {cr !== null ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontSize: 12, color: T.textDim }}>—</span>}
                                     {cr !== null ? <Bar value={cr} status={cs} h={5} /> : <span />}
                                   </div>
