@@ -1199,6 +1199,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
                 {!isSystem && u.role === "manager" && (
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { financeAccess: !u.financeAccess } })} style={{ background: u.financeAccess ? "#d1fae5" : T.raised, border: `1px solid ${u.financeAccess ? "#6ee7b7" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.financeAccess ? "#065f46" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Financial Performance access">$</button>
                 )}
+                {!isSystem && (u.role === "member" || u.role === "manager") && (
+                  <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { excludeFromRate: !u.excludeFromRate } })} style={{ background: u.excludeFromRate ? T.badDim : T.raised, border: `1px solid ${u.excludeFromRate ? T.badBorder : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.excludeFromRate ? T.bad : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={u.excludeFromRate ? "Include in dept rate" : "Exclude from dept rate"}>%</button>
+                )}
                 {!isSystem && u.role !== "admin" && (
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { projectAccess: !u.projectAccess } })} style={{ background: u.projectAccess ? T.brandDim : T.raised, border: `1px solid ${u.projectAccess ? T.brandBorder : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.projectAccess ? T.brand : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Project access">◫</button>
                 )}
@@ -2579,7 +2582,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   });
   const filtKrs = (krs) => krs.filter(kr => ovTypes.includes(kr.period || "monthly"));
   const deptRanks = depts.map(d => {
-    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
+    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
     const now = Date.now();
     const rates = members.map(u => {
       const kd = memberData[u.id] || { krs: [] };
@@ -2603,7 +2606,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   const rptSubs = okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === rptMonthKey);
   const rptSubRate = rptSubs.length > 0 ? Math.round((rptSubs.filter(s => s.answer === "yes").length / rptSubs.length) * 1000) / 10 : 0;
   const rptDeptRanks = depts.map(d => {
-    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
+    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
     const rates = members.map(u => {
       const kd = memberData[u.id] || { krs: [] };
       if (!kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
@@ -2959,8 +2962,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   const isExpanded = ovExpandedDept === d.id;
                   const deptMembers = isExpanded ? users
                     .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
-                    .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = memberHasRateKrs(kd.krs) ? calcMemberRate(u.id, filtKrs(kd.krs), ovSubs) : null; return { ...u, rate: mr, status: getStatus(mr) }; })
-                    .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1)) : [];
+                    .map(u => { const excl = !!u.excludeFromRate; const kd = memberData[u.id] || { krs: [] }; const mr = (!excl && memberHasRateKrs(kd.krs)) ? calcMemberRate(u.id, filtKrs(kd.krs), ovSubs) : null; return { ...u, rate: mr, status: getStatus(mr), excluded: excl }; })
+                    .sort((a, b) => { if (a.excluded !== b.excluded) return a.excluded ? 1 : -1; return (b.rate ?? -1) - (a.rate ?? -1); }) : [];
                   return (
                     <Card key={d.id} style={{ marginBottom: 8, overflow: "hidden" }}>
                       <div onClick={() => setOvExpandedDept(p => p === d.id ? null : d.id)} style={{ padding: "16px 20px", cursor: "pointer", display: "grid", gridTemplateColumns: "36px 1fr 60px 180px 80px 24px", alignItems: "center", gap: 14 }}>
@@ -2976,18 +2979,22 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                           {deptMembers.length === 0
                             ? <div style={{ fontSize: 13, color: T.textMuted }}>No members in this department yet.</div>
                             : deptMembers.map((m, mi) => (
-                              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: mi < deptMembers.length - 1 ? `1px solid ${T.border}` : "none" }}>
+                              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: mi < deptMembers.length - 1 ? `1px solid ${T.border}` : "none", opacity: m.excluded ? 0.55 : 1 }}>
                                 <span style={{ fontSize: 13, fontWeight: 400, color: T.textMuted, fontFamily: F.mono, width: 20, textAlign: "right", flexShrink: 0 }}>#{mi + 1}</span>
                                 <Avatar letters={m.av || m.name?.slice(0, 2)} size={30} />
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
                                   <div style={{ fontSize: 12, color: T.textMuted }}>{m.title || ""}</div>
                                 </div>
-                                {m.rate !== null ? (<>
-                                  <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 14, color: STATUS_THEME[m.status].color, flexShrink: 0 }}>{m.rate.toFixed(1)}%</span>
-                                  <div style={{ width: 100, flexShrink: 0 }}><Bar value={m.rate} status={m.status} h={5} /></div>
-                                  <Tag type={m.status} small />
-                                </>) : <span style={{ fontSize: 12, color: T.textDim }}>No data</span>}
+                                {m.excluded
+                                  ? <span style={{ fontSize: 11, color: T.textDim, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "2px 8px", flexShrink: 0 }}>Excluded from rate</span>
+                                  : m.rate !== null ? (<>
+                                    <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 14, color: STATUS_THEME[m.status].color, flexShrink: 0 }}>{m.rate.toFixed(1)}%</span>
+                                    <div style={{ width: 100, flexShrink: 0 }}><Bar value={m.rate} status={m.status} h={5} /></div>
+                                    <Tag type={m.status} small />
+                                  </>) : <span style={{ fontSize: 12, color: T.textDim }}>No data</span>
+                                }
+                                <button onClick={() => dispatch({ type: "UPDATE_USER", userId: m.id, updates: { excludeFromRate: !m.excludeFromRate } })} title={m.excluded ? "Include in dept rate" : "Exclude from dept rate"} style={{ background: m.excluded ? T.raised : T.badDim, border: `1px solid ${m.excluded ? T.border : T.badBorder}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", color: m.excluded ? T.textMuted : T.bad, fontSize: 11, fontWeight: 700, flexShrink: 0, fontFamily: F.body }}>{m.excluded ? "Include" : "Exclude"}</button>
                               </div>
                             ))
                           }
@@ -3957,7 +3964,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     });
                     const gSubRate = allAnswered.length > 0 ? Math.round((allAnswered.filter(s => s.answer === "yes").length / allAnswered.length) * 1000) / 10 : 0;
                     const gDeptRanks = depts.map(d => {
-                      const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id);
+                      const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
                       const rates = members.map(u => {
                         const kd = memberData[u.id] || { krs: [] };
                         if (!kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
@@ -5193,7 +5200,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
   const dmSubs = allOkrSubs.filter(s => s.answer !== null);
-  const myMemberRates = myMembers.map(u => {
+  const myExcludedCount = myMembers.filter(u => u.excludeFromRate).length;
+  const myMemberRates = myMembers.filter(u => !u.excludeFromRate).map(u => {
     const kd = memberData[u.id] || { krs: [] };
     if (!memberHasRateKrs(kd.krs)) return null;
     return calcMemberRate(u.id, kd.krs, dmSubs);
@@ -5401,7 +5409,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 {PERIODS.map(p => <Btn key={p.id} primary={okrPeriod === p.id} small onClick={() => setOkrPeriod(p.id)}>{p.label}</Btn>)}
               </div>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <Metric label="Dept Completion" value={`${myDeptRate.toFixed(1)}%`} status={deptStatus} sub={`Target: ${TP}%`} />
+                <Metric label="Dept Completion" value={`${myDeptRate.toFixed(1)}%`} status={deptStatus} sub={myExcludedCount > 0 ? `${myExcludedCount} excluded · Target: ${TP}%` : `Target: ${TP}%`} />
                 <Metric label="KRs this period" value={totalKrs} />
                 <Metric label="Teams" value={dept.teams.length} />
               </div>
@@ -5472,7 +5480,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           <Header title={`${dept?.name || "Team"} Dashboard`} sub={`${dept?.college} · Manager view`} />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="Dept Completion"   value={`${myDeptRate.toFixed(1)}%`} status={getStatus(myDeptRate)} sub={`Time: ${TP}%`} />
+              <Metric label="Dept Completion"   value={`${myDeptRate.toFixed(1)}%`} status={getStatus(myDeptRate)} sub={myExcludedCount > 0 ? `${myExcludedCount} excluded · Time: ${TP}%` : `Time: ${TP}%`} />
               <Metric label="My Members"        value={myMembers.length} />
               <Metric label="Pending Approvals" value={pendingOkrSubs.length} status={pendingOkrSubs.length > 0 ? "yellow" : undefined} />
             </div>
@@ -6504,7 +6512,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           };
           const dKrs = filterP(myDept.krs);
           const _deptSubs = (state.okrSubmissions || []).filter(s => s.answer !== null);
-          const _deptRates = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId).map(u => { const kd2 = memberData[u.id] || { krs: [] }; if (!memberHasRateKrs(kd2.krs)) return null; return calcMemberRate(u.id, kd2.krs, _deptSubs); }).filter(r => r !== null);
+          const _deptRates = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && !u.excludeFromRate).map(u => { const kd2 = memberData[u.id] || { krs: [] }; if (!memberHasRateKrs(kd2.krs)) return null; return calcMemberRate(u.id, kd2.krs, _deptSubs); }).filter(r => r !== null);
           const deptRate = _deptRates.length ? _deptRates.reduce((a, b) => a + b, 0) / _deptRates.length : 0;
           const deptStatus = getStatus(deptRate);
           const allTeamStats = myDept.teams.map(t => { const tKrs = filterP(t.krs); return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) }; }).filter(t => t.krs.length > 0);
