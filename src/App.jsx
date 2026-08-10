@@ -5205,6 +5205,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId) || peerManagerIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
+  const dmSubs = allOkrSubs.filter(s => s.answer !== null);
+  const myMemberRates = myMembers.map(u => {
+    const kd = memberData[u.id] || { krs: [] };
+    if (!memberHasRateKrs(kd.krs)) return null;
+    return calcMemberRate(u.id, kd.krs, dmSubs);
+  }).filter(r => r !== null);
+  const myDeptRate = myMemberRates.length ? myMemberRates.reduce((a, b) => a + b, 0) / myMemberRates.length : 0;
 
   function mgrTriggerSync(deptId, teamId) {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -5477,7 +5484,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           <Header title={`${dept?.name || "Team"} Dashboard`} sub={`${dept?.college} · Manager view`} />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="Dept Completion"   value={`${calcRate(dept?.krs || []).toFixed(1)}%`} status={getStatus(calcRate(dept?.krs || []))} sub={`Time: ${TP}%`} />
+              <Metric label="Dept Completion"   value={`${myDeptRate.toFixed(1)}%`} status={getStatus(myDeptRate)} sub={`Time: ${TP}%`} />
               <Metric label="My Members"        value={myMembers.length} />
               <Metric label="Pending Approvals" value={pendingOkrSubs.length} status={pendingOkrSubs.length > 0 ? "yellow" : undefined} />
             </div>
