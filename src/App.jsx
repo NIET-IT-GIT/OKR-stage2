@@ -5164,6 +5164,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [rejectOkr, setRejectOkr] = useState(null);
   const [editingSub, setEditingSub] = useState(null);
   const [editingApproved, setEditingApproved] = useState(null);
+  const [mgrKpiPeriodKeys, setMgrKpiPeriodKeys] = useState({});
   const [trackerInput, setTrackerInput] = useState({});
   const [syncing, setSyncing] = useState(false);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
@@ -5936,42 +5937,95 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           </Pane>
         </>)}
 
-        {page === "members" && (<>
-          <Header title="Edit Member KPIs" sub="Review and adjust KPI actuals submitted by your team" />
-          <Pane>
-            {myMembers.filter(m => m.role === "member").map(m => {
-              const kd = memberData[m.id];
-              const krs = kd?.krs || [];
-              const hasRateKrs = memberHasRateKrs(krs);
-              const r = hasRateKrs ? calcMemberRate(m.id, krs, allOkrSubs) : null;
-              const s = getStatus(r);
-              return (
-                <Card key={m.id} style={{ overflow: "hidden" }}>
-                  <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar letters={m.av} size={30} /><div><div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{m.title}</div></div></div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r != null ? `${r.toFixed(1)}%` : "N/A"}</span><Tag type={s} /></div>
-                  </div>
-                  {krs.length === 0
-                    ? <div style={{ padding: "14px 18px", fontSize: 13, color: T.textMuted }}>No KPI data for this member yet. Sync team KPIs to populate.</div>
-                    : krs.map((kr, ki) => {
-                      const cr = krCompletion(kr); const cs = getStatus(cr);
-                      return (
-                        <div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 80px 100px 55px 130px", padding: "9px 18px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: ki < krs.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 14 }}>
-                          <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
-                          <span>{kr.label}</span>
-                          <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}</span>
-                          <Input value={kr.actual} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: Number(e.target.value) || 0 })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
-                          <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
-                          <Bar value={cr} status={cs} h={5} />
-                        </div>
-                      );
-                    })
-                  }
-                </Card>
-              );
-            })}
-          </Pane>
-        </>)}
+        {page === "members" && (() => {
+          const PERIOD_ORDER = ["daily","weekly","monthly","quarterly","biannual","annual"];
+          const getPK = p => mgrKpiPeriodKeys[p] || currentPeriodKey(p);
+          const isCurPK = p => getPK(p) === currentPeriodKey(p);
+          const periodLabel = p => p.charAt(0).toUpperCase() + p.slice(1);
+          const KCOL = "50px 1fr 100px 110px 60px 130px";
+          return (<>
+            <Header title="Edit Member KPIs" sub="Enter or override KPI actuals for your team — values are saved as approved submissions" />
+            <Pane>
+              {myMembers.filter(m => m.role === "member").map(m => {
+                const kd = memberData[m.id];
+                const krs = kd?.krs || [];
+                const hasRateKrs = memberHasRateKrs(krs);
+                const r = hasRateKrs ? calcMemberRate(m.id, krs, allOkrSubs) : null;
+                const s = getStatus(r);
+                const groups = {};
+                krs.forEach(kr => { const p = kr.period || "monthly"; if (!groups[p]) groups[p] = []; groups[p].push(kr); });
+                const sortedPeriods = Object.keys(groups).sort((a, b) => PERIOD_ORDER.indexOf(a) - PERIOD_ORDER.indexOf(b));
+                return (
+                  <Card key={m.id} style={{ marginBottom: 16, overflow: "hidden" }}>
+                    <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar letters={m.av} size={30} /><div><div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{m.title}</div></div></div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r != null ? `${r.toFixed(1)}%` : "N/A"}</span><Tag type={s} /></div>
+                    </div>
+                    {krs.length === 0
+                      ? <div style={{ padding: "14px 18px", fontSize: 13, color: T.textMuted }}>No KPI data for this member yet. Sync team KPIs to populate.</div>
+                      : sortedPeriods.map(period => {
+                          const periodKrs = groups[period];
+                          const pk = getPK(period);
+                          return (
+                            <div key={period}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px", background: T.raised, borderBottom: `1px solid ${T.border}` }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", flex: 1 }}>{periodLabel(period)} KRs</span>
+                                <span style={{ fontSize: 11, color: T.brand, fontFamily: F.mono, fontWeight: 600 }}>{pk}</span>
+                                <Btn small primary={!isCurPK(period)} onClick={() => setMgrKpiPeriodKeys(prev => ({ ...prev, [period]: prevPeriodKey(period) }))}>← Prev</Btn>
+                                <Btn small primary={isCurPK(period)} onClick={() => setMgrKpiPeriodKeys(prev => ({ ...prev, [period]: currentPeriodKey(period) }))}>Current</Btn>
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "5px 18px", gap: 8, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
+                                <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span>
+                              </div>
+                              {periodKrs.map((kr, ki) => {
+                                if (kr.monthlyTargets) {
+                                  const mk = currentFYMonthKey();
+                                  const mTgt = kr.monthlyTargets[mk] || 0;
+                                  const mAct = (kr.monthlyActuals || {})[mk];
+                                  const cr = krCompletion(kr); const cs = getStatus(cr);
+                                  return (
+                                    <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 18px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                                      <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
+                                        <span style={{ fontSize: 10, flexShrink: 0, color: "#0369a1", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, padding: "1px 5px" }}>Monthly</span>
+                                      </div>
+                                      <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(mTgt)}</span>
+                                      <Input value={mAct != null ? String(mAct) : ""} placeholder="—" onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: Number(e.target.value) || 0 } })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                                      <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span>
+                                      <Bar value={cr} status={cs} h={5} />
+                                    </div>
+                                  );
+                                }
+                                const sub = allOkrSubs.find(s2 => s2.memberId === m.id && s2.krId === kr.id && s2.periodKey === pk && s2.answer !== null);
+                                const av = sub != null ? sub.actualValue : null;
+                                const cr = av !== null ? krCompletion({ ...kr, actual: av }) : null;
+                                const cs = getStatus(cr);
+                                return (
+                                  <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 18px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
+                                    <span style={{ fontFamily: F.mono, fontSize: 12, color: T.textDim }}>{kr.id}</span>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
+                                      {sub && sub.approval === "approved" && <span style={{ fontSize: 10, flexShrink: 0, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px" }}>Approved</span>}
+                                      {sub && sub.approval === "pending" && <span style={{ fontSize: 10, flexShrink: 0, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, padding: "1px 5px" }}>Submitted</span>}
+                                    </div>
+                                    <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}</span>
+                                    <Input value={av != null ? String(av) : ""} placeholder="—" onChange={e => dispatch({ type: "MANAGER_SUBMIT_KR", memberId: m.id, memberName: m.name, deptId: m.deptId, kr, period, periodKey: pk, actualValue: Number(e.target.value) || 0, approvedBy: user.id, newId: `ms_${m.id}_${kr.id}_${Date.now().toString(36)}` })} style={{ textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
+                                    {cr !== null ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[cs].color }}>{cr.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontSize: 12, color: T.textDim }}>—</span>}
+                                    {cr !== null ? <Bar value={cr} status={cs} h={5} /> : <span />}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })
+                    }
+                  </Card>
+                );
+              })}
+            </Pane>
+          </>);
+        })()}
 
         {page === "financial" && user.financeAccess && (<>
           <Header title="Financial Performance" sub="Revenue, Net Profit and Expense tracking — FY2027" />
@@ -6979,6 +7033,57 @@ function appReducer(state, action) {
       const md = state.memberData[action.memberId];
       if (!md) return state;
       return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
+    }
+    case "MANAGER_SUBMIT_KR": {
+      const { memberId, memberName, deptId, kr, period, periodKey, actualValue, approvedBy, newId } = action;
+      const existingIdx = state.okrSubmissions.findIndex(s => s.memberId === memberId && s.krId === kr.id && s.periodKey === periodKey);
+      const krTarget = kr.monthlyTargets ? (kr.monthlyTargets[periodKey] || 0) : (Number(kr.target) || 0);
+      const now = new Date().toISOString();
+      const baseSub = existingIdx >= 0 ? state.okrSubmissions[existingIdx] : null;
+      const newSub = {
+        id: baseSub ? baseSub.id : newId,
+        memberId, memberName, deptId,
+        krId: kr.id, krLabel: kr.label,
+        krTarget, krUnit: kr.unit || "", krOperator: kr.operator || ">=",
+        krType: kr.type || "", krIsMonthly: !!(kr.monthlyTargets),
+        period, periodKey, dateRange: "",
+        sentAt: baseSub ? baseSub.sentAt : now,
+        answeredAt: now,
+        answer: "yes",
+        actualValue,
+        approval: "approved",
+        approvedBy,
+        reason: null,
+      };
+      const newSubs = existingIdx >= 0
+        ? state.okrSubmissions.map((s, i) => i === existingIdx ? newSub : s)
+        : [...state.okrSubmissions, newSub];
+      const md2 = state.memberData[memberId];
+      const newMemberData = md2 ? {
+        ...state.memberData,
+        [memberId]: { ...md2, krs: (md2.krs || []).map(k => {
+          if (k.id !== kr.id) return k;
+          if (k.monthlyTargets) return { ...k, monthlyActuals: { ...(k.monthlyActuals || {}), [periodKey]: actualValue } };
+          return { ...k, actual: actualValue };
+        })}
+      } : state.memberData;
+      const allApproved = newSubs.filter(s => s.krId === kr.id && s.periodKey === periodKey && s.deptId === deptId && s.approval === "approved" && s.actualValue != null);
+      const avgActual = allApproved.length ? allApproved.reduce((sum, s) => sum + (Number(s.actualValue) || 0), 0) / allApproved.length : actualValue;
+      const newDepts = state.depts.map(d => {
+        if (d.id !== deptId) return d;
+        const dKrs2 = (d.krs || []).map(k => {
+          if (k.id !== kr.id) return k;
+          if (k.monthlyTargets) return { ...k, monthlyActuals: { ...(k.monthlyActuals || {}), [periodKey]: avgActual } };
+          return { ...k, actual: avgActual };
+        });
+        const dTeams2 = (d.teams || []).map(t => ({ ...t, krs: (t.krs || []).map(k => {
+          if (k.id !== kr.id) return k;
+          if (k.monthlyTargets) return { ...k, monthlyActuals: { ...(k.monthlyActuals || {}), [periodKey]: avgActual } };
+          return { ...k, actual: avgActual };
+        })}));
+        return { ...d, krs: dKrs2, teams: dTeams2 };
+      });
+      return { ...state, okrSubmissions: newSubs, memberData: newMemberData, depts: newDepts };
     }
     case "ADD_MEMBER_KR": {
       const md = state.memberData[action.memberId] || { krs: [] };
