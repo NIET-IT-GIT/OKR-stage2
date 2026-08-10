@@ -5403,7 +5403,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             );
           };
           const dKrs = filterP(dept.krs);
-          const deptRate = calcRate(dKrs); const deptStatus = getStatus(deptRate);
+          const deptStatus = getStatus(myDeptRate);
           const teamStats = dept.teams.map(t => { const tKrs = filterP(t.krs); return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) }; });
           const totalKrs = dKrs.length + teamStats.reduce((s, t) => s + t.krs.length, 0);
           return (<>
@@ -5413,7 +5413,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 {PERIODS.map(p => <Btn key={p.id} primary={okrPeriod === p.id} small onClick={() => setOkrPeriod(p.id)}>{p.label}</Btn>)}
               </div>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} sub={`Target: ${TP}%`} />
+                <Metric label="Dept Completion" value={`${myDeptRate.toFixed(1)}%`} status={deptStatus} sub={`Target: ${TP}%`} />
                 <Metric label="KRs this period" value={totalKrs} />
                 <Metric label="Teams" value={dept.teams.length} />
               </div>
@@ -6459,7 +6459,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             );
           };
           const dKrs = filterP(myDept.krs);
-          const deptRate = calcRate(dKrs); const deptStatus = getStatus(deptRate);
+          const _deptSubs = (state.okrSubmissions || []).filter(s => s.answer !== null);
+          const _deptRates = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId).map(u => { const kd2 = memberData[u.id] || { krs: [] }; if (!memberHasRateKrs(kd2.krs)) return null; return calcMemberRate(u.id, kd2.krs, _deptSubs); }).filter(r => r !== null);
+          const deptRate = _deptRates.length ? _deptRates.reduce((a, b) => a + b, 0) / _deptRates.length : 0;
+          const deptStatus = getStatus(deptRate);
           const allTeamStats = myDept.teams.map(t => { const tKrs = filterP(t.krs); return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) }; }).filter(t => t.krs.length > 0);
           const totalKrs = dKrs.length + allTeamStats.reduce((s, t) => s + t.krs.length, 0);
           return (<>
