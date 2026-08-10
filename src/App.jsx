@@ -5417,7 +5417,18 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           };
           const dKrs = filterP(dept.krs);
           const deptStatus = getStatus(myDeptRate);
-          const teamStats = dept.teams.map(t => { const tKrs = filterP(t.krs); return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) }; });
+          const filtMKrs = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const teamStats = dept.teams.map(t => {
+            const tKrs = filterP(t.krs);
+            const teamMembers = myMembers.filter(u => !u.excludeFromRate && (u.teamId === t.id || u.secondTeamId === t.id));
+            const memberRates = teamMembers.map(u => {
+              const kd = memberData[u.id];
+              if (!kd || !memberHasRateKrs(filtMKrs(kd.krs))) return null;
+              return calcMemberRate(u.id, filtMKrs(kd.krs), allOkrSubs);
+            }).filter(r => r !== null);
+            const rate = memberRates.length ? memberRates.reduce((a, b) => a + b, 0) / memberRates.length : null;
+            return { ...t, krs: tKrs, rate, status: getStatus(rate) };
+          });
           const totalKrs = dKrs.length + teamStats.reduce((s, t) => s + t.krs.length, 0);
           return (<>
             <Header title="OKR Overview" sub={`${dept.name} · ${okrPeriod.charAt(0).toUpperCase() + okrPeriod.slice(1)} key results`} right={<Tag type={deptStatus} />} />
@@ -5462,14 +5473,17 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}<PChip /></span>
                       {t.lead && <span style={{ fontSize: 12, color: T.textMuted }}>Lead: {t.lead}</span>}
-                      <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate.toFixed(1)}%</span>
-                      <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
+                      <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate != null ? `${t.rate.toFixed(1)}%` : "N/A"}</span>
+                      <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate ?? 0} status={t.status} h={5} /></div>
                       <Tag type={t.status} small />
                     </div>
                     {t.krs.map(kr => {
                       const pct = krCompletion(kr); const st = getStatus(pct);
                       const trackerVal = (kr.type === "tracker" && kr.actual != null && kr.actual !== 0)
                         ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null;
+                      const hasSub = kr.type !== "tracker" && (!!kr.monthlyTargets
+                        ? Object.values(kr.monthlyActuals || {}).some(v => v != null && v !== 0)
+                        : (kr.actual != null && kr.actual !== 0));
                       return (
                       <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
@@ -5479,9 +5493,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         {kr.type === "tracker"
                           ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
-                          : <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>}
-                        {kr.type === "tracker" ? <span style={{ width: 100, flexShrink: 0 }} /> : <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>}
-                        {kr.type !== "tracker" && <Tag type={st} small />}
+                          : hasSub ? <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
+                          : <span style={{ fontSize: 12, fontFamily: F.mono, color: T.textDim, fontWeight: 700, width: 40, textAlign: "right" }}>N/A</span>}
+                        {kr.type === "tracker" ? <span style={{ width: 100, flexShrink: 0 }} /> : hasSub ? <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div> : <span style={{ width: 100, flexShrink: 0 }} />}
+                        {kr.type !== "tracker" && hasSub && <Tag type={st} small />}
                       </div>
                     ); })}
                   </Card>
@@ -6530,7 +6545,18 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           const _deptRates = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && !u.excludeFromRate).map(u => { const kd2 = memberData[u.id] || { krs: [] }; if (!memberHasRateKrs(kd2.krs)) return null; return calcMemberRate(u.id, kd2.krs, _deptSubs); }).filter(r => r !== null);
           const deptRate = _deptRates.length ? _deptRates.reduce((a, b) => a + b, 0) / _deptRates.length : 0;
           const deptStatus = getStatus(deptRate);
-          const allTeamStats = myDept.teams.map(t => { const tKrs = filterP(t.krs); return { ...t, krs: tKrs, rate: calcRate(tKrs), status: getStatus(calcRate(tKrs)) }; }).filter(t => t.krs.length > 0);
+          const filtMKrs = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const allTeamStats = myDept.teams.map(t => {
+            const tKrs = filterP(t.krs);
+            const teamMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && !u.excludeFromRate && (u.teamId === t.id || u.secondTeamId === t.id));
+            const memberRates = teamMembers.map(u => {
+              const kd = memberData[u.id];
+              if (!kd || !memberHasRateKrs(filtMKrs(kd.krs))) return null;
+              return calcMemberRate(u.id, filtMKrs(kd.krs), _deptSubs);
+            }).filter(r => r !== null);
+            const rate = memberRates.length ? memberRates.reduce((a, b) => a + b, 0) / memberRates.length : null;
+            return { ...t, krs: tKrs, rate, status: getStatus(rate) };
+          }).filter(t => t.krs.length > 0);
           const totalKrs = dKrs.length + allTeamStats.reduce((s, t) => s + t.krs.length, 0);
           return (<>
             <Header title="OKR Overview" sub={`${myDept.name} · ${okrPeriod.charAt(0).toUpperCase() + okrPeriod.slice(1)} key results`} right={<Tag type={deptStatus} />} />
@@ -6561,14 +6587,17 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   <Card key={t.id} style={{ padding: "14px 16px", marginBottom: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>{t.name}<PChip /></span>
-                      <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate.toFixed(1)}%</span>
-                      <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate} status={t.status} h={5} /></div>
+                      <span style={{ fontSize: 14, fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[t.status].color }}>{t.rate != null ? `${t.rate.toFixed(1)}%` : "N/A"}</span>
+                      <div style={{ width: 100, flexShrink: 0 }}><Bar value={t.rate ?? 0} status={t.status} h={5} /></div>
                       <Tag type={t.status} small />
                     </div>
                     {t.krs.map(kr => {
                       const pct = krCompletion(kr); const st = getStatus(pct);
                       const trackerVal = (kr.type === "tracker" && kr.actual != null && kr.actual !== 0)
                         ? `${fmt(kr.actual)}${kr.unit ? ` ${kr.unit}` : ""}` : null;
+                      const hasSub = kr.type !== "tracker" && (!!kr.monthlyTargets
+                        ? Object.values(kr.monthlyActuals || {}).some(v => v != null && v !== 0)
+                        : (kr.actual != null && kr.actual !== 0));
                       return (
                       <div key={kr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
                         <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim, width: 50, flexShrink: 0 }}>{kr.id}</span>
@@ -6579,9 +6608,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         {kr.type === "tracker"
                           ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
-                          : <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>}
-                        {kr.type === "tracker" ? <span style={{ width: 100, flexShrink: 0 }} /> : <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div>}
-                        {kr.type !== "tracker" && <Tag type={st} small />}
+                          : hasSub ? <span style={{ fontSize: 12, fontFamily: F.mono, color: STATUS_THEME[st].color, fontWeight: 700, width: 40, textAlign: "right" }}>{pct.toFixed(0)}%</span>
+                          : <span style={{ fontSize: 12, fontFamily: F.mono, color: T.textDim, fontWeight: 700, width: 40, textAlign: "right" }}>N/A</span>}
+                        {kr.type === "tracker" ? <span style={{ width: 100, flexShrink: 0 }} /> : hasSub ? <div style={{ width: 100, flexShrink: 0 }}><Bar value={pct} status={st} h={5} /></div> : <span style={{ width: 100, flexShrink: 0 }} />}
+                        {kr.type !== "tracker" && hasSub && <Tag type={st} small />}
                       </div>
                     ); })}
                   </Card>
