@@ -2543,20 +2543,20 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   const colOrder = settings?.colOrder || ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"];
   const navItems = [
     { id: "ai-chat",          icon: "⬡", label: "NIET Pilot"        },
-    { id: "overview",         icon: "◎", label: "Company Overview"  },
-    { id: "departments",      icon: "⬛", label: "Departments"       },
-    { id: "okr-review",       icon: "◉", label: "OKR Review"        },
-    { id: "submissions",      icon: "✉", label: "OKR Submissions"   },
-    { id: "reports",          icon: "⊞", label: "OKR Reports"       },
-    { id: "projects",         icon: "⚡", label: "Projects"          },
-    { id: "admissions",       icon: "◈", label: "Enrolments"         },
-    { id: "leaderboard",      icon: "▲", label: "Leaderboard"       },
-    { id: "users",            icon: "⊹", label: "User Management"   },
-    { id: "email-templates",  icon: "✦", label: "Email Templates"   },
+    { id: "overview",         icon: "⬡", label: "Company Overview"  },
+    { id: "departments",      icon: "⬡", label: "Departments"       },
+    { id: "okr-review",       icon: "⬡", label: "OKR Review"        },
+    { id: "submissions",      icon: "⬡", label: "OKR Submissions"   },
+    { id: "reports",          icon: "⬡", label: "OKR Reports"       },
+    { id: "projects",         icon: "⬡", label: "Projects"          },
+    { id: "admissions",       icon: "⬡", label: "Enrolments"         },
+    { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
+    { id: "users",            icon: "⬡", label: "User Management"   },
+    { id: "email-templates",  icon: "⬡", label: "Email Templates"   },
   ];
   const deptSubItems = [
-    { id: "__all__",   label: "All Departments", icon: "⊕" },
-    { id: "__setup__", label: "Set Up OKRs",      icon: "◈" },
+    { id: "__all__",   label: "All Departments", icon: "⬡" },
+    { id: "__setup__", label: "Set Up OKRs",      icon: "⬡" },
   ];
 
   const OV_TYPES = { weekly: ["daily","weekly"], monthly: ["daily","weekly","monthly"], annual: ["daily","weekly","monthly","quarterly","biannual","annual"] };
@@ -5238,14 +5238,14 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   }
 
   const navItems = [
-    { id: "dashboard",    icon: "⧉", label: "Team Dashboard"       },
-    { id: "okr-overview", icon: "◎", label: "OKR Overview"         },
-    { id: "checkin",      icon: "✓", label: "OKR Check-In"         },
-    { id: "approvals",    icon: "✓", label: "Approve Submissions"   },
-    { id: "projects",     icon: "⚡", label: "Projects"             },
-    { id: "members",      icon: "✎", label: "Edit Member KPIs"     },
-    { id: "reports",      icon: "⊞", label: "OKR Reports"          },
-    ...(user.financeAccess ? [{ id: "financial", icon: "$", label: "Financial Performance" }] : []),
+    { id: "dashboard",    icon: "⬡", label: "Team Dashboard"       },
+    { id: "okr-overview", icon: "⬡", label: "OKR Overview"         },
+    { id: "checkin",      icon: "⬡", label: "OKR Check-In"         },
+    { id: "approvals",    icon: "⬡", label: "Approve Submissions"   },
+    { id: "projects",     icon: "⬡", label: "Projects"             },
+    { id: "members",      icon: "⬡", label: "Edit Member KPIs"     },
+    { id: "reports",      icon: "⬡", label: "OKR Reports"          },
+    ...(user.financeAccess ? [{ id: "financial", icon: "⬡", label: "Financial Performance" }] : []),
   ];
 
   return (
@@ -6122,12 +6122,12 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const myOwnProjects = projects.filter(p => p.mgrId === user.id);
   const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
   const navItems = [
-    { id: "mykpis",       icon: "◎", label: "My OKRs"          },
-    { id: "checkin",      icon: "✓", label: "OKR Check-In"     },
-    { id: "okr-overview", icon: "⬛", label: "OKR Overview"     },
-    { id: "history",      icon: "⊞", label: "My History"        },
-    { id: "reports",      icon: "⊠", label: "OKR Reports"      },
-    ...(user.projectAccess ? [{ id: "projects", icon: "◫", label: "Projects" }] : []),
+    { id: "mykpis",       icon: "⬡", label: "My OKRs"          },
+    { id: "checkin",      icon: "⬡", label: "OKR Check-In"     },
+    { id: "okr-overview", icon: "⬡", label: "OKR Overview"     },
+    { id: "history",      icon: "⬡", label: "My History"        },
+    { id: "reports",      icon: "⬡", label: "OKR Reports"      },
+    ...(user.projectAccess ? [{ id: "projects", icon: "⬡", label: "Projects" }] : []),
   ];
 
   return (
