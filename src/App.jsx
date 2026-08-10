@@ -799,6 +799,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
   const [show, setShow] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
   const [err, setErr] = useState("");
+  const isMobile = useIsMobile();
 
   useEffect(() => { setTimeout(() => setShow(true), 80); }, []);
 
@@ -814,7 +815,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", fontFamily: F.body, position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: isMobile ? "column" : "row", fontFamily: F.body, position: "relative", overflow: "hidden" }}>
       {/* Background image with dark overlay */}
       <div style={{ position: "absolute", inset: 0, backgroundImage: "url('/bg_lp.png')", backgroundSize: "cover", backgroundPosition: "center", zIndex: 0 }} />
       <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,20,0.72)", zIndex: 1 }} />
@@ -834,32 +835,36 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
         </div>
       )}
       {/* Hero */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 72px", position: "relative", zIndex: 2, opacity: show ? 1 : 0, transform: show ? "none" : "translateX(-20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 44 }}>
-          <div style={{ width: 60, height: 60, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: "#fff" }}>NIET</div>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: isMobile ? "flex-end" : "center", padding: isMobile ? "52px 28px 32px" : "60px 72px", position: "relative", zIndex: 2, opacity: show ? 1 : 0, transform: show ? "none" : "translateX(-20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: isMobile ? 24 : 44 }}>
+          <div style={{ width: isMobile ? 48 : 60, height: isMobile ? 48 : 60, borderRadius: 13, background: `linear-gradient(135deg, ${T.brand}, #A78BFA)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 20 : 26, fontWeight: 900, color: "#fff" }}>NIET</div>
           <div>
-            <div style={{ fontSize: 21, fontWeight: 900, color: "#fff" }}>NIET Group OKRs</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", letterSpacing: "0.14em" }}>NIET · CHARLTON BROWN · RHODES · EDUCARE</div>
+            <div style={{ fontSize: isMobile ? 17 : 21, fontWeight: 900, color: "#fff" }}>NIET Group OKRs</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", letterSpacing: "0.14em" }}>NIET · CHARLTON BROWN · RHODES · EDUCARE</div>
           </div>
         </div>
-        <h1 style={{ margin: "0 0 14px", fontSize: 44, fontWeight: 900, lineHeight: 1.08, color: "#fff", letterSpacing: "-0.03em", maxWidth: 460 }}>
+        <h1 style={{ margin: "0 0 14px", fontSize: isMobile ? 30 : 44, fontWeight: 900, lineHeight: 1.08, color: "#fff", letterSpacing: "-0.03em", maxWidth: 460 }}>
           Align goals.<br /><span style={{ color: "#A78BFA" }}>Track everyone.</span><br />Drive results.
         </h1>
-        <p style={{ margin: 0, fontSize: 16, color: "rgba(255,255,255,0.65)", lineHeight: 1.7, maxWidth: 400 }}>
-          Monthly KPI reporting, weekly outcome tracking, real-time leaderboards — full transparency from company goals down to every team member.
-        </p>
-        <div style={{ marginTop: 48, display: "flex", gap: 36 }}>
-          {[{ n: "Monthly", l: "KPI Reports" }, { n: "Weekly", l: "Submissions" }, { n: "Real-time", l: "Rankings" }, { n: "100%", l: "Transparent" }].map((x, i) => (
-            <div key={i}>
-              <div style={{ fontSize: 18, fontWeight: 900, color: "#A78BFA", fontFamily: F.mono }}>{x.n}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.06em", marginTop: 2 }}>{x.l}</div>
-            </div>
-          ))}
-        </div>
+        {!isMobile && (
+          <p style={{ margin: 0, fontSize: 16, color: "rgba(255,255,255,0.65)", lineHeight: 1.7, maxWidth: 400 }}>
+            Monthly KPI reporting, weekly outcome tracking, real-time leaderboards — full transparency from company goals down to every team member.
+          </p>
+        )}
+        {!isMobile && (
+          <div style={{ marginTop: 48, display: "flex", gap: 36 }}>
+            {[{ n: "Monthly", l: "KPI Reports" }, { n: "Weekly", l: "Submissions" }, { n: "Real-time", l: "Rankings" }, { n: "100%", l: "Transparent" }].map((x, i) => (
+              <div key={i}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: "#A78BFA", fontFamily: F.mono }}>{x.n}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.06em", marginTop: 2 }}>{x.l}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Sign-in card */}
-      <div style={{ width: 420, display: "flex", flexDirection: "column", justifyContent: "center", padding: "60px 44px", position: "relative", zIndex: 2, opacity: show ? 1 : 0, transform: show ? "none" : "translateY(20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1) 0.15s" }}>
+      <div style={{ width: isMobile ? "100%" : 420, display: "flex", flexDirection: "column", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0 20px 48px" : "60px 44px", position: "relative", zIndex: 2, opacity: show ? 1 : 0, transform: show ? "none" : "translateY(20px)", transition: "all 0.7s cubic-bezier(0.16,1,0.3,1) 0.15s" }}>
         <Card style={{ padding: "36px 30px" }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 800, color: T.text }}>Sign in</h2>
           <p style={{ margin: "0 0 24px", fontSize: 14, color: T.textMuted }}>Use your NIET Microsoft account to access your portal.</p>
