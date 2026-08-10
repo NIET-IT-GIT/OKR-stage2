@@ -16,8 +16,8 @@ const T = {
   orange: "#FF9500", purple: "#BF5AF2",
   glass: "rgba(255,255,255,0.72)",
   glassBorder: "rgba(255,255,255,0.5)",
-  shadow: "0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.05)",
-  shadowSm: "0 1px 2px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.04)",
+  shadow: "0 2px 6px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.09)",
+  shadowSm: "0 1px 3px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.06)",
 };
 const F = { body: "-apple-system,'SF Pro Text',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif", mono: "'SF Mono','Fira Code','Cascadia Code',monospace" };
 const TP = 66.7;
@@ -500,8 +500,8 @@ function Tag({ type = "green", label, small }) {
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       background: s.bg, border: `1px solid ${s.border}`, borderRadius: 20,
-      padding: small ? "2px 8px" : "3px 10px",
-      fontSize: small ? 9 : 10, fontWeight: 600, color: s.color, letterSpacing: "0.02em", whiteSpace: "nowrap",
+      padding: small ? "2px 9px" : "3px 11px",
+      fontSize: small ? 10 : 11, fontWeight: 600, color: s.color, letterSpacing: "0.02em", whiteSpace: "nowrap",
     }}>
       <span style={{ width: 4, height: 4, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
       {label || s.tag || s.label}
@@ -516,17 +516,18 @@ function RoleTag({ role }) {
     member:  { color: T.ok,     bg: T.okDim,     border: T.okBorder,    label: "Member"  },
   }[role] || { color: T.textMuted, bg: T.raised, border: T.border, label: role };
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 600, color: cfg.color, whiteSpace: "nowrap", letterSpacing: "0.02em" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 600, color: cfg.color, whiteSpace: "nowrap", letterSpacing: "0.02em" }}>
       {cfg.label}
     </span>
   );
 }
 
-function Bar({ value, status, h = 6 }) {
+function Bar({ value, status, h = 8 }) {
   const c = STATUS_THEME[status]?.color || T.brand;
+  const barBg = !status ? `linear-gradient(90deg, ${T.brand}, #A78BFA)` : c;
   return (
     <div style={{ flex: 1, height: h, background: "rgba(0,0,0,0.06)", borderRadius: h, overflow: "hidden", position: "relative" }}>
-      <div style={{ width: `${Math.min(value, 100)}%`, height: "100%", background: c, borderRadius: h, transition: "width 0.6s cubic-bezier(0.4,0,0.2,1)" }} />
+      <div style={{ width: `${Math.min(value, 100)}%`, height: "100%", background: barBg, borderRadius: h, transition: "width 0.6s cubic-bezier(0.4,0,0.2,1)" }} />
       <div style={{ position: "absolute", left: `${TP}%`, top: 0, bottom: 0, width: 1, background: T.textDim, opacity: 0.5 }} />
     </div>
   );
@@ -534,10 +535,10 @@ function Bar({ value, status, h = 6 }) {
 
 function Metric({ label, value, sub, status }) {
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 20px", flex: 1, minWidth: 130, boxShadow: T.shadowSm }}>
-      <div style={{ fontSize: 12, color: T.textMuted, fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: status ? STATUS_THEME[status]?.color : T.text, fontFamily: F.mono, letterSpacing: "-0.02em" }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: T.textDim, marginTop: 4 }}>{sub}</div>}
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: "20px 24px", flex: 1, minWidth: 130, boxShadow: T.shadowSm, borderTop: status && STATUS_THEME[status]?.color ? `3px solid ${STATUS_THEME[status].color}` : undefined }}>
+      <div style={{ fontSize: 13, color: T.textMuted, fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>{label}</div>
+      <div style={{ fontSize: 30, fontWeight: 700, color: status ? STATUS_THEME[status]?.color : T.text, fontFamily: F.mono, letterSpacing: "-0.02em" }}>{value}</div>
+      {sub && <div style={{ fontSize: 13, color: T.textDim, marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -548,8 +549,8 @@ function Btn({ children, primary, danger, small, disabled, onClick, style: sx })
       background: primary ? T.brand : danger ? T.bad : T.surface,
       color: primary || danger ? "#fff" : T.textSoft,
       border: primary || danger ? "none" : `1px solid ${T.border}`,
-      borderRadius: 9, padding: small ? "6px 13px" : "9px 18px",
-      fontSize: small ? 11 : 12, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer",
+      borderRadius: 10, padding: small ? "7px 15px" : "10px 20px",
+      fontSize: small ? 12 : 13, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer",
       opacity: disabled ? 0.35 : 1, transition: "all 0.15s", fontFamily: F.body,
       boxShadow: primary ? "0 1px 4px rgba(0,113,227,0.22)" : danger ? "0 1px 4px rgba(255,59,48,0.18)" : T.shadowSm,
       letterSpacing: "-0.01em", ...sx,
@@ -561,8 +562,8 @@ function Input({ value, onChange, placeholder, type, style: sx, ...props }) {
   return (
     <input type={type || "text"} value={value} onChange={onChange} placeholder={placeholder} {...props}
       style={{
-        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9,
-        padding: "9px 13px", color: T.text, fontSize: 15, fontFamily: F.body, outline: "none",
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10,
+        padding: "10px 14px", color: T.text, fontSize: 15, fontFamily: F.body, outline: "none",
         transition: "border-color 0.15s, box-shadow 0.15s", boxSizing: "border-box",
         boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)", ...sx,
       }}
@@ -576,8 +577,8 @@ function Select({ value, onChange, children, style: sx }) {
   return (
     <select value={value} onChange={onChange}
       style={{
-        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9,
-        padding: "9px 13px", color: value ? T.text : T.textMuted,
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10,
+        padding: "10px 14px", color: value ? T.text : T.textMuted,
         fontSize: 15, fontFamily: F.body, outline: "none", cursor: "pointer",
         boxSizing: "border-box", boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)", ...sx,
       }}
@@ -591,8 +592,8 @@ function TextArea({ value, onChange, placeholder, rows = 4 }) {
   return (
     <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
       style={{
-        width: "100%", boxSizing: "border-box", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9,
-        padding: "10px 13px", color: T.text, fontSize: 15, fontFamily: F.body, outline: "none", resize: "vertical",
+        width: "100%", boxSizing: "border-box", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10,
+        padding: "11px 14px", color: T.text, fontSize: 15, fontFamily: F.body, outline: "none", resize: "vertical",
         transition: "border-color 0.15s, box-shadow 0.15s", boxShadow: "inset 0 1px 2px rgba(0,0,0,0.04)",
       }}
       onFocus={e => { e.target.style.borderColor = T.brand; e.target.style.boxShadow = `0 0 0 3px rgba(0,113,227,0.12), inset 0 1px 2px rgba(0,0,0,0.04)`; }}
@@ -616,7 +617,7 @@ function Avatar({ letters, size = 32, color }) {
 function Card({ children, style: sx, onClick }) {
   return (
     <div onClick={onClick} style={{
-      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14,
+      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16,
       boxShadow: T.shadowSm, ...sx,
       cursor: onClick ? "pointer" : "default", transition: "box-shadow 0.18s, border-color 0.18s",
     }}
@@ -627,22 +628,22 @@ function Card({ children, style: sx, onClick }) {
 }
 
 function SectionLabel({ children, style: sx }) {
-  return <div style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 10, ...sx }}>{children}</div>;
+  return <div style={{ fontSize: 13, fontWeight: 600, color: T.textMuted, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 10, borderLeft: `3px solid ${T.brand}`, paddingLeft: 8, ...sx }}>{children}</div>;
 }
 
 function EmptyState({ text }) {
-  return <div style={{ padding: "48px 20px", textAlign: "center", color: T.textDim, fontSize: 15, fontWeight: 400 }}>{text}</div>;
+  return <div style={{ padding: "52px 24px", textAlign: "center", color: T.textDim, fontSize: 16, fontWeight: 400 }}>{text}</div>;
 }
 
 function CountBadge({ count, color }) {
   if (!count) return null;
-  return <span style={{ background: color || T.bad, color: "#fff", borderRadius: 20, padding: "1px 6px", fontSize: 11, fontWeight: 700, marginLeft: 6, letterSpacing: "0.02em" }}>{count}</span>;
+  return <span style={{ background: color || T.bad, color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: 12, fontWeight: 700, marginLeft: 6, letterSpacing: "0.02em" }}>{count}</span>;
 }
 
 function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems, subItemsFor, activeSubItem, onSelectSubItem }) {
   return (
     <div style={{
-      width: 240, background: T.glass, borderRight: `1px solid ${T.border}`,
+      width: 252, background: T.glass, borderRight: `1px solid ${T.border}`,
       backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)",
       display: "flex", flexDirection: "column", height: "100vh", flexShrink: 0,
     }}>
@@ -666,8 +667,11 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
         {items.map(item => (
           <div key={item.id}>
             <button onClick={() => onSelect(item.id)} style={{
-              background: active === item.id ? T.brandDim : "transparent",
-              border: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+              background: active === item.id ? "rgba(0,113,227,0.12)" : "transparent",
+              borderTop: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+              borderRight: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+              borderBottom: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+              borderLeft: active === item.id ? `3px solid ${T.brand}` : "1px solid transparent",
               borderRadius: 9, padding: "9px 12px", cursor: "pointer",
               display: "flex", alignItems: "center", gap: 9,
               color: active === item.id ? T.brand : T.textMuted,
@@ -711,10 +715,10 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
 
 function Header({ title, sub, right }) {
   return (
-    <div style={{ padding: "24px 32px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", background: T.glass, backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", position: "sticky", top: 0, zIndex: 10 }}>
+    <div style={{ padding: "26px 36px 22px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", background: T.glass, backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", position: "sticky", top: 0, zIndex: 10 }}>
       <div>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: T.text, letterSpacing: "-0.03em" }}>{title}</h1>
-        {sub && <p style={{ margin: "3px 0 0", fontSize: 14, color: T.textMuted, fontWeight: 400 }}>{sub}</p>}
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: T.text, letterSpacing: "-0.03em" }}>{title}</h1>
+        {sub && <p style={{ margin: "3px 0 0", fontSize: 15, color: T.textMuted, fontWeight: 400 }}>{sub}</p>}
       </div>
       {right}
     </div>
@@ -722,7 +726,7 @@ function Header({ title, sub, right }) {
 }
 
 function Pane({ children }) {
-  return <div style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: 20 }}>{children}</div>;
+  return <div style={{ padding: "32px 36px", display: "flex", flexDirection: "column", gap: 24 }}>{children}</div>;
 }
 
 class FinErrorBoundary extends Component {
