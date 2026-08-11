@@ -2820,9 +2820,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       const userSections = [];
       for (const { period, periodKey, dateRange, existing } of periodDataList) {
         const krList = [];
+        (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
-        (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
         const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
         if (freshKrs.length) userSections.push({ period, periodKey, dateRange, krs: freshKrs });
@@ -2851,9 +2851,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       const emailSections = [];
       for (const { period, periodKey, dateRange, existing } of periodDataList) {
         const krList = [];
+        (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
-        (memberData[u.id]?.krs || []).filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         if (!krList.length) continue;
         const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
         const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`) && kr.type !== "manager-fill");
@@ -3182,8 +3182,84 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
           if (selDeptObj) {
             const d = selDeptObj;
             const filterSetupP = krs => adminOkrPeriod === "all" ? (krs || []) : (krs || []).filter(kr => (kr.period || "monthly") === adminOkrPeriod);
-            const KCOL_S = "50px 1fr 90px 130px 80px 1fr 44px";
+            const KCOL_S = "50px 1fr 90px 130px 80px 1fr 92px";
             const renderSetupRows = (krs, deptId, teamId) => krs.map((kr, i) => {
+              if (addTarget === `edit-${kr.id}`) {
+                const isTracker = newKr.krType === "tracker";
+                const isMgrFill = newKr.krType === "manager-fill";
+                const isStandard = !isTracker && newKr.krType !== "progress" && !isMgrFill;
+                const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
+                const saveEdit = () => {
+                  if (!newKr.label) return;
+                  if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
+                  if (newKr.krType === "progress" && Number(newKr.target) <= 0) return;
+                  const base = { id: kr.id, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
+                  let updated;
+                  if (newKr.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
+                  else if (newKr.krType === "progress") updated = { ...base, type: "progress", target: Number(newKr.target), actual: kr.actual };
+                  else if (newKr.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(newKr.target), actual: kr.actual };
+                  else if (newKr.useMonthlyTargets) updated = { ...base, monthlyTargets: kr.monthlyTargets || Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: kr.monthlyActuals || {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) };
+                  else updated = { ...base, target: Number(newKr.target), actual: kr.actual };
+                  dispatch({ type: "REPLACE_KR", deptId, teamId, krId: kr.id, kr: updated });
+                  if (teamId) triggerSyncPrompt(deptId, teamId);
+                  setAddTarget(null);
+                  setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+                };
+                return (
+                  <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.warn, marginBottom: 10, letterSpacing: "0.04em", textTransform: "uppercase" }}>Edit Key Result — {kr.id}</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                      <Input value={newKr.label} onChange={e => setNewKr(p => ({ ...p, label: e.target.value }))} placeholder="Key result name *" style={{ flex: 2, minWidth: 200 }} />
+                      <select value={newKr.krType} onChange={e => setNewKr(p => ({ ...p, krType: e.target.value, useMonthlyTargets: false }))} style={{ ...sel, flex: 1, minWidth: 160 }}>
+                        <option value="">Standard (Yes / No)</option>
+                        <option value="tracker">Tracker (number only)</option>
+                        <option value="progress">Progress (cumulative)</option>
+                        <option value="manager-fill">Manager Fill</option>
+                      </select>
+                      <select value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="biannual">Bi-Annual</option>
+                        <option value="annual">Annual</option>
+                      </select>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      {!isTracker && !newKr.useMonthlyTargets && (<>
+                        <select value={newKr.operator || ">="} onChange={e => setNewKr(p => ({ ...p, operator: e.target.value }))} style={{ ...sel, width: 80 }}>
+                          <option value=">=">≥</option>
+                          <option value="<=">≤</option>
+                          <option value="=">=</option>
+                        </select>
+                        <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ width: 110 }} />
+                      </>)}
+                      <Input value={newKr.unit} onChange={e => setNewKr(p => ({ ...p, unit: e.target.value }))} placeholder="Unit (e.g. $, Days)" style={{ width: 150 }} />
+                      <Input value={newKr.dataSource} onChange={e => setNewKr(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ flex: 1, minWidth: 140 }} />
+                      {isStandard && (
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                          <input type="checkbox" checked={!!newKr.useMonthlyTargets} onChange={e => setNewKr(p => ({ ...p, useMonthlyTargets: e.target.checked }))} style={{ accentColor: T.brand }} />
+                          Monthly targets
+                        </label>
+                      )}
+                    </div>
+                    {isStandard && newKr.useMonthlyTargets && (
+                      <div style={{ marginBottom: 8 }}>
+                        <Input value={newKr.dreamTarget} onChange={e => setNewKr(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260 }} />
+                      </div>
+                    )}
+                    {isMgrFill && (
+                      <div style={{ fontSize: 12, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "7px 12px", marginBottom: 8 }}>
+                        Manager Fill — member will not receive a check-in; manager assesses yes/no + value in their portal.
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn primary small onClick={saveEdit}>✓ Save Changes</Btn>
+                      <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>Cancel</Btn>
+                    </div>
+                  </div>
+                );
+              }
               const isMonthly = !!kr.monthlyTargets;
               const targetDisplay = kr.type === "tracker" ? "—" : isMonthly ? "Monthly breakdown" : `${kr.operator || ">="} ${fmt(kr.target)}`;
               return (
@@ -3202,7 +3278,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <span style={{ fontFamily: F.mono, fontSize: 12, color: kr.type === "tracker" ? T.textDim : T.textMuted }}>{targetDisplay}</span>
                   <span style={{ fontSize: 12, color: T.textMuted }}>{kr.unit || "—"}</span>
                   <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
+                    <button onClick={() => {
+                      const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : "";
+                      const isMonthlyKr = !!kr.monthlyTargets;
+                      setAddTarget(`edit-${kr.id}`);
+                      setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType });
+                    }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", cursor: "pointer", color: T.brand, fontSize: 13 }}>✏</button>
                     <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "2px 9px", cursor: "pointer", color: T.bad, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>×</button>
                   </div>
                 </div>
@@ -7271,6 +7353,11 @@ function appReducer(state, action) {
       if (!action.teamId) return { ...d, krs: d.krs.filter(kr => kr.id !== action.krId) };
       return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.filter(kr => kr.id !== action.krId) }) };
     })};
+    case "REPLACE_KR": return { ...state, depts: state.depts.map(d => {
+      if (d.id !== action.deptId) return d;
+      if (!action.teamId) return { ...d, krs: d.krs.map(kr => kr.id !== action.krId ? kr : action.kr) };
+      return { ...d, teams: d.teams.map(t => t.id !== action.teamId ? t : { ...t, krs: t.krs.map(kr => kr.id !== action.krId ? kr : action.kr) }) };
+    })};
     case "SYNC_DEPT_KRS_TO_MEMBERS": {
       const dept = state.depts.find(d => d.id === action.deptId);
       if (!dept) return state;
@@ -7282,7 +7369,7 @@ function appReducer(state, action) {
         const existing = md.krs || [];
         // Update metadata only. Reset actual: 0 → null (initial default, not a real submission).
         // Non-zero actuals from real approved check-ins are preserved.
-        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); if (!dk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = dk; return { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; });
+        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); if (!dk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = dk; const merged = { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; if (!meta.monthlyTargets) { delete merged.monthlyTargets; delete merged.monthlyActuals; } return merged; });
         // New KRs start with null actual so krCompletion correctly treats them as not yet measured
         const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
@@ -7305,7 +7392,7 @@ function appReducer(state, action) {
         const existing = md.krs || [];
         // Update metadata only. Reset actual: 0 → null (initial default, not a real submission).
         // Non-zero actuals from real approved check-ins are preserved.
-        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); if (!tk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = tk; return { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; });
+        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); if (!tk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = tk; const merged = { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; if (!meta.monthlyTargets) { delete merged.monthlyTargets; delete merged.monthlyActuals; } return merged; });
         // New KRs start with null actual so krCompletion correctly treats them as not yet measured
         const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
