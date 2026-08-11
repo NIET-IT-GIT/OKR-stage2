@@ -3182,7 +3182,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
           if (selDeptObj) {
             const d = selDeptObj;
             const filterSetupP = krs => adminOkrPeriod === "all" ? (krs || []) : (krs || []).filter(kr => (kr.period || "monthly") === adminOkrPeriod);
-            const KCOL_S = "50px 1fr 90px 130px 80px 1fr 92px";
+            const KCOL_S = "50px 1fr 100px 90px 130px 80px 1fr 92px";
             const renderSetupRows = (krs, deptId, teamId) => krs.map((kr, i) => {
               if (addTarget === `edit-${kr.id}`) {
                 const isTracker = newKr.krType === "tracker";
@@ -3262,18 +3262,22 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               }
               const isMonthly = !!kr.monthlyTargets;
               const targetDisplay = kr.type === "tracker" ? "—" : isMonthly ? "Monthly breakdown" : `${kr.operator || ">="} ${fmt(kr.target)}`;
+              const typeLabel = kr.type === "tracker" ? "Tracker" : kr.type === "progress" ? "Progress" : kr.type === "manager-fill" ? "Mgr Fill" : "Standard";
+              const typeStyle = kr.type === "tracker"
+                ? { color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd" }
+                : kr.type === "progress"
+                ? { color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}` }
+                : kr.type === "manager-fill"
+                ? { color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a" }
+                : { color: T.textMuted, background: T.raised, border: `1px solid ${T.border}` };
               return (
                 <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL_S, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
                   <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
                   <div>
                     <span title={kr.label} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{kr.label}</span>
-                    <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
-                      {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px" }}>Tracker</span>}
-                      {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px" }}>Progress</span>}
-                      {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px" }}>Mgr Fill</span>}
-                      {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px" }}>Monthly</span>}
-                    </div>
+                    {isMonthly && <div style={{ marginTop: 2 }}><span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px" }}>Monthly</span></div>}
                   </div>
+                  <div><span style={{ fontSize: 10, fontWeight: 600, borderRadius: 8, padding: "2px 7px", ...typeStyle }}>{typeLabel}</span></div>
                   <span style={{ fontSize: 12, color: T.textMuted }}>{kr.period ? kr.period.charAt(0).toUpperCase() + kr.period.slice(1) : "Monthly"}</span>
                   <span style={{ fontFamily: F.mono, fontSize: 12, color: kr.type === "tracker" ? T.textDim : T.textMuted }}>{targetDisplay}</span>
                   <span style={{ fontSize: 12, color: T.textMuted }}>{kr.unit || "—"}</span>
@@ -3360,7 +3364,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               <Card style={{ overflow: "hidden", marginBottom: 0 }}>
                 {krs.length > 0 && (<>
                   <div style={{ display: "grid", gridTemplateColumns: KCOL_S, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-                    <span>ID</span><span>Key Result</span><span>Period</span><span>Target</span><span>Unit</span><span>Data Source</span><span />
+                    <span>ID</span><span>Key Result</span><span>Type</span><span>Period</span><span>Target</span><span>Unit</span><span>Data Source</span><span />
                   </div>
                   {renderSetupRows(krs, deptId, teamId)}
                 </>)}
