@@ -61,13 +61,14 @@ export default async function handler(req, res) {
   const ctaText    = template.ctaText  || "Submit My Check-In →";
   const footerText = (template.footer || "You are receiving this because you have KPI targets in the NIET Group OKRs system.\nPlease do not reply to this email.").replace(/\n/g, "<br/>");
 
+  const opHtml = op => op === ">=" ? "&ge;" : op === "<=" ? "&le;" : op === ">" ? "&gt;" : op === "<" ? "&lt;" : op || "&ge;";
   const buildKrRows = (krs) => krs.map(kr => `
     <tr>
-      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:14px">${kr.label || "—"}${kr.type === "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Tracker</span>' : ""}${kr.isMonthly && kr.type !== "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Monthly</span>' : ""}</td>
+      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:14px">${kr.label || "—"}${kr.type === "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Tracker</span>' : ""}${kr.type === "progress" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0071e3;background:#e8f0fe;border:1px solid #93c5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Progress</span>' : ""}${kr.isMonthly && kr.type !== "tracker" && kr.type !== "progress" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Monthly</span>' : ""}</td>
       <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:14px;font-family:monospace">
-        ${kr.type === "tracker" ? '<em style="color:#7c3aed;font-style:italic;font-family:sans-serif">Only need to record numbers</em>' : (kr.target != null ? kr.target : "—")}
+        ${kr.type === "tracker" ? '<em style="color:#7c3aed;font-style:italic;font-family:sans-serif">Record numbers only</em>' : kr.type === "progress" ? `<em style="color:#0071e3;font-style:italic;font-family:sans-serif">Record cumulative progress toward ${kr.target != null ? kr.target : "—"}${kr.unit ? " " + kr.unit : ""}</em>` : (kr.target != null ? `${opHtml(kr.operator)} ${kr.target}` : "—")}
       </td>
-      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6e6e73">${kr.unit || "—"}</td>
+      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6e6e73">${kr.type === "progress" ? "—" : (kr.unit || "—")}</td>
     </tr>`).join("");
 
   const TABLE_HEADER = `
@@ -146,7 +147,7 @@ export default async function handler(req, res) {
     ...emailSections.flatMap(sec => {
       const secLabel = PERIOD_LABELS[sec.period] || sec.period;
       const lines = isMultiPeriod ? [`${secLabel.toUpperCase()} CHECK-IN${sec.dateRange ? " · " + sec.dateRange : ""}`, "-----------------------------"] : ["YOUR KPI TARGETS", "----------------"];
-      return [...lines, ...sec.krs.map(kr => `• ${kr.label || "—"}${kr.type !== "tracker" && kr.target != null ? `: ${kr.operator || ">="} ${kr.target}${kr.unit ? " " + kr.unit : ""}` : " (Tracker — record numbers only)"}`)];
+      return [...lines, ...sec.krs.map(kr => `• ${kr.label || "—"}${kr.type === "tracker" ? " (Tracker — record numbers only)" : kr.type === "progress" ? ` (Progress — record cumulative total toward ${kr.target != null ? kr.target : "—"}${kr.unit ? " " + kr.unit : ""})` : (kr.target != null ? `: ${kr.operator || ">="} ${kr.target}${kr.unit ? " " + kr.unit : ""}` : "")}`)];
     }),
     "",
     ...(overdueSubs.length > 0 ? [
