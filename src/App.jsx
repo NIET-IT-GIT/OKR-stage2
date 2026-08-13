@@ -2249,6 +2249,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
   const [lbPeriod, setLbPeriod] = useState("all");
   const [lbExpandedMember, setLbExpandedMember] = useState(null);
+  const [lbEditKr, setLbEditKr] = useState(null);
+  const [lbAddMember, setLbAddMember] = useState(null);
+  const [lbKrForm, setLbKrForm] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
   const [confirmDeleteKr, setConfirmDeleteKr] = useState(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
@@ -4961,7 +4964,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         </div>
                         {isExpanded && (
                           <div style={{ borderBottom: `1px solid ${T.border}`, borderLeft: `3px solid ${T.brand}`, background: T.bg, padding: "14px 20px" }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 12 }}>Editing KPIs — {m.name}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 8 }}>Editing KPIs — {m.name}</div>
+                            <div style={{ fontSize: 12, color: "#92400e", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 6, padding: "7px 12px", marginBottom: 12 }}>⚠ Changes here are personal overrides for this member only. They may be overwritten if dept/team KRs are re-synced from the Departments tab.</div>
                             {krs.length === 0
                               ? <div style={{ fontSize: 13, color: T.textMuted }}>No OKRs synced yet — assign this member to a team in User Management, then click ⟳ Sync to Team Members in the Departments tab.</div>
                               : [{ key: "daily", label: "Daily OKRs" }, { key: "weekly", label: "Weekly OKRs" }, { key: "monthly", label: "Monthly OKRs" }, { key: "quarterly", label: "Quarterly OKRs" }, { key: "biannual", label: "Bi-Annual OKRs" }, { key: "annual", label: "Annual OKRs" }].map(({ key, label }) => {
@@ -4970,10 +4974,85 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 return (
                                   <div key={key} style={{ marginBottom: 14 }}>
                                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>{label} ({group.length})</div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
-                                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span></span>
+                                    <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 130px 28px 30px", gap: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
+                                      <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span></span><span></span>
                                     </div>
                                     {group.map((kr, ki) => {
+                                      if (lbEditKr?.memberId === m.id && lbEditKr?.krId === kr.id) {
+                                        const isTracker = lbKrForm.krType === "tracker";
+                                        const isMgrFill = lbKrForm.krType === "manager-fill";
+                                        const isStandard = !isTracker && lbKrForm.krType !== "progress" && !isMgrFill;
+                                        const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
+                                        const saveLbEdit = () => {
+                                          if (!lbKrForm.label) return;
+                                          if (lbKrForm.krType !== "tracker" && lbKrForm.krType !== "progress" && !lbKrForm.useMonthlyTargets && lbKrForm.target === "") return;
+                                          if (lbKrForm.krType === "progress" && lbKrForm.target === "") return;
+                                          const base = { id: kr.id, label: lbKrForm.label, unit: lbKrForm.unit.trim(), dataSource: lbKrForm.dataSource.trim(), operator: lbKrForm.operator || ">=", period: lbKrForm.period || "monthly" };
+                                          let updated;
+                                          if (lbKrForm.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
+                                          else if (lbKrForm.krType === "progress") updated = { ...base, type: "progress", target: Number(lbKrForm.target), actual: kr.actual };
+                                          else if (lbKrForm.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: kr.actual };
+                                          else if (lbKrForm.useMonthlyTargets) updated = { ...base, monthlyTargets: kr.monthlyTargets || Object.fromEntries(getFYMonths().map(mo => [mo.key, 0])), monthlyActuals: kr.monthlyActuals || {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
+                                          else updated = { ...base, target: Number(lbKrForm.target), actual: kr.actual };
+                                          dispatch({ type: "REPLACE_MEMBER_KR", memberId: m.id, krId: kr.id, kr: updated });
+                                          setLbEditKr(null);
+                                          setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+                                        };
+                                        return (
+                                          <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: T.warn, marginBottom: 10, letterSpacing: "0.04em", textTransform: "uppercase" }}>Edit Key Result — {kr.id}</div>
+                                            <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                                              <Input value={lbKrForm.label} onChange={e => setLbKrForm(p => ({ ...p, label: e.target.value }))} placeholder="Key result name *" style={{ flex: 2, minWidth: 200 }} />
+                                              <select value={lbKrForm.krType} onChange={e => setLbKrForm(p => ({ ...p, krType: e.target.value, useMonthlyTargets: false }))} style={{ ...sel, flex: 1, minWidth: 160 }}>
+                                                <option value="">Standard (Yes / No)</option>
+                                                <option value="tracker">Tracker (number only)</option>
+                                                <option value="progress">Progress (cumulative)</option>
+                                                <option value="manager-fill">Manager Fill</option>
+                                              </select>
+                                              <select value={lbKrForm.period || "monthly"} onChange={e => setLbKrForm(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
+                                                <option value="daily">Daily</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="monthly">Monthly</option>
+                                                <option value="quarterly">Quarterly</option>
+                                                <option value="biannual">Bi-Annual</option>
+                                                <option value="annual">Annual</option>
+                                              </select>
+                                            </div>
+                                            <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                              {!isTracker && !lbKrForm.useMonthlyTargets && (<>
+                                                <select value={lbKrForm.operator || ">="} onChange={e => setLbKrForm(p => ({ ...p, operator: e.target.value }))} style={{ ...sel, width: 80 }}>
+                                                  <option value=">=">≥</option>
+                                                  <option value="<=">≤</option>
+                                                  <option value="=">=</option>
+                                                </select>
+                                                <Input value={lbKrForm.target} onChange={e => setLbKrForm(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ width: 110 }} />
+                                              </>)}
+                                              <Input value={lbKrForm.unit} onChange={e => setLbKrForm(p => ({ ...p, unit: e.target.value }))} placeholder="Unit (e.g. $, Days)" style={{ width: 150 }} />
+                                              <Input value={lbKrForm.dataSource} onChange={e => setLbKrForm(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ flex: 1, minWidth: 140 }} />
+                                              {isStandard && (
+                                                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                                  <input type="checkbox" checked={!!lbKrForm.useMonthlyTargets} onChange={e => setLbKrForm(p => ({ ...p, useMonthlyTargets: e.target.checked }))} style={{ accentColor: T.brand }} />
+                                                  Monthly targets
+                                                </label>
+                                              )}
+                                            </div>
+                                            {isStandard && lbKrForm.useMonthlyTargets && (
+                                              <div style={{ marginBottom: 8 }}>
+                                                <Input value={lbKrForm.dreamTarget} onChange={e => setLbKrForm(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260 }} />
+                                              </div>
+                                            )}
+                                            {isMgrFill && (
+                                              <div style={{ fontSize: 12, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "7px 12px", marginBottom: 8 }}>
+                                                Manager Fill — member will not receive a check-in; manager assesses yes/no + value in their portal.
+                                              </div>
+                                            )}
+                                            <div style={{ display: "flex", gap: 8 }}>
+                                              <Btn primary small onClick={saveLbEdit}>✓ Save Changes</Btn>
+                                              <Btn small onClick={() => { setLbEditKr(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>Cancel</Btn>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
                                       const pct = krCompletion(kr); const st = getStatus(pct);
                                       const isMonthly = !!(kr.monthlyTargets);
                                       const mk = currentFYMonthKey();
@@ -4981,7 +5060,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                       const mAct = isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : null;
                                       return (
                                         <div key={kr.id} style={{ borderBottom: `1px solid ${T.border}` }}>
-                                          <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 140px 32px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", fontSize: 13 }}>
+                                          <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 130px 28px 30px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", fontSize: 13 }}>
                                             <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
                                             <div>
                                               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={kr.label}>{kr.label}</span>
@@ -4999,6 +5078,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                               : <NumInput value={kr.actual} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: n })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
                                             {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
+                                            <button onClick={() => {
+                                              const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : "";
+                                              const isMonthlyKr = !!kr.monthlyTargets;
+                                              setLbAddMember(null);
+                                              setLbEditKr({ memberId: m.id, krId: kr.id });
+                                              setLbKrForm({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType });
+                                            }} title="Edit this KR" style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 5px", cursor: "pointer", color: T.brand, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✏</button>
                                             <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
                                               title="Delete this OKR"
                                               style={{ background: "none", border: `1px solid ${T.badBorder || T.bad}`, borderRadius: 5, padding: "3px 6px", cursor: "pointer", color: T.bad, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
@@ -5044,6 +5130,85 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 );
                               })
                             }
+                            {lbAddMember === m.id ? (() => {
+                              const isTracker = lbKrForm.krType === "tracker";
+                              const isMgrFill = lbKrForm.krType === "manager-fill";
+                              const isStandard = !isTracker && lbKrForm.krType !== "progress" && !isMgrFill;
+                              const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
+                              const addLbKr = () => {
+                                if (!lbKrForm.label) return;
+                                if (lbKrForm.krType !== "tracker" && lbKrForm.krType !== "progress" && !lbKrForm.useMonthlyTargets && lbKrForm.target === "") return;
+                                if (lbKrForm.krType === "progress" && lbKrForm.target === "") return;
+                                const base = { id: `mkr_${Date.now().toString(36)}`, label: lbKrForm.label, unit: lbKrForm.unit.trim(), dataSource: lbKrForm.dataSource.trim(), operator: lbKrForm.operator || ">=", period: lbKrForm.period || "monthly" };
+                                let kr;
+                                if (lbKrForm.krType === "tracker") kr = { ...base, type: "tracker", target: 0, actual: null };
+                                else if (lbKrForm.krType === "progress") kr = { ...base, type: "progress", target: Number(lbKrForm.target), actual: null };
+                                else if (lbKrForm.krType === "manager-fill") kr = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: null };
+                                else if (lbKrForm.useMonthlyTargets) kr = { ...base, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, 0])), monthlyActuals: {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
+                                else kr = { ...base, target: Number(lbKrForm.target), actual: null };
+                                dispatch({ type: "ADD_MEMBER_KR", memberId: m.id, kr });
+                                setLbAddMember(null);
+                                setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+                              };
+                              return (
+                                <div style={{ padding: "14px 16px", background: T.brandDim, borderTop: `2px solid ${T.brand}`, marginTop: 8 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 10, letterSpacing: "0.04em", textTransform: "uppercase" }}>New Key Result</div>
+                                  <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                                    <Input value={lbKrForm.label} onChange={e => setLbKrForm(p => ({ ...p, label: e.target.value }))} placeholder="Key result name *" style={{ flex: 2, minWidth: 200 }} />
+                                    <select value={lbKrForm.krType} onChange={e => setLbKrForm(p => ({ ...p, krType: e.target.value, useMonthlyTargets: false }))} style={{ ...sel, flex: 1, minWidth: 160 }}>
+                                      <option value="">Standard (Yes / No)</option>
+                                      <option value="tracker">Tracker (number only)</option>
+                                      <option value="progress">Progress (cumulative)</option>
+                                      <option value="manager-fill">Manager Fill</option>
+                                    </select>
+                                    <select value={lbKrForm.period || "monthly"} onChange={e => setLbKrForm(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
+                                      <option value="daily">Daily</option>
+                                      <option value="weekly">Weekly</option>
+                                      <option value="monthly">Monthly</option>
+                                      <option value="quarterly">Quarterly</option>
+                                      <option value="biannual">Bi-Annual</option>
+                                      <option value="annual">Annual</option>
+                                    </select>
+                                  </div>
+                                  <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                    {!isTracker && !lbKrForm.useMonthlyTargets && (<>
+                                      <select value={lbKrForm.operator || ">="} onChange={e => setLbKrForm(p => ({ ...p, operator: e.target.value }))} style={{ ...sel, width: 80 }}>
+                                        <option value=">=">≥</option>
+                                        <option value="<=">≤</option>
+                                        <option value="=">=</option>
+                                      </select>
+                                      <Input value={lbKrForm.target} onChange={e => setLbKrForm(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ width: 110 }} />
+                                    </>)}
+                                    <Input value={lbKrForm.unit} onChange={e => setLbKrForm(p => ({ ...p, unit: e.target.value }))} placeholder="Unit (e.g. $, Days)" style={{ width: 150 }} />
+                                    <Input value={lbKrForm.dataSource} onChange={e => setLbKrForm(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ flex: 1, minWidth: 140 }} />
+                                    {isStandard && (
+                                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                        <input type="checkbox" checked={!!lbKrForm.useMonthlyTargets} onChange={e => setLbKrForm(p => ({ ...p, useMonthlyTargets: e.target.checked }))} style={{ accentColor: T.brand }} />
+                                        Monthly targets
+                                      </label>
+                                    )}
+                                  </div>
+                                  {isStandard && lbKrForm.useMonthlyTargets && (
+                                    <div style={{ marginBottom: 8 }}>
+                                      <Input value={lbKrForm.dreamTarget} onChange={e => setLbKrForm(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260 }} />
+                                    </div>
+                                  )}
+                                  {isMgrFill && (
+                                    <div style={{ fontSize: 12, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "7px 12px", marginBottom: 8 }}>
+                                      Manager Fill — member will not receive a check-in; manager assesses yes/no + value in their portal.
+                                    </div>
+                                  )}
+                                  <div style={{ display: "flex", gap: 8 }}>
+                                    <Btn primary small onClick={addLbKr}>✓ Add Key Result</Btn>
+                                    <Btn small onClick={() => { setLbAddMember(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>Cancel</Btn>
+                                  </div>
+                                </div>
+                              );
+                            })() : (
+                              <div style={{ marginTop: 10 }}>
+                                <Btn small onClick={() => { setLbEditKr(null); setLbAddMember(m.id); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>+ Add Key Result</Btn>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -7443,6 +7608,11 @@ function appReducer(state, action) {
       const md = state.memberData[action.memberId];
       if (!md) return state;
       return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).map(kr => kr.id === action.krId ? { ...kr, [action.field]: action.value } : kr) } } };
+    }
+    case "REPLACE_MEMBER_KR": {
+      const md = state.memberData[action.memberId];
+      if (!md) return state;
+      return { ...state, memberData: { ...state.memberData, [action.memberId]: { ...md, krs: (md.krs || []).map(kr => kr.id !== action.krId ? kr : action.kr) } } };
     }
     case "MANAGER_SUBMIT_KR": {
       const { memberId, memberName, deptId, kr, period, periodKey, actualValue, approvedBy, newId } = action;
