@@ -4017,7 +4017,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
                                   <span style={{ fontSize: 11, color: T.textDim }}>{s.krType === "progress" ? "target" : "performance target"}</span>
                                   {s.answer === "no" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.bad, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.bad }}>actual</span></>}
-                                  {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.actualValue ?? s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span></>}
+                                  {s.answer === "yes" && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.ok, lineHeight: 1, marginLeft: 8 }}>{s.actualValue ?? s.krTarget}</span><span style={{ fontSize: 11, color: T.ok }}>actual</span>{s.actualValue == null && <span style={{ fontSize: 10, color: T.textDim, marginLeft: 3 }}>(assumed)</span>}</>}
                                   {s.krType === "progress" && s.actualValue != null && <><span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>·</span><span style={{ fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: T.brand, lineHeight: 1, marginLeft: 8 }}>{s.actualValue}</span><span style={{ fontSize: 11, color: T.brand }}>recorded</span></>}
                                 </div>
                                 <div style={{ fontSize: 12, color: T.textMuted }}>{periodDisplayLabel(s.period, s.periodKey)} · Sent: {s.sentAt?.slice(0,10) || "—"}</div>
@@ -7141,8 +7141,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             <span style={{ fontSize: 12, color: T.textMuted }}>{s.dateRange || s.periodKey}</span>
                             {s.krType === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Tracker</span>}
                             {s.krType === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Progress</span>}
+                            {s.managerFilled && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>Mgr Assessed</span>}
                           </div>
-                          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: ansCol }}>{ansLabel}</div>
+                          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: ansCol }}>{s.managerFilled ? (s.answer === "yes" ? "✓ Manager assessed: Met" : s.answer === "no" ? "✗ Manager assessed: Not met" : ansLabel) : ansLabel}</div>
                           {s.answer === "no" && s.actualValue != null && (
                             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
                               Actual: <span style={{ fontFamily: F.mono, fontWeight: 700, color: T.bad }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
@@ -7152,6 +7153,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           )}
                           {s.answer === "yes" && s.krTarget != null && (
                             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
+                              {s.actualValue != null && <><span style={{ fontFamily: F.mono, fontWeight: 700, color: T.ok }}>{s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span><span style={{ margin: "0 6px" }}>·</span></>}
                               Performance Target: <span style={{ fontFamily: F.mono }}>{s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                             </div>
                           )}
