@@ -2725,8 +2725,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
 
   function addKr(deptId, teamId) {
     if (!newKr.label) return;
-    if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
-    if (newKr.krType === "progress" && Number(newKr.target) <= 0) return;
+    if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && newKr.target === "") return;
+    if (newKr.krType === "progress" && newKr.target === "") return;
     const newId = `N${Date.now().toString(36).slice(-4).toUpperCase()}`;
     const baseKr = { id: newId, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
     const kr = newKr.krType === "tracker"
@@ -3191,8 +3191,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
                 const saveEdit = () => {
                   if (!newKr.label) return;
-                  if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && Number(newKr.target) <= 0) return;
-                  if (newKr.krType === "progress" && Number(newKr.target) <= 0) return;
+                  if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && newKr.target === "") return;
+                  if (newKr.krType === "progress" && newKr.target === "") return;
                   const base = { id: kr.id, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
                   let updated;
                   if (newKr.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
