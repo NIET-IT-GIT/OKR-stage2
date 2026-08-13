@@ -170,6 +170,19 @@ function calcRate(krs) {
   if (!scored.length) return 0;
   return scored.reduce((sum, kr) => sum + krCompletion(kr), 0) / scored.length;
 }
+function meetsTarget(actual, operator, target) {
+  const a = Number(actual);
+  const t = Number(target);
+  if (isNaN(a)) return null;
+  switch (operator || ">=") {
+    case ">=": return a >= t;
+    case "<=": return a <= t;
+    case "=":  return a === t;
+    case ">":  return a > t;
+    case "<":  return a < t;
+    default:   return a >= t;
+  }
+}
 // Calculates completion from a submission snapshot, not live KR data.
 // krTarget is already the resolved per-period value stored at send time.
 function submissionCompletion(sub) {
@@ -4069,9 +4082,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                     {s.krType === "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                   </div>
                                 )}
+                                {s.krType !== "tracker" && s.krType !== "progress" && editingSub.actual !== "" && editingSub.answer && ((editingSub.answer === "yes" && meetsTarget(editingSub.actual, s.krOperator, s.krTarget) === false) || (editingSub.answer === "no" && meetsTarget(editingSub.actual, s.krOperator, s.krTarget) === true)) && (
+                                  <div style={{ fontSize: 12, color: T.bad, fontWeight: 600, marginBottom: 8 }}>⚠ Actual ({editingSub.actual}{s.krUnit ? " " + s.krUnit : ""}) {meetsTarget(editingSub.actual, s.krOperator, s.krTarget) ? "meets" : "doesn't meet"} target ({s.krOperator || ">="} {s.krTarget}{s.krUnit ? " " + s.krUnit : ""}) — answer should be {meetsTarget(editingSub.actual, s.krOperator, s.krTarget) ? "Yes" : "No"}</div>
+                                )}
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
-                                  <Btn primary small onClick={() => { const newAnswer = (s.krType === "tracker" || s.krType === "progress") ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                  <Btn primary small disabled={s.krType !== "tracker" && s.krType !== "progress" && editingSub.actual !== "" && editingSub.answer && ((editingSub.answer === "yes" && meetsTarget(editingSub.actual, s.krOperator, s.krTarget) === false) || (editingSub.answer === "no" && meetsTarget(editingSub.actual, s.krOperator, s.krTarget) === true))} onClick={() => { const newAnswer = (s.krType === "tracker" || s.krType === "progress") ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
                                 </div>
                               </div>
                             )}
@@ -4091,9 +4107,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   {s.krType !== "tracker" && s.krType !== "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                   {s.krType === "progress" && <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
                                 </div>
+                                {s.krType !== "tracker" && s.krType !== "progress" && editingApproved.actual !== "" && editingApproved.answer && ((editingApproved.answer === "yes" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === false) || (editingApproved.answer === "no" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === true)) && (
+                                  <div style={{ fontSize: 12, color: T.bad, fontWeight: 600, marginBottom: 8 }}>⚠ Actual ({editingApproved.actual}{s.krUnit ? " " + s.krUnit : ""}) {meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) ? "meets" : "doesn't meet"} target ({s.krOperator || ">="} {s.krTarget}{s.krUnit ? " " + s.krUnit : ""}) — answer should be {meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) ? "Yes" : "No"}</div>
+                                )}
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
-                                  <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0, answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
+                                  <Btn primary small disabled={s.krType !== "tracker" && s.krType !== "progress" && editingApproved.actual !== "" && editingApproved.answer && ((editingApproved.answer === "yes" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === false) || (editingApproved.answer === "no" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === true))} onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0, answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
                                 </div>
                               </div>
                             )}
@@ -5857,14 +5876,17 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       {s.krType !== "tracker" && s.krType !== "progress" && yesConfirm?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.okDim, borderRadius: 8, border: `1px solid ${T.okBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.ok, marginBottom: 8 }}>Enter your actual value</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                             <Input value={yesConfirm.actual} onChange={e => setYesConfirm(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} autoFocus />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
                             <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                           </div>
+                          {yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false && (
+                            <div style={{ fontSize: 12, color: T.bad, fontWeight: 600, marginBottom: 8 }}>⚠ Actual ({yesConfirm.actual}{s.krUnit ? " " + s.krUnit : ""}) doesn't meet target ({s.krOperator || ">="} {s.krTarget}{s.krUnit ? " " + s.krUnit : ""}) — answer should be No</div>
+                          )}
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
-                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
+                            <Btn primary small disabled={yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
                           </div>
                         </div>
                       )}
@@ -5879,10 +5901,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                               {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
                               <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                             </div>
+                            {noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true && (
+                              <div style={{ fontSize: 12, color: T.bad, fontWeight: 600, marginTop: 6 }}>⚠ Actual ({noReason.actual}{s.krUnit ? " " + s.krUnit : ""}) meets target ({s.krOperator || ">="} {s.krTarget}{s.krUnit ? " " + s.krUnit : ""}) — answer should be Yes</div>
+                            )}
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
                             <Btn small onClick={() => setNoReason(null)}>Cancel</Btn>
-                            <Btn danger small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: Number(noReason.actual) || 0 }); setNoReason(null); }}>Submit No</Btn>
+                            <Btn danger small disabled={noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: Number(noReason.actual) || 0 }); setNoReason(null); }}>Submit No</Btn>
                           </div>
                         </div>
                       )}
@@ -7014,14 +7039,17 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       {s.krType !== "tracker" && s.krType !== "progress" && yesConfirm?.id === s.id && (
                         <div style={{ marginTop: 12, padding: "12px 14px", background: T.okDim, borderRadius: 8, border: `1px solid ${T.okBorder}` }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: T.ok, marginBottom: 8 }}>Enter your actual value</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                             <Input value={yesConfirm.actual} onChange={e => setYesConfirm(p => ({ ...p, actual: e.target.value }))} placeholder="0" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} autoFocus />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
                             <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                           </div>
+                          {yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false && (
+                            <div style={{ fontSize: 12, color: T.bad, fontWeight: 600, marginBottom: 8 }}>⚠ Actual ({yesConfirm.actual}{s.krUnit ? " " + s.krUnit : ""}) doesn't meet target ({s.krOperator || ">="} {s.krTarget}{s.krUnit ? " " + s.krUnit : ""}) — answer should be No</div>
+                          )}
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
-                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
+                            <Btn primary small disabled={yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
                           </div>
                         </div>
                       )}
@@ -7036,10 +7064,13 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                               {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>{s.krUnit}</span>}
                               <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>
                             </div>
+                            {noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true && (
+                              <div style={{ fontSize: 12, color: T.bad, fontWeight: 600, marginTop: 6 }}>⚠ Actual ({noReason.actual}{s.krUnit ? " " + s.krUnit : ""}) meets target ({s.krOperator || ">="} {s.krTarget}{s.krUnit ? " " + s.krUnit : ""}) — answer should be Yes</div>
+                            )}
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
                             <Btn small onClick={() => setNoReason(null)}>Cancel</Btn>
-                            <Btn danger small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: Number(noReason.actual) || 0 }); setNoReason(null); }}>Submit No</Btn>
+                            <Btn danger small disabled={noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: Number(noReason.actual) || 0 }); setNoReason(null); }}>Submit No</Btn>
                           </div>
                         </div>
                       )}
