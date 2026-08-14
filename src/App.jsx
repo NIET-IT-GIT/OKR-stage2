@@ -2215,6 +2215,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [addTarget, setAddTarget] = useState(null);
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
+  const [projSearch, setProjSearch] = useState("");
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", due: "", contribution: "" });
   const [progressEdits, setProgressEdits] = useState({});
@@ -4384,14 +4385,25 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               {projects.length > 0 && <Metric label="Avg Progress" value={`${Math.round(projects.reduce((a, p) => a + p.progress, 0) / projects.length)}%`} />}
               {(() => { const tc = projects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
             </div>
+            <div style={{ marginBottom: 16 }}>
+              <Input
+                value={projSearch}
+                onChange={e => setProjSearch(e.target.value)}
+                placeholder="Search by manager name…"
+                style={{ width: 260, padding: "7px 12px", fontSize: 14 }}
+              />
+              {projSearch && <button onClick={() => setProjSearch("")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 13 }}>✕ Clear</button>}
+            </div>
             {projects.length === 0 && <EmptyState text="No projects yet." />}
             {projects.length > 0 && (() => {
               const ownerDept = p => users.find(u => u.id === p.mgrId)?.deptId || null;
+              const searchLower = projSearch.trim().toLowerCase();
               const groups = [...depts.map(d => ({ id: d.id, name: d.name })), { id: null, name: "Other" }];
-              return groups.map(group => {
-                const deptProjects = group.id
+              const groupElements = groups.map(group => {
+                const deptProjects = (group.id
                   ? projects.filter(p => ownerDept(p) === group.id)
-                  : projects.filter(p => !ownerDept(p));
+                  : projects.filter(p => !ownerDept(p))
+                ).filter(p => !searchLower || (users.find(u => u.id === p.mgrId)?.name || "").toLowerCase().includes(searchLower));
                 if (deptProjects.length === 0) return null;
                 return (
                   <div key={group.id ?? "__other"} style={{ marginBottom: 24 }}>
@@ -4488,6 +4500,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   </div>
                 );
               });
+              return groupElements.some(Boolean) ? groupElements : <EmptyState text="No managers match your search." />;
             })()}
           </Pane>
         </>)}
