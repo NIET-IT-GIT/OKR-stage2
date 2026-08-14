@@ -4042,6 +4042,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                     </div>
                                   : s.approval !== "pending" && <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                       <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />
+                                      {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 11, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
                                       <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "", answer: s.answer }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
                                     </div>}
                                 <button onClick={() => dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id })} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
@@ -6095,6 +6096,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                 : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                               {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
+                              {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 10, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
                             </div>
                           </div>
                           {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
@@ -6190,6 +6192,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                         </div>
                                       : <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                           <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />
+                                          {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 11, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
                                           <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "", answer: s.answer }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
                                         </div>}
                                   </div>
@@ -6933,6 +6936,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                   <Tag type={s.approval} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                                   {s.managerFilled && <span style={{ fontSize: 9, fontWeight: 700, background: "#fef3c7", border: "1px solid #fde68a", color: "#d97706", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>MGR</span>}
                                   {!s.managerFilled && s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
+                                  {!s.managerFilled && s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 10, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
                                 </div>
                               );
                             })}
@@ -7258,6 +7262,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                 : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                               {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
+                              {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 10, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
                             </div>
                           </div>
                           {s.krType !== "tracker" && s.answer === "no" && s.reason && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${T.border}` }}>Note: {s.reason}</div>}
@@ -7331,6 +7336,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
                           <Tag type={s.approval} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                           {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
+                          {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 10, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
                           <span style={{ fontSize: 11, color: T.textDim }}>Sent {s.sentAt?.slice(0, 10) || "—"}</span>
                           {s.answeredAt && <span style={{ fontSize: 11, color: T.textDim }}>Answered {s.answeredAt.slice(0, 10)}</span>}
                         </div>
