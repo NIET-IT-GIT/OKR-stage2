@@ -6787,7 +6787,13 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
               </div>
             )}
             {(myKpiPeriod === "all" ? kd.krs : kd.krs.filter(kr => (kr.period || "monthly") === myKpiPeriod)).map(kr => {
-              const r = krCompletion(kr); const s = getStatus(r);
+              // For standard KRs where kr.actual is null/0 (e.g. KR was synced after its check-ins were approved),
+              // fall back to the most recent approved submission's actualValue so the display is meaningful.
+              const isStdKr = !kr.monthlyTargets && kr.type !== "tracker" && kr.type !== "progress" && kr.type !== "manager-fill";
+              const effectiveKr = (isStdKr && (kr.actual == null || kr.actual === 0))
+                ? (() => { const lastApproved = myOkrSubs.filter(sub => sub.krId === kr.id && sub.approval === "approved" && sub.answer === "yes" && sub.actualValue).sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0]; return lastApproved ? { ...kr, actual: lastApproved.actualValue } : kr; })()
+                : kr;
+              const r = krCompletion(effectiveKr); const s = getStatus(r);
               const isMonthly = !!kr.monthlyTargets;
               const curKey = currentFYMonthKey();
               const curTarget = isMonthly ? (kr.monthlyTargets[curKey] || 0) : null;
@@ -6951,11 +6957,11 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
-                      <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(kr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.type === "progress" ? "" : `${kr.operator || ">="} `}{fmt(kr.target)} target{kr.unit ? ` (${kr.unit})` : ""}</div></div>
+                      <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(effectiveKr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.type === "progress" ? "" : `${kr.operator || ">="} `}{fmt(kr.target)} target{kr.unit ? ` (${kr.unit})` : ""}</div></div>
                       <div style={{ flex: 1 }}><Bar value={r} status={s} h={10} /></div>
                       <div>
                         <div style={{ fontSize: 26, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{r.toFixed(1)}%</div>
-                        {kr.actual > kr.target && <div style={{ fontSize: 10, color: T.ok, fontWeight: 600 }}>↑ exceeded</div>}
+                        {effectiveKr.actual > kr.target && <div style={{ fontSize: 10, color: T.ok, fontWeight: 600 }}>↑ exceeded</div>}
                       </div>
                     </div>
                   )}
@@ -7944,7 +7950,9 @@ function appReducer(state, action) {
       const md = state.memberData[sub.memberId];
       if (!md) return { ...state, okrSubmissions: newSubs };
       // Update this member's personal KR
-      const updatedMemberKrs = (md.krs || []).map(kr => {
+      const existingKrs = md.krs || [];
+      const krExistsInMember = existingKrs.some(k => k.id === sub.krId);
+      let updatedMemberKrs = existingKrs.map(kr => {
         if (kr.id !== sub.krId) return kr;
         if (kr.monthlyTargets) {
           const mk = (sub.periodKey || "").slice(0, 7);
@@ -7952,6 +7960,18 @@ function appReducer(state, action) {
         }
         return { ...kr, actual: actualToWrite };
       });
+      // If the KR wasn't in memberData yet (synced after the check-in was created), add it
+      // so the approval is not silently dropped
+      if (!krExistsInMember) {
+        const deptKr = state.depts.flatMap(d => [...(d.krs || []), ...(d.teams || []).flatMap(t => t.krs || [])]).find(k => k.id === sub.krId);
+        if (deptKr) {
+          const { actual: _a, monthlyActuals: _m, ...meta } = deptKr;
+          const newKr = meta.monthlyTargets
+            ? { ...meta, monthlyActuals: { [(sub.periodKey || "").slice(0, 7)]: actualToWrite } }
+            : { ...meta, actual: actualToWrite };
+          updatedMemberKrs = [...updatedMemberKrs, newKr];
+        }
+      }
       const newMemberData = { ...state.memberData, [sub.memberId]: { ...md, krs: updatedMemberKrs } };
       // Average actual across all members with approved submissions for this KR
       const approvedMemberIds = [...new Set(newSubs.filter(s => s.krId === sub.krId && s.approval === "approved" && s.periodKey === sub.periodKey && s.deptId === sub.deptId).map(s => s.memberId))];
