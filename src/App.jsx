@@ -2211,7 +2211,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     }
   }, [selDept, page]);
   const [selTeam, setSelTeam] = useState(null);
-  const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+  const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
   const [addTarget, setAddTarget] = useState(null);
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
@@ -2264,7 +2264,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [lbExpandedMember, setLbExpandedMember] = useState(null);
   const [lbEditKr, setLbEditKr] = useState(null);
   const [lbAddMember, setLbAddMember] = useState(null);
-  const [lbKrForm, setLbKrForm] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+  const [lbKrForm, setLbKrForm] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
   const [confirmDeleteKr, setConfirmDeleteKr] = useState(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
@@ -2770,7 +2770,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
     if (teamId) triggerSyncPrompt(deptId, teamId);
     if (newKr.useMonthlyTargets) setExpandedMonthlyKr(newId);
-    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); setAddTarget(null);
+    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); setAddTarget(null);
   }
   function startResize(key, e) {
     e.preventDefault();
@@ -3227,12 +3227,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   if (newKr.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
                   else if (newKr.krType === "progress") updated = { ...base, type: "progress", target: Number(newKr.target), actual: kr.actual };
                   else if (newKr.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(newKr.target), actual: kr.actual };
-                  else if (newKr.useMonthlyTargets) updated = { ...base, monthlyTargets: kr.monthlyTargets || Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: kr.monthlyActuals || {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) };
+                  else if (newKr.useMonthlyTargets) updated = { ...base, monthlyTargets: newKr.monthlyTargets, monthlyActuals: kr.monthlyActuals || {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) };
                   else updated = { ...base, target: Number(newKr.target), actual: kr.actual };
                   dispatch({ type: "REPLACE_KR", deptId, teamId, krId: kr.id, kr: updated });
                   if (teamId) triggerSyncPrompt(deptId, teamId);
                   setAddTarget(null);
-                  setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+                  setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
                 };
                 return (
                   <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
@@ -3274,7 +3274,18 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     </div>
                     {isStandard && newKr.useMonthlyTargets && (
                       <div style={{ marginBottom: 8 }}>
-                        <Input value={newKr.dreamTarget} onChange={e => setNewKr(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260 }} />
+                        <Input value={newKr.dreamTarget} onChange={e => setNewKr(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260, marginBottom: 10 }} />
+                        <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 360 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", padding: "5px 10px", fontSize: 10, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.06em", background: T.raised, borderBottom: `1px solid ${T.border}` }}>
+                            <span>Month</span><span>Target</span>
+                          </div>
+                          {getFYMonths().map((mo, mi) => (
+                            <div key={mo.key} style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, padding: "4px 10px", alignItems: "center", background: mi % 2 ? T.raised : "transparent", borderBottom: mi < getFYMonths().length - 1 ? `1px solid ${T.border}` : "none" }}>
+                              <span style={{ fontSize: 12, color: T.textMuted }}>{mo.label}</span>
+                              <NumInput value={newKr.monthlyTargets[mo.key] ?? 0} onChange={n => setNewKr(p => ({ ...p, monthlyTargets: { ...p.monthlyTargets, [mo.key]: n } }))} style={{ padding: "3px 8px", fontSize: 13, fontFamily: F.mono, width: 100 }} />
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {isMgrFill && (
@@ -3284,7 +3295,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <Btn primary small onClick={saveEdit}>✓ Save Changes</Btn>
-                      <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>Cancel</Btn>
+                      <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
                     </div>
                   </div>
                 );
@@ -3316,7 +3327,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : "";
                       const isMonthlyKr = !!kr.monthlyTargets;
                       setAddTarget(`edit-${kr.id}`);
-                      setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType });
+                      setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, kr.monthlyTargets?.[m.key] ?? 0])) });
                     }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", cursor: "pointer", color: T.brand, fontSize: 13 }}>✏</button>
                     <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "2px 9px", cursor: "pointer", color: T.bad, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>×</button>
                   </div>
@@ -3327,7 +3338,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               const targetKey = teamId || `dept-${deptId}`;
               if (addTarget !== targetKey) return (
                 <div style={{ padding: "10px 16px" }}>
-                  <Btn small onClick={() => { setAddTarget(targetKey); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: adminOkrPeriod !== "all" ? adminOkrPeriod : "monthly", useMonthlyTargets: false, krType: "" }); }}>+ Add Key Result</Btn>
+                  <Btn small onClick={() => { setAddTarget(targetKey); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: adminOkrPeriod !== "all" ? adminOkrPeriod : "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>+ Add Key Result</Btn>
                 </div>
               );
               const isTracker = newKr.krType === "tracker";
@@ -3384,7 +3395,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   )}
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn primary small onClick={() => addKr(deptId, teamId)}>✓ Add Key Result</Btn>
-                    <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>Cancel</Btn>
+                    <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
                   </div>
                 </div>
               );
@@ -3623,7 +3634,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     </div>
                   ) : (
                     <div style={{ padding: "10px 16px" }}>
-                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: sectionPeriod, useMonthlyTargets: false, krType: "" }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: sectionPeriod, useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
                     </div>
                   )}
                   {hiddenCols.size > 0 && (
@@ -5006,11 +5017,11 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                           if (lbKrForm.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
                                           else if (lbKrForm.krType === "progress") updated = { ...base, type: "progress", target: Number(lbKrForm.target), actual: kr.actual };
                                           else if (lbKrForm.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: kr.actual };
-                                          else if (lbKrForm.useMonthlyTargets) updated = { ...base, monthlyTargets: kr.monthlyTargets || Object.fromEntries(getFYMonths().map(mo => [mo.key, 0])), monthlyActuals: kr.monthlyActuals || {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
+                                          else if (lbKrForm.useMonthlyTargets) updated = { ...base, monthlyTargets: lbKrForm.monthlyTargets, monthlyActuals: kr.monthlyActuals || {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
                                           else updated = { ...base, target: Number(lbKrForm.target), actual: kr.actual };
                                           dispatch({ type: "REPLACE_MEMBER_KR", memberId: m.id, krId: kr.id, kr: updated });
                                           setLbEditKr(null);
-                                          setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+                                          setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
                                         };
                                         return (
                                           <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
@@ -5052,7 +5063,18 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                             </div>
                                             {isStandard && lbKrForm.useMonthlyTargets && (
                                               <div style={{ marginBottom: 8 }}>
-                                                <Input value={lbKrForm.dreamTarget} onChange={e => setLbKrForm(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260 }} />
+                                                <Input value={lbKrForm.dreamTarget} onChange={e => setLbKrForm(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260, marginBottom: 10 }} />
+                                                <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 360 }}>
+                                                  <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", padding: "5px 10px", fontSize: 10, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.06em", background: T.raised, borderBottom: `1px solid ${T.border}` }}>
+                                                    <span>Month</span><span>Target</span>
+                                                  </div>
+                                                  {getFYMonths().map((mo, mi) => (
+                                                    <div key={mo.key} style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, padding: "4px 10px", alignItems: "center", background: mi % 2 ? T.raised : "transparent", borderBottom: mi < getFYMonths().length - 1 ? `1px solid ${T.border}` : "none" }}>
+                                                      <span style={{ fontSize: 12, color: T.textMuted }}>{mo.label}</span>
+                                                      <NumInput value={lbKrForm.monthlyTargets[mo.key] ?? 0} onChange={n => setLbKrForm(p => ({ ...p, monthlyTargets: { ...p.monthlyTargets, [mo.key]: n } }))} style={{ padding: "3px 8px", fontSize: 13, fontFamily: F.mono, width: 100 }} />
+                                                    </div>
+                                                  ))}
+                                                </div>
                                               </div>
                                             )}
                                             {isMgrFill && (
@@ -5062,7 +5084,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                             )}
                                             <div style={{ display: "flex", gap: 8 }}>
                                               <Btn primary small onClick={saveLbEdit}>✓ Save Changes</Btn>
-                                              <Btn small onClick={() => { setLbEditKr(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>Cancel</Btn>
+                                              <Btn small onClick={() => { setLbEditKr(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
                                             </div>
                                           </div>
                                         );
@@ -5097,7 +5119,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                               const isMonthlyKr = !!kr.monthlyTargets;
                                               setLbAddMember(null);
                                               setLbEditKr({ memberId: m.id, krId: kr.id });
-                                              setLbKrForm({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType });
+                                              setLbKrForm({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, kr.monthlyTargets?.[mo.key] ?? 0])) });
                                             }} title="Edit this KR" style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 5px", cursor: "pointer", color: T.brand, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✏</button>
                                             <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
                                               title="Delete this OKR"
@@ -5162,7 +5184,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 else kr = { ...base, target: Number(lbKrForm.target), actual: null };
                                 dispatch({ type: "ADD_MEMBER_KR", memberId: m.id, kr });
                                 setLbAddMember(null);
-                                setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" });
+                                setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
                               };
                               return (
                                 <div style={{ padding: "14px 16px", background: T.brandDim, borderTop: `2px solid ${T.brand}`, marginTop: 8 }}>
@@ -5214,13 +5236,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   )}
                                   <div style={{ display: "flex", gap: 8 }}>
                                     <Btn primary small onClick={addLbKr}>✓ Add Key Result</Btn>
-                                    <Btn small onClick={() => { setLbAddMember(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>Cancel</Btn>
+                                    <Btn small onClick={() => { setLbAddMember(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
                                   </div>
                                 </div>
                               );
                             })() : (
                               <div style={{ marginTop: 10 }}>
-                                <Btn small onClick={() => { setLbEditKr(null); setLbAddMember(m.id); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "" }); }}>+ Add Key Result</Btn>
+                                <Btn small onClick={() => { setLbEditKr(null); setLbAddMember(m.id); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>+ Add Key Result</Btn>
                               </div>
                             )}
                           </div>
