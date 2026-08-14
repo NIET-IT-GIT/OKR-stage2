@@ -4389,7 +4389,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               <Input
                 value={projSearch}
                 onChange={e => setProjSearch(e.target.value)}
-                placeholder="Search by manager name…"
+                placeholder="Search by user name..."
                 style={{ width: 260, padding: "7px 12px", fontSize: 14 }}
               />
               {projSearch && <button onClick={() => setProjSearch("")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 13 }}>✕ Clear</button>}
