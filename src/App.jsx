@@ -943,7 +943,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
 /* ─────────────────────────────────────────────────────────────
    USER MANAGEMENT PAGE
    ───────────────────────────────────────────────────────────── */
-const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false };
+const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false, designatedApproverId: "" };
 
 function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -968,6 +968,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
       ...(form.role === "manager" && form.teamIds?.length && { teamIds: form.teamIds }),
       ...(form.role === "manager" && form.mgrDeptIds?.length && { mgrDeptIds: form.mgrDeptIds }),
       ...(form.role === "manager" && form.canApprovePeers && { canApprovePeers: true }),
+      ...(form.designatedApproverId && { designatedApproverId: form.designatedApproverId }),
     };
     dispatch({ type: "ADD_USER", user: newUser });
     setForm(BLANK_FORM); setFormErr(""); setShowAdd(false);
@@ -975,7 +976,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
 
   function startEdit(u) {
     setEditId(u.id);
-    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], mgrDeptIds: u.mgrDeptIds || [], secondTeamId: u.secondTeamId || "", canApprovePeers: !!u.canApprovePeers });
+    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], mgrDeptIds: u.mgrDeptIds || [], secondTeamId: u.secondTeamId || "", canApprovePeers: !!u.canApprovePeers, designatedApproverId: u.designatedApproverId || "" });
   }
 
   function saveEdit() {
@@ -988,6 +989,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
       mgrDeptIds: editForm.role === "manager" ? (editForm.mgrDeptIds?.length ? editForm.mgrDeptIds : undefined) : undefined,
       secondTeamId: editForm.role === "member" ? (editForm.secondTeamId || undefined) : undefined,
       canApprovePeers: editForm.role === "manager" ? (editForm.canApprovePeers || undefined) : undefined,
+      designatedApproverId: editForm.designatedApproverId || undefined,
     }});
     setEditId(null);
   }
@@ -1213,6 +1215,17 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
                     <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>When enabled, this manager can view and approve pending check-ins from other managers in the same department.</div>
                   </div>
                 )}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>Designated Approver</div>
+                  <select value={editForm.designatedApproverId || ""} onChange={e => setEditForm(p => ({ ...p, designatedApproverId: e.target.value }))}
+                    style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "8px 12px", color: T.text, fontSize: 13, fontFamily: F.body, outline: "none", width: "100%", maxWidth: 300 }}>
+                    <option value="">— None (default team manager) —</option>
+                    {users.filter(u => u.id !== editId).map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>When set, this user's OKR submissions will appear in the designated approver's Approvals tab.</div>
+                </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Btn small onClick={() => setEditId(null)}>Cancel</Btn>
                   <Btn primary small onClick={saveEdit}>Save</Btn>
@@ -5632,7 +5645,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     : [];
   const myOkrSubs = allOkrSubs.filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
-  const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId) || peerManagerIds.includes(s.memberId));
+  const designatedMemberIds = users.filter(u => u.designatedApproverId === user.id).map(u => u.id);
+  const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId) || peerManagerIds.includes(s.memberId) || designatedMemberIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
   const dmSubs = allOkrSubs.filter(s => s.answer !== null);
@@ -6143,7 +6157,12 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ padding: "11px 16px", background: T.raised, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
                             <Avatar letters={mem?.av || "?"} size={28} />
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <span style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{mem?.name || subs[0]?.memberName || "Unknown"}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{mem?.name || subs[0]?.memberName || "Unknown"}</span>
+                                {designatedMemberIds.includes(memberId) && !myTeamMemberIds.includes(memberId) && !peerManagerIds.includes(memberId) && (
+                                  <span style={{ fontSize: 9, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>DESIGNATED</span>
+                                )}
+                              </div>
                               <div style={{ fontSize: 11, color: T.textDim, marginTop: 1 }}>{subs.length} KR{subs.length !== 1 ? "s" : ""}</div>
                             </div>
                             {pendingCount > 0 && (
@@ -6667,6 +6686,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [logDrafts, setLogDrafts] = useState({});
   const [logPopup, setLogPopup] = useState(null);
   useEffect(() => { if (!logPopup) return; const h = e => { if (e.key === "Escape") setLogPopup(null); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [logPopup]);
+  const [designatedRejectOkr, setDesignatedRejectOkr] = useState(null);
 
   const { memberData, monthlyReports, depts, projects = [], users } = state;
   const kd = memberData[user.id] || { krs: [] };
@@ -6681,12 +6701,17 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
   const myOwnProjects = projects.filter(p => p.mgrId === user.id);
   const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
+  const designatedApproveeIds = users.filter(u => u.designatedApproverId === user.id).map(u => u.id);
+  const designatedApproveeSubs = (state.okrSubmissions || []).filter(s => designatedApproveeIds.includes(s.memberId) && s.answer !== null && !s.managerFilled);
+  const designatedPendingCount = designatedApproveeSubs.filter(s => s.approval === "pending").length;
+
   const navItems = [
     { id: "mykpis",       icon: "⬡", label: "My OKRs"          },
     { id: "checkin",      icon: "⬡", label: "OKR Check-In"     },
     { id: "okr-overview", icon: "⬡", label: "OKR Overview"     },
     { id: "history",      icon: "⬡", label: "My History"        },
     { id: "reports",      icon: "⬡", label: "OKR Reports"      },
+    ...(designatedApproveeIds.length > 0 ? [{ id: "approvals", icon: "⬡", label: "Approvals" }] : []),
     ...(user.projectAccess ? [{ id: "projects", icon: "⬡", label: "Projects" }] : []),
   ];
 
@@ -6694,7 +6719,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
     <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
       {logPopup && <div onClick={() => setLogPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, width: "100%", maxWidth: 640, maxHeight: "75vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}><div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}><div><div style={{ fontSize: 15, fontWeight: 700 }}>{logPopup.projName}</div>{logPopup.date && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{logPopup.date}</div>}</div><button onClick={() => setLogPopup(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "0 2px", marginLeft: 12 }}>✕</button></div><div style={{ padding: "16px 20px", overflowY: "auto", fontSize: 14, lineHeight: 1.65, color: T.text, whiteSpace: "pre-wrap" }}>{logPopup.text}</div></div></div>}
-      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ checkin: myPendingCheckins.length }} />
+      <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ checkin: myPendingCheckins.length, approvals: designatedPendingCount }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
         {page === "mykpis" && (<>
@@ -7278,6 +7303,103 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             </Pane>
           </>);
         })()}
+
+        {page === "approvals" && (<>
+          <Header title="Pending Approvals" sub={`${designatedPendingCount} pending review`} />
+          <Pane>
+            {(() => {
+              const sorted = designatedApproveeSubs.slice().sort((a, b) => {
+                const o = { pending: 0, approved: 1, rejected: 2 };
+                return o[a.approval] - o[b.approval] || (b.answeredAt || "").localeCompare(a.answeredAt || "");
+              });
+              const order = [];
+              const groups = {};
+              sorted.forEach(s => {
+                if (!groups[s.memberId]) { groups[s.memberId] = []; order.push(s.memberId); }
+                groups[s.memberId].push(s);
+              });
+              if (order.length === 0) return <EmptyState text="No submissions to review yet." />;
+              return (<>
+                {order.map(memberId => {
+                  const subs = groups[memberId];
+                  const mem = users.find(u => u.id === memberId);
+                  const pCount = subs.filter(s => s.approval === "pending").length;
+                  return (
+                    <Card key={memberId} style={{ marginBottom: 10, overflow: "hidden" }}>
+                      <div style={{ padding: "11px 16px", background: T.raised, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+                        <Avatar letters={mem?.av || "?"} size={28} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{mem?.name || subs[0]?.memberName || "Unknown"}</span>
+                          <div style={{ fontSize: 11, color: T.textDim, marginTop: 1 }}>{subs.length} KR{subs.length !== 1 ? "s" : ""}</div>
+                        </div>
+                        {pCount > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            <span style={{ background: T.warnDim, color: T.warn, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{pCount} pending</span>
+                            <Btn primary small onClick={() => subs.filter(s => s.approval === "pending").forEach(s => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id }))}>Approve All</Btn>
+                          </div>
+                        )}
+                      </div>
+                      {subs.map((s, idx) => {
+                        const accentColor = s.approval === "approved" ? T.ok : s.approval === "rejected" ? T.bad : T.warn;
+                        const isLast = idx === subs.length - 1 && designatedRejectOkr?.id !== s.id;
+                        return (
+                          <div key={s.id} style={{ borderBottom: isLast ? "none" : `1px solid ${T.border}` }}>
+                            <div style={{ padding: "10px 16px 10px 19px", borderLeft: `3px solid ${accentColor}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{s.krLabel}</span>
+                                  {s.krType === "tracker" && <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px" }}>Tracker</span>}
+                                  {s.krType === "progress" && <span style={{ fontSize: 10, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px" }}>Progress</span>}
+                                </div>
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                  <span style={{ fontSize: 11, color: T.textMuted }}>{periodDisplayLabel(s.period, s.periodKey)}</span>
+                                  {s.krType !== "tracker" && s.krTarget != null && <span style={{ fontSize: 11, color: T.textMuted }}>Target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                  {s.actualValue != null && <span style={{ fontSize: 11, fontFamily: F.mono, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.textMuted }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</span>}
+                                  {s.answeredAt && <span style={{ fontSize: 11, color: T.textDim }}>Answered {s.answeredAt.slice(0, 10)}</span>}
+                                </div>
+                                {s.answer === "no" && s.reason && <div style={{ fontSize: 11, color: T.textSoft, marginTop: 3 }}>Note: {s.reason}</div>}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                                {s.krType === "tracker" || s.krType === "progress"
+                                  ? <span style={{ fontSize: 12, fontWeight: 700, color: s.krType === "tracker" ? "#6d28d9" : T.brand }}>{s.krType === "tracker" ? "Recorded" : "Progress"}: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
+                                  : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                {s.approval === "pending"
+                                  ? <div style={{ display: "flex", gap: 6 }}>
+                                      <Btn danger small onClick={() => setDesignatedRejectOkr({ id: s.id, actual: "" })}>Reject</Btn>
+                                      <Btn primary small onClick={() => dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "approved", approvedBy: user.id })}>Approve</Btn>
+                                    </div>
+                                  : <Tag type={s.approval === "approved" ? "approved" : "rejected"} label={s.approval === "approved" ? "Approved" : "Rejected"} small />}
+                              </div>
+                            </div>
+                            {designatedRejectOkr?.id === s.id && (
+                              <div style={{ margin: "0 16px 10px 19px", padding: "10px 12px", background: T.badDim, borderRadius: 7, border: `1px solid ${T.badBorder}` }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: T.bad, marginBottom: 6 }}>Enter actual value for rejection</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                  <Input value={designatedRejectOkr.actual} onChange={e => setDesignatedRejectOkr(p => ({ ...p, actual: e.target.value }))} placeholder="Actual value" style={{ width: 120, textAlign: "right", fontFamily: F.mono }} />
+                                  {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
+                                  {s.krType === "progress" ? <span style={{ fontSize: 12, color: T.textMuted }}>(target: {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span> : <span style={{ fontSize: 12, color: T.textMuted }}>(performance target: {s.krOperator || ">="} {s.krTarget}{s.krUnit ? ` ${s.krUnit}` : ""})</span>}
+                                </div>
+                                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                  <Btn small onClick={() => setDesignatedRejectOkr(null)}>Cancel</Btn>
+                                  <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(designatedRejectOkr.actual) || 0 }); setDesignatedRejectOkr(null); }}>Confirm Reject</Btn>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </Card>
+                  );
+                })}
+                {designatedApproveeSubs.filter(s => s.answer === null).length > 0 && (
+                  <div style={{ fontSize: 13, color: T.textMuted, padding: "8px 4px" }}>
+                    {designatedApproveeSubs.filter(s => s.answer === null).length} check-in{designatedApproveeSubs.filter(s => s.answer === null).length !== 1 ? "s" : ""} awaiting staff response
+                  </div>
+                )}
+              </>);
+            })()}
+          </Pane>
+        </>)}
 
         {page === "history" && (<>
           <Header title="My OKR Check-In History" sub="All check-in submissions and their approval status" />
