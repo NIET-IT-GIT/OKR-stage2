@@ -2294,6 +2294,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatPromptOpen, setChatPromptOpen] = useState(false);
   const chatEndRef = useRef(null);
+  const chatHistoryRef = useRef([]);
+  const pilotPrevPageRef = useRef(null);
+  const [pilotSessions, setPilotSessions] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("niet_pilot_sessions") || "[]"); } catch { return []; }
+  });
 
   const DEFAULT_CHAT_PROMPT = `You are NIET Pilot, the OKR analytics assistant for NIET (National Institute for Excellence in Teaching) admin portal.
 
@@ -2331,6 +2336,25 @@ You can answer forward-looking and predictive questions (e.g. "how will the comp
 
 ACTIONS:
 When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
+
+  function archivePilotSession(history) {
+    const msgs = history.filter(m => m.role === "user" || m.role === "ai");
+    if (msgs.length === 0) return;
+    const firstUser = msgs.find(m => m.role === "user");
+    if (!firstUser) return;
+    const session = {
+      id: Date.now(),
+      date: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+      preview: firstUser.text.slice(0, 80),
+      messages: msgs,
+    };
+    setPilotSessions(prev => {
+      if (prev[0] && prev[0].preview === session.preview && prev[0].messages.length === msgs.length) return prev;
+      const next = [session, ...prev].slice(0, 5);
+      localStorage.setItem("niet_pilot_sessions", JSON.stringify(next));
+      return next;
+    });
+  }
 
   function buildChatContext() {
     const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
@@ -2593,6 +2617,32 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   }
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory, chatLoading]);
+
+  // Keep ref in sync so page-change effect can read latest chatHistory without stale closure
+  useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
+
+  // Auto-save draft on every message — survives browser refresh
+  useEffect(() => {
+    const msgs = chatHistory.filter(m => m.role === "user" || m.role === "ai");
+    if (msgs.length > 0) localStorage.setItem("niet_pilot_draft", JSON.stringify(msgs));
+    else localStorage.removeItem("niet_pilot_draft");
+  }, [chatHistory]);
+
+  // Restore draft on mount (recover from refresh)
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(localStorage.getItem("niet_pilot_draft") || "null");
+      if (Array.isArray(draft) && draft.length > 0) setChatHistory(draft);
+    } catch {}
+  }, []);
+
+  // Archive session when navigating away from Pilot page
+  useEffect(() => {
+    if (pilotPrevPageRef.current === "ai-chat" && page !== "ai-chat") {
+      archivePilotSession(chatHistoryRef.current);
+    }
+    pilotPrevPageRef.current = page;
+  }, [page]);
 
   async function resendEmail(log, recipient) {
     const key = `${log.id}:${recipient.email}`;
@@ -5495,7 +5545,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {chatHistory.length > 0 && <button onClick={() => setChatHistory([])} style={{ background: "none", border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 12, color: T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>Clear chat</button>}
+                  {chatHistory.length > 0 && <button onClick={() => { archivePilotSession(chatHistory); localStorage.removeItem("niet_pilot_draft"); setChatHistory([]); }} style={{ background: "none", border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 12, color: T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>Clear chat</button>}
                   <button onClick={() => setChatPromptOpen(o => !o)} style={{ background: chatPromptOpen ? T.brandDim : "none", border: `1px solid ${chatPromptOpen ? T.brandBorder : T.border}`, cursor: "pointer", fontSize: 12, color: chatPromptOpen ? T.brand : T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>⚙ System Prompt</button>
                 </div>
               </div>
@@ -5522,6 +5572,23 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", marginBottom: 8 }}>NIET Pilot</div>
                       <div style={{ fontSize: 14, color: T.textMuted, maxWidth: 380, margin: "0 auto", lineHeight: 1.6 }}>Ask anything about your organisation’s OKR performance — completions, trends, member progress, and more.</div>
                     </div>
+                    {pilotSessions.length > 0 && (
+                      <div style={{ marginBottom: 32 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Recent Conversations</div>
+                        {pilotSessions.map(s => (
+                          <button key={s.id} onClick={() => setChatHistory(s.messages)}
+                            style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "11px 16px", marginBottom: 8, cursor: "pointer", fontFamily: F.body, textAlign: "left" }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = T.brandBorder; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.brandDim}`; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "none"; }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{s.date}</div>
+                              <div style={{ fontSize: 13, color: T.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.preview}{s.preview.length >= 80 ? "…" : ""}</div>
+                            </div>
+                            <span style={{ fontSize: 16, color: T.textMuted, marginLeft: 12, flexShrink: 0 }}>→</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>Try asking</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       {SUGGESTIONS.map(s => (
