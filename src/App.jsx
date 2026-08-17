@@ -33,15 +33,17 @@ function useIsMobile(bp = 768) {
 const TP = 66.7;
 
 const STATUS_THEME = {
-  green:  { bg: T.okDim,   border: T.okBorder,   color: T.ok,        tag: "On Track" },
-  yellow: { bg: T.warnDim, border: T.warnBorder,  color: T.warn,      tag: "At Risk"  },
-  red:    { bg: T.badDim,  border: T.badBorder,   color: T.bad,       tag: "Behind"   },
-  none:   { bg: T.raised,  border: T.border,      color: T.textMuted, tag: "N/A"      },
+  green:  { bg: T.okDim,    border: T.okBorder,    color: T.ok,        tag: "On Track" },
+  yellow: { bg: T.warnDim,  border: T.warnBorder,  color: T.warn,      tag: "At Risk"  },
+  red:    { bg: T.badDim,   border: T.badBorder,   color: T.bad,       tag: "Behind"   },
+  blue:   { bg: T.brandDim, border: T.brandBorder, color: T.brand,     tag: "Blue"     },
+  none:   { bg: T.raised,   border: T.border,      color: T.textMuted, tag: "N/A"      },
 };
 const APPROVAL = {
-  pending:  { bg: T.warnDim, border: T.warnBorder, color: T.warn, label: "Pending Review" },
-  approved: { bg: T.okDim,   border: T.okBorder,   color: T.ok,   label: "Approved"       },
-  rejected: { bg: T.badDim,  border: T.badBorder,  color: T.bad,  label: "Rejected"       },
+  pending:  { bg: T.warnDim,  border: T.warnBorder,  color: T.warn,  label: "Pending Review"   },
+  approved: { bg: T.okDim,    border: T.okBorder,    color: T.ok,    label: "Approved"          },
+  rejected: { bg: T.badDim,   border: T.badBorder,   color: T.bad,   label: "Rejected"          },
+  review:   { bg: T.brandDim, border: T.brandBorder, color: T.brand, label: "Pending Approval"  },
 };
 
 /* ─── MOCK DATA ─── */
@@ -2677,6 +2679,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
 
     // Projects — grouped by status, dept derived from mgrId
     const activeProjects = projects.filter(p => p.status === "active");
+    const pendingApprovalProjects = projects.filter(p => p.status === "pending approval");
     const completedProjects = projects.filter(p => p.status === "completed");
     const fmtProject = p => {
       const mgr = users.find(u => u.id === p.mgrId);
@@ -2690,8 +2693,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       return line;
     };
     const projectSection = [
-      `PROJECTS: Total ${projects.length} (${activeProjects.length} active, ${completedProjects.length} completed)`,
+      `PROJECTS: Total ${projects.length} (${activeProjects.length} active, ${pendingApprovalProjects.length} pending approval, ${completedProjects.length} completed)`,
       activeProjects.length ? `Active (${activeProjects.length}):\n${activeProjects.map(fmtProject).join("\n")}` : "Active: none",
+      pendingApprovalProjects.length ? `Pending Approval (${pendingApprovalProjects.length}) — awaiting System Admin sign-off:\n${pendingApprovalProjects.map(fmtProject).join("\n")}` : "",
       completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
     ].filter(Boolean).join("\n");
 
@@ -4639,9 +4643,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
           <Header title="Manager Projects" sub="Projects grouped by department" />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
-              <Metric label="Total Projects" value={projects.length} />
-              <Metric label="Active"         value={projects.filter(p => p.status === "active").length}   status="yellow" />
-              <Metric label="Completed"      value={projects.filter(p => p.status !== "active").length}   status="green"  />
+              <Metric label="Total Projects"    value={projects.length} />
+              <Metric label="Active"          value={projects.filter(p => p.status === "active").length}            status="yellow" />
+              <Metric label="Pending Approval" value={projects.filter(p => p.status === "pending approval").length} status="blue"   />
+              <Metric label="Completed"       value={projects.filter(p => p.status === "completed").length}         status="green"  />
               {projects.length > 0 && <Metric label="Avg Progress" value={`${Math.round(projects.reduce((a, p) => a + p.progress, 0) / projects.length)}%`} />}
               {(() => { const tc = projects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
             </div>
@@ -4685,7 +4690,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <div style={{ fontSize: 12, color: T.textMuted }}>{mgr ? `${mgr.name} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
+                              <Tag type={p.status === "active" ? "pending" : p.status === "pending approval" ? "review" : "approved"} label={p.status === "active" ? "ACTIVE" : p.status === "pending approval" ? "PENDING APPROVAL" : "COMPLETED"} small />
                               <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>
                             </div>
                           </div>
@@ -4720,6 +4725,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                                   <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
                                     <option value="active">Active</option>
+                                    <option value="pending approval">Pending Approval</option>
                                     <option value="completed">Completed</option>
                                   </select>
                                 </div>
@@ -4760,7 +4766,47 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   </div>
                 );
               });
-              return groupElements.some(Boolean) ? groupElements : <EmptyState text="No managers match your search." />;
+              const pendingApprovalProjects = projects.filter(p => p.status === "pending approval" && (!searchLower || (users.find(u => u.id === p.mgrId)?.name || "").toLowerCase().includes(searchLower)));
+              const hasAny = pendingApprovalProjects.length > 0 || groupElements.some(Boolean);
+              if (!hasAny) return <EmptyState text="No managers match your search." />;
+              return (
+                <>
+                  {pendingApprovalProjects.length > 0 && (
+                    <div style={{ marginBottom: 24 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, paddingBottom: 8, borderBottom: `2px solid ${T.brandBorder}` }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: T.brand }}>Pending Approval</div>
+                        <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>{pendingApprovalProjects.length} project{pendingApprovalProjects.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      {pendingApprovalProjects.map(p => {
+                        const mgr = users.find(u => u.id === p.mgrId);
+                        const draftProg = progressEdits[p.id] ?? p.progress;
+                        const ps = draftProg >= 70 ? "green" : draftProg >= 35 ? "yellow" : "red";
+                        return (
+                          <Card key={p.id} style={{ overflow: "hidden", marginBottom: 8 }}>
+                            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                              <div>
+                                <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
+                                <div style={{ fontSize: 12, color: T.textMuted }}>{mgr ? `${mgr.name} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
+                              </div>
+                              <Tag type="review" label="PENDING APPROVAL" small />
+                            </div>
+                            <div style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}` }}>
+                              <Bar value={draftProg} status={ps} h={6} />
+                              <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
+                              {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                            </div>
+                            <div style={{ padding: "8px 18px", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                              <Btn small onClick={() => { if (window.confirm(`Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "active", updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Reject</Btn>
+                              <Btn primary small onClick={() => { if (window.confirm(`Approve "${p.name}" as completed?`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "completed", updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Approve</Btn>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {groupElements}
+                </>
+              );
             })()}
           </Pane>
         </>)}
@@ -7016,7 +7062,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
                 <Metric label="Total" value={myProjects.length} />
                 <Metric label="Active" value={myProjects.filter(p => p.status === "active").length} status="yellow" />
-                <Metric label="Completed" value={myProjects.filter(p => p.status !== "active").length} status="green" />
+                <Metric label="Pending Approval" value={myProjects.filter(p => p.status === "pending approval").length} status="blue" />
+                <Metric label="Completed" value={myProjects.filter(p => p.status === "completed").length} status="green" />
                 <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
                 {(() => { const tc = myProjects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
               </div>
@@ -7058,7 +7105,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
+                      <Tag type={p.status === "active" ? "pending" : p.status === "pending approval" ? "review" : "approved"} label={p.status === "active" ? "ACTIVE" : p.status === "pending approval" ? "PENDING APPROVAL" : "COMPLETED"} small />
                       {user.projectAccess && p.mgrId === user.id && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
                     </div>
                   </div>
@@ -7069,8 +7116,20 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
                       {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                       <Btn primary small disabled={!progChanged} onClick={() => {
-                        dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
-                        setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                        if (draftProg === 100 && p.status === "active") {
+                          if (!window.confirm("Progress is now 100%. Mark as completed?")) {
+                            setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                            return;
+                          }
+                          const updDate = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: updDate } });
+                          setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                          const submit = window.confirm("Submit for System Admin approval?");
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active" } });
+                        } else {
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                        }
                       }}>Save</Btn>
                     </> : <>
                       <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
@@ -7096,6 +7155,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
                             <option value="active">Active</option>
+                            <option value="pending approval">Pending Approval</option>
                             <option value="completed">Completed</option>
                           </select>
                         </div>
@@ -7124,7 +7184,12 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
-                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          if (editProjForm.status === "completed" && p.status !== "completed") {
+                            const submit = window.confirm("Submit for System Admin approval?");
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          } else {
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          }
                           setEditProjId(null);
                         }}>Save Details</Btn>
                       </div>
@@ -8192,7 +8257,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
                 <Metric label="Total" value={myProjects.length} />
                 <Metric label="Active" value={myProjects.filter(p => p.status === "active").length} status="yellow" />
-                <Metric label="Completed" value={myProjects.filter(p => p.status !== "active").length} status="green" />
+                <Metric label="Pending Approval" value={myProjects.filter(p => p.status === "pending approval").length} status="blue" />
+                <Metric label="Completed" value={myProjects.filter(p => p.status === "completed").length} status="green" />
                 <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
                 {(() => { const tc = myProjects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
               </div>
@@ -8234,7 +8300,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Tag type={p.status === "active" ? "pending" : "approved"} label={p.status === "active" ? "ACTIVE" : "COMPLETED"} small />
+                      <Tag type={p.status === "active" ? "pending" : p.status === "pending approval" ? "review" : "approved"} label={p.status === "active" ? "ACTIVE" : p.status === "pending approval" ? "PENDING APPROVAL" : "COMPLETED"} small />
                       {user.projectAccess && p.mgrId === user.id && <button onClick={() => { if (window.confirm(`Delete project "${p.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete project">✕</button>}
                     </div>
                   </div>
@@ -8245,8 +8311,20 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
                       {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
                       <Btn primary small disabled={!progChanged} onClick={() => {
-                        dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
-                        setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                        if (draftProg === 100 && p.status === "active") {
+                          if (!window.confirm("Progress is now 100%. Mark as completed?")) {
+                            setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                            return;
+                          }
+                          const updDate = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: updDate } });
+                          setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                          const submit = window.confirm("Submit for System Admin approval?");
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active" } });
+                        } else {
+                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
+                        }
                       }}>Save</Btn>
                     </> : <>
                       <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
@@ -8272,6 +8350,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
                             <option value="active">Active</option>
+                            <option value="pending approval">Pending Approval</option>
                             <option value="completed">Completed</option>
                           </select>
                         </div>
@@ -8300,7 +8379,12 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
-                          dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          if (editProjForm.status === "completed" && p.status !== "completed") {
+                            const submit = window.confirm("Submit for System Admin approval?");
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          } else {
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                          }
                           setEditProjId(null);
                         }}>Save Details</Btn>
                       </div>
