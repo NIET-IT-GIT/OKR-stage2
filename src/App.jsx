@@ -463,6 +463,23 @@ async function dbGetEnrolments() {
   return result;
 }
 
+async function dbGetCoeData() {
+  const result = { coe_records: [], coe_batches: [] };
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
+      .in("collection", ["coe_records", "coe_batches"])
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return result;
+}
+
 async function dbBulkInsert(collection, items) {
   const CHUNK = 200;
   for (let i = 0; i < items.length; i += CHUNK) {
@@ -2178,6 +2195,63 @@ function enrParseMarketerSheet(rows, fileName) {
   if (result.records.length === 0) result.error = "No enrolment data found. The sheet may be empty or fully filtered out.";
   return result;
 }
+async function coeParseSheetsFromFile(file) {
+  const COE_TARGETS = [
+    { names: ["1. NIET CoE"], rto: "NIET", type: "CoE" },
+    { names: ["1. NIET Non-CoE", "1. NIET Non-COE"], rto: "NIET", type: "Non-CoE" },
+    { names: ["2. CB CoE"], rto: "CB", type: "CoE" },
+    { names: ["2. CB Non-CoE", "2. CB Non-COE"], rto: "CB", type: "Non-CoE" },
+    { names: ["3. Rhodes Accepted & Paid", "3. Rhodes_Accepted & Paid"], rto: "Rhodes", type: "Accepted & Paid" },
+  ];
+  const result = { week: null, sheetsFound: [], sheetSummary: [], records: [], totalRecords: 0, fileName: file.name, fileSize: file.size, error: null };
+  const { default: readXlsxFile } = await import("read-excel-file/browser");
+  const formatDate = v => { if (!v) return ""; if (v instanceof Date) return v.toLocaleDateString("en-AU"); return String(v).trim(); };
+  for (const target of COE_TARGETS) {
+    let rows = null;
+    for (const name of target.names) {
+      try { const res = await readXlsxFile(file, { sheets: [name] }); rows = res[0]?.data || []; break; } catch {}
+    }
+    if (!rows) { result.sheetSummary.push({ rto: target.rto, type: target.type, found: false, count: 0 }); continue; }
+    // Find week (search first 6 rows for "Week Number" label in col A)
+    let week = null;
+    for (let i = 0; i < Math.min(6, rows.length); i++) {
+      if (String(rows[i]?.[0] ?? "").trim().toLowerCase().includes("week number")) {
+        const wv = String(rows[i]?.[1] ?? "").trim();
+        if (wv) { week = wv; break; }
+      }
+    }
+    if (week && !result.week) result.week = week;
+    // Find header row: col A = "Period"
+    let hIdx = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i]?.[0] ?? "").trim().toLowerCase() === "period") { hIdx = i; break; }
+    }
+    if (hIdx < 0) { result.sheetSummary.push({ rto: target.rto, type: target.type, found: true, count: 0, note: "No Period header" }); continue; }
+    // Parse data rows with forward-fill on Period
+    let lastPeriod = "";
+    let count = 0;
+    for (let i = hIdx + 1; i < rows.length; i++) {
+      const row = rows[i] || [];
+      const pCell = String(row[0] ?? "").trim();
+      if (pCell.toLowerCase() === "grand total" || pCell.toLowerCase() === "total") break;
+      if (pCell) lastPeriod = pCell;
+      const studentId = String(row[1] ?? "").trim();
+      if (!studentId) continue;
+      result.records.push({ rto: target.rto, type: target.type, period: lastPeriod, studentId, courseName: String(row[2] ?? "").trim(), intakeDate: formatDate(row[3]), agent: String(row[4] ?? "").trim(), marketer: String(row[5] ?? "").trim(), date: formatDate(row[6]), createdBy: String(row[7] ?? "").trim(), onshoreOffshore: String(row[8] ?? "").trim(), pathway: String(row[9] ?? "").trim() });
+      count++;
+    }
+    result.sheetsFound.push(`${target.rto} ${target.type}`);
+    result.sheetSummary.push({ rto: target.rto, type: target.type, found: true, count });
+    result.totalRecords += count;
+  }
+  if (!result.week) {
+    const fm = String(file.name || "").match(/(\d{4})[_\-\s]?[Ww](\d{1,2})/);
+    if (fm) result.week = `${fm[1]}-W${fm[2].padStart(2, "0")}`;
+  }
+  if (!result.week) result.error = "Could not determine week number. Check the file has a 'Week Number' cell.";
+  else if (result.sheetsFound.length === 0) result.error = "No COE sheets found. Expected: '1. NIET CoE', '1. NIET Non-CoE', '2. CB CoE', '2. CB Non-CoE', '3. Rhodes Accepted & Paid'.";
+  return result;
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
@@ -2245,6 +2319,29 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       }).catch(e => { setEnrError(e.message); setEnrLoading(false); setEnrLoaded(true); });
     }
   }, [enrLoaded, enrLoading]);
+  const [coeTab, setCoeTab] = useState("overview");
+  const [coeRecords, setCoeRecords] = useState([]);
+  const [coeBatches, setCoeBatches] = useState([]);
+  const [coeLoaded, setCoeLoaded] = useState(false);
+  const [coeLoading, setCoeLoading] = useState(false);
+  const [coeFilterWeek, setCoeFilterWeek] = useState("all");
+  const [coeFilterRto, setCoeFilterRto] = useState("all");
+  const [coeFilterType, setCoeFilterType] = useState("all");
+  const [coeParsed, setCoeParsed] = useState(null);
+  const [coeImporting, setCoeImporting] = useState(false);
+  const [coeError, setCoeError] = useState(null);
+  useEffect(() => {
+    if (!coeLoaded && !coeLoading) {
+      setCoeLoading(true);
+      dbGetCoeData().then(r => {
+        setCoeRecords(r.coe_records);
+        setCoeBatches(r.coe_batches);
+        setCoeError(null);
+        setCoeLoaded(true);
+        setCoeLoading(false);
+      }).catch(e => { setCoeError(e.message); setCoeLoading(false); setCoeLoaded(true); });
+    }
+  }, [coeLoaded, coeLoading]);
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const dragColRef = useRef(null);
@@ -2546,6 +2643,25 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       ].join("\n");
     }
 
+    // COE records section
+    let coeSection;
+    if (!coeLoaded) {
+      coeSection = "COE RECORDS: Data not yet loaded this session.";
+    } else if (coeError && coeRecords.length === 0) {
+      coeSection = `COE RECORDS: Failed to load — ${coeError}`;
+    } else if (coeRecords.length === 0) {
+      coeSection = "COE RECORDS: No COE data imported yet.";
+    } else {
+      const COE_COMBOS = [{ rto: "NIET", type: "CoE" }, { rto: "NIET", type: "Non-CoE" }, { rto: "CB", type: "CoE" }, { rto: "CB", type: "Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid" }];
+      const coeWeeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+      const coeByWeek = coeWeeks.map(w => {
+        const wRecs = coeRecords.filter(r => r.week === w);
+        const lines = COE_COMBOS.map(c => { const n = wRecs.filter(r => r.rto === c.rto && r.type === c.type).length; return n > 0 ? `    ${c.rto} ${c.type}: ${n}` : null; }).filter(Boolean);
+        return `  ${w} — ${wRecs.length} total:\n${lines.join("\n")}`;
+      });
+      coeSection = [`COE RECORDS: ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records`, coeByWeek.join("\n")].join("\n");
+    }
+
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
@@ -2555,6 +2671,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       `\n${pendingSection}`,
       `\n${projectSection}`,
       `\n${enrolmentSection}`,
+      `\n${coeSection}`,
     ].join("\n");
   }
 
@@ -2693,6 +2810,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     { id: "reports",          icon: "⬡", label: "OKR Reports"       },
     { id: "projects",         icon: "⬡", label: "Projects"          },
     { id: "admissions",       icon: "⬡", label: "Applications"       },
+    { id: "coe",              icon: "⬡", label: "COE"                },
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
     { id: "users",            icon: "⬡", label: "User Management"   },
     { id: "email-templates",  icon: "⬡", label: "Email Templates"   },
@@ -4978,6 +5096,246 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
             })()}
           </Pane>
         </>)}
+
+        {page === "coe" && (() => {
+          const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+          const tdCss = { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
+          const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+          const COE_ROWS = [{ rto: "NIET", type: "CoE" }, { rto: "NIET", type: "Non-CoE" }, { rto: "CB", type: "CoE" }, { rto: "CB", type: "Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid" }];
+          return (<>
+            <Header title="COE Dashboard" sub="Weekly COE & Non-CoE applicant records by RTO" />
+            <Pane>
+              {coeError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{coeError}</div>}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {[["overview","Overview"],["imports","Imports"],["data","Data"]].map(([v, label]) => (
+                  <Btn key={v} small primary={coeTab === v} onClick={() => setCoeTab(v)}>{label}</Btn>
+                ))}
+              </div>
+              {coeLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading COE data…</div>}
+
+              {!coeLoading && coeTab === "overview" && (() => {
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const selWeek = coeFilterWeek !== "all" && weeks.includes(coeFilterWeek) ? coeFilterWeek : (weeks[0] || null);
+                const weekRecs = selWeek ? coeRecords.filter(r => r.week === selWeek) : [];
+                const prevWeekIdx = selWeek ? weeks.indexOf(selWeek) + 1 : -1;
+                const prevWeek = prevWeekIdx > 0 && prevWeekIdx < weeks.length ? weeks[prevWeekIdx] : null;
+                const prevTotal = prevWeek ? coeRecords.filter(r => r.week === prevWeek).length : null;
+                const diff = prevTotal !== null ? weekRecs.length - prevTotal : null;
+                return (<>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                    <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                    {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
+                      <select value={selWeek || ""} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
+                        {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                      </select>
+                    )}
+                    {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek}</span>}
+                  </div>
+                  {weeks.length === 0 ? <EmptyState text="No COE data yet. Go to Imports to upload a file." /> : (<>
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                      <Metric label="Total Records" value={weekRecs.length} status={weekRecs.length > 0 ? "green" : undefined} />
+                      <Metric label="NIET" value={weekRecs.filter(r => r.rto === "NIET").length} />
+                      <Metric label="CB" value={weekRecs.filter(r => r.rto === "CB").length} />
+                      <Metric label="Rhodes" value={weekRecs.filter(r => r.rto === "Rhodes").length} />
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 480 }}>
+                        <thead><tr><th style={thCss}>RTO</th><th style={thCss}>Type</th><th style={{ ...thCss, textAlign: "right" }}>Records</th></tr></thead>
+                        <tbody>
+                          {COE_ROWS.map(c => {
+                            const n = weekRecs.filter(r => r.rto === c.rto && r.type === c.type).length;
+                            return (<tr key={`${c.rto}-${c.type}`}>
+                              <td style={{ ...tdCss, fontWeight: 600 }}>{c.rto}</td>
+                              <td style={tdCss}>{c.type}</td>
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: n ? T.text : T.textMuted }}>{n || "—"}</td>
+                            </tr>);
+                          })}
+                          <tr style={{ background: T.raised }}>
+                            <td colSpan={2} style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Total</td>
+                            <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{weekRecs.length}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </>)}
+                </>);
+              })()}
+
+              {!coeLoading && coeTab === "imports" && (() => {
+                const handleFile = async file => {
+                  if (!file) return;
+                  if (file.size > 10 * 1024 * 1024) { setCoeError("File exceeds 10 MB."); return; }
+                  setCoeError(null);
+                  try {
+                    const parsed = await coeParseSheetsFromFile(file);
+                    if (parsed.error && parsed.sheetsFound.length === 0) { setCoeError(parsed.error); return; }
+                    const existingWeekRecs = coeRecords.filter(r => r.week === parsed.week);
+                    const existingTypes = [...new Set(existingWeekRecs.map(r => `${r.rto} ${r.type}`))];
+                    const overlapping = parsed.sheetsFound.filter(s => existingTypes.includes(s));
+                    setCoeParsed({ ...parsed, weekAlreadyHasData: existingWeekRecs.length > 0, overlapping, existingTypes });
+                  } catch (e) { setCoeError(`Parse error: ${e.message}`); }
+                };
+                const doImport = async () => {
+                  if (!coeParsed) return;
+                  setCoeImporting(true);
+                  try {
+                    const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                    const batchId = `coe${Date.now()}`;
+                    const batch = { id: batchId, fileName: coeParsed.fileName, fileSize: coeParsed.fileSize, week: coeParsed.week, totalRecords: coeParsed.totalRecords, sheetsFound: coeParsed.sheetsFound, importedAt: now };
+                    const records = coeParsed.records.map((r, i) => ({ ...r, id: `${batchId}_${i}`, week: coeParsed.week, batchId, importedAt: now }));
+                    await dbUpsert("coe_batches", batch);
+                    await dbBulkInsert("coe_records", records);
+                    setCoeRecords(prev => [...prev, ...records]);
+                    setCoeBatches(prev => [...prev, batch]);
+                    setCoeParsed(null);
+                    setCoeError(null);
+                  } catch (e) { setCoeError(`Import failed: ${e.message}`); }
+                  finally { setCoeImporting(false); }
+                };
+                return (<>
+                  {!coeParsed && (
+                    <Card style={{ padding: 32, textAlign: "center", border: `2px dashed ${T.border}`, cursor: "pointer" }}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}>
+                      <div style={{ fontSize: 30, marginBottom: 8 }}>⬆</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Drop file here or browse</div>
+                      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>.xlsx · COE/Non-CoE worksheets · max 10 MB</div>
+                      <input type="file" accept=".xlsx,.xls" id="coe-file-input" style={{ display: "none" }} onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
+                      <Btn primary onClick={() => document.getElementById("coe-file-input").click()}>Browse files</Btn>
+                    </Card>
+                  )}
+                  {coeParsed && (<>
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
+                      <Metric label="Week" value={coeParsed.week || "?"} />
+                      <Metric label="Total Records" value={coeParsed.totalRecords} status={coeParsed.totalRecords > 0 ? "green" : undefined} />
+                      <Metric label="Sheets Found" value={coeParsed.sheetsFound.length} />
+                    </div>
+                    {coeParsed.weekAlreadyHasData && coeParsed.overlapping.length > 0 && (
+                      <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 7, fontSize: 13, color: T.warn, marginBottom: 14, lineHeight: 1.5 }}>
+                        ⚠ Week {coeParsed.week} already has data for: {coeParsed.overlapping.join(", ")}. Importing again will duplicate records.
+                      </div>
+                    )}
+                    {coeParsed.weekAlreadyHasData && coeParsed.overlapping.length === 0 && (
+                      <div style={{ padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand, marginBottom: 14, lineHeight: 1.5 }}>
+                        ℹ Week {coeParsed.week} already has data for: {coeParsed.existingTypes.join(", ")}. This adds new sheets — safe to combine.
+                      </div>
+                    )}
+                    {coeParsed.error && (
+                      <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 7, fontSize: 13, color: T.warn, marginBottom: 14, lineHeight: 1.5 }}>
+                        ⚠ {coeParsed.error}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>{coeParsed.fileName} · {(coeParsed.fileSize / 1024).toFixed(1)} KB</div>
+                    <SectionLabel>Preview</SectionLabel>
+                    <div style={{ overflowX: "auto", marginBottom: 16 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 480 }}>
+                        <thead><tr><th style={thCss}>RTO</th><th style={thCss}>Type</th><th style={{ ...thCss, textAlign: "right" }}>Records Found</th></tr></thead>
+                        <tbody>
+                          {coeParsed.sheetSummary.map(s => (
+                            <tr key={`${s.rto}-${s.type}`}>
+                              <td style={{ ...tdCss, fontWeight: 600 }}>{s.rto}</td>
+                              <td style={tdCss}>{s.type}</td>
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: s.found && s.count > 0 ? T.text : T.textMuted }}>{s.found ? (s.count || (s.note ? `0 (${s.note})` : "—")) : <span style={{ color: T.textDim, fontStyle: "italic" }}>Sheet not found</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn onClick={() => { setCoeParsed(null); setCoeError(null); }}>Cancel</Btn>
+                      <Btn primary disabled={coeImporting || coeParsed.totalRecords === 0} onClick={doImport}>{coeImporting ? "Importing…" : `Import ${coeParsed.totalRecords} records`}</Btn>
+                    </div>
+                  </>)}
+                  {coeBatches.length > 0 && (<>
+                    <SectionLabel style={{ marginTop: 28 }}>Import History</SectionLabel>
+                    {[...coeBatches].sort((a, b) => String(b.id).localeCompare(String(a.id))).map(b => (
+                      <Card key={b.id} style={{ padding: "10px 18px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{b.fileName}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>{b.importedAt} · Week {b.week} · {b.sheetsFound?.join(", ")}</div>
+                        </div>
+                        <div style={{ fontSize: 13, fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>{b.totalRecords} records</div>
+                      </Card>
+                    ))}
+                  </>)}
+                </>);
+              })()}
+
+              {!coeLoading && coeTab === "data" && (() => {
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const rtos = [...new Set(coeRecords.map(r => r.rto))].sort();
+                const types = [...new Set(coeRecords.map(r => r.type))].sort();
+                const filtered = coeRecords.filter(r => {
+                  if (coeFilterWeek !== "all" && r.week !== coeFilterWeek) return false;
+                  if (coeFilterRto !== "all" && r.rto !== coeFilterRto) return false;
+                  if (coeFilterType !== "all" && r.type !== coeFilterType) return false;
+                  return true;
+                }).sort((a, b) => b.week.localeCompare(a.week) || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
+                const exportCSV = () => {
+                  const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Onshore/Offshore","Pathway"];
+                  const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.onshoreOffshore, r.pathway]);
+                  const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+                  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "coe_records.csv" });
+                  a.click(); URL.revokeObjectURL(a.href);
+                };
+                const colHdr = ["Student ID","RTO","Type","Week","Course Name","Intake Date","Agent","Marketer","Onshore/Offshore","Pathway"];
+                return (<>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+                    <select value={coeFilterWeek} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
+                      <option value="all">All weeks</option>
+                      {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                    <select value={coeFilterRto} onChange={e => setCoeFilterRto(e.target.value)} style={selCss}>
+                      <option value="all">All RTOs</option>
+                      {rtos.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <select value={coeFilterType} onChange={e => setCoeFilterType(e.target.value)} style={selCss}>
+                      <option value="all">All types</option>
+                      {types.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <Btn small onClick={exportCSV}>Export CSV</Btn>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {coeRecords.length} records</div>
+                  {filtered.length === 0 ? <EmptyState text={coeRecords.length === 0 ? "No records yet. Import a file to get started." : "No records match the current filters."} /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr>{colHdr.map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {filtered.map((r, i) => (
+                            <tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                              <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td>
+                              <td style={{ padding: "7px 12px", fontWeight: 600 }}>{r.rto}</td>
+                              <td style={{ padding: "7px 12px" }}>{r.type}</td>
+                              <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.week}</td>
+                              <td style={{ padding: "7px 12px" }}>{r.courseName}</td>
+                              <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.intakeDate}</td>
+                              <td style={{ padding: "7px 12px" }}>{r.agent}</td>
+                              <td style={{ padding: "7px 12px" }}>{r.marketer}</td>
+                              <td style={{ padding: "7px 12px" }}>{r.onshoreOffshore}</td>
+                              <td style={{ padding: "7px 12px" }}>{r.pathway}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div style={{ marginTop: 32, paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Danger Zone</div>
+                    <Btn danger small onClick={async () => {
+                      if (!window.confirm("Delete ALL COE records and import history? This cannot be undone.")) return;
+                      if (!window.confirm("Are you sure? All COE data will be permanently deleted.")) return;
+                      try {
+                        await dbDeleteCollection("coe_records");
+                        await dbDeleteCollection("coe_batches");
+                        setCoeRecords([]); setCoeBatches([]); setCoeError(null);
+                      } catch (e) { setCoeError(`Clear failed: ${e.message}`); }
+                    }}>Clear all COE data</Btn>
+                  </div>
+                </>);
+              })()}
+            </Pane>
+          </>);
+        })()}
 
         {page === "leaderboard" && (<>
           <Header title="Company Leaderboard" sub={`All staff ranked by OKR completion · ${currentFYQuarter()}`} />
