@@ -5138,7 +5138,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       <Metric label="CB" value={weekRecs.filter(r => r.rto === "CB").length} />
                       <Metric label="Rhodes" value={weekRecs.filter(r => r.rto === "Rhodes").length} />
                     </div>
-                    <div style={{ overflowX: "auto" }}>
+                    <div style={{ overflowX: "auto", marginBottom: 28 }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 480 }}>
                         <thead><tr><th style={thCss}>RTO</th><th style={thCss}>Type</th><th style={{ ...thCss, textAlign: "right" }}>Records</th></tr></thead>
                         <tbody>
@@ -5157,6 +5157,30 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         </tbody>
                       </table>
                     </div>
+                    {weekRecs.length > 0 && (<>
+                      <SectionLabel>Student Records</SectionLabel>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                          <thead><tr>
+                            {["Student ID","RTO","Type","Course Name","Agent","Marketer","Created By","Onshore/Offshore"].map(h => <th key={h} style={thCss}>{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {weekRecs.sort((a, b) => a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type) || a.studentId.localeCompare(b.studentId)).map((r, i) => (
+                              <tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                                <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td>
+                                <td style={{ padding: "7px 12px", fontWeight: 600 }}>{r.rto}</td>
+                                <td style={{ padding: "7px 12px" }}>{r.type}</td>
+                                <td style={{ padding: "7px 12px" }}>{r.courseName}</td>
+                                <td style={{ padding: "7px 12px" }}>{r.agent}</td>
+                                <td style={{ padding: "7px 12px" }}>{r.marketer}</td>
+                                <td style={{ padding: "7px 12px" }}>{r.createdBy}</td>
+                                <td style={{ padding: "7px 12px" }}>{r.onshoreOffshore}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>)}
                   </>)}
                 </>);
               })()}
@@ -5272,13 +5296,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   return true;
                 }).sort((a, b) => b.week.localeCompare(a.week) || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
                 const exportCSV = () => {
-                  const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Onshore/Offshore","Pathway"];
-                  const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.onshoreOffshore, r.pathway]);
+                  const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"];
+                  const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.createdBy, r.onshoreOffshore, r.pathway]);
                   const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
                   const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "coe_records.csv" });
                   a.click(); URL.revokeObjectURL(a.href);
                 };
-                const colHdr = ["Student ID","RTO","Type","Week","Course Name","Intake Date","Agent","Marketer","Onshore/Offshore","Pathway"];
+                const colHdr = ["Student ID","RTO","Type","Week","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"];
                 return (<>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
                     <select value={coeFilterWeek} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
@@ -5311,6 +5335,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.intakeDate}</td>
                               <td style={{ padding: "7px 12px" }}>{r.agent}</td>
                               <td style={{ padding: "7px 12px" }}>{r.marketer}</td>
+                              <td style={{ padding: "7px 12px" }}>{r.createdBy}</td>
                               <td style={{ padding: "7px 12px" }}>{r.onshoreOffshore}</td>
                               <td style={{ padding: "7px 12px" }}>{r.pathway}</td>
                             </tr>
