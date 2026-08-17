@@ -2148,6 +2148,23 @@ function enrSortWeeksDesc(weeks) {
     return p(b) - p(a);
   });
 }
+// Week convention: Week 1 = first Monday of the calendar year; Mon–Fri only.
+function weekToDateRange(weekKey, short = false) {
+  const m = String(weekKey).match(/^(\d{4})-W(\d{1,2})$/i);
+  if (!m) return weekKey;
+  const year = parseInt(m[1]), week = parseInt(m[2]);
+  const jan1Day = new Date(Date.UTC(year, 0, 1)).getUTCDay();
+  const daysToMon = (8 - jan1Day) % 7;
+  const firstMon = new Date(Date.UTC(year, 0, 1 + daysToMon));
+  const mon = new Date(firstMon); mon.setUTCDate(firstMon.getUTCDate() + (week - 1) * 7);
+  const fri = new Date(mon); fri.setUTCDate(mon.getUTCDate() + 4);
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const fmt = d => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  if (short) return `${fmt(mon)} – ${fmt(fri)}`;
+  return mon.getUTCFullYear() === fri.getUTCFullYear()
+    ? `${fmt(mon)} – ${fmt(fri)} ${fri.getUTCFullYear()}`
+    : `${fmt(mon)} ${mon.getUTCFullYear()} – ${fmt(fri)} ${fri.getUTCFullYear()}`;
+}
 function enrParseMarketerSheet(rows, fileName) {
   const result = { week: "", records: [], error: null, totalEnrolments: 0, marketers: [], rtos: [] };
   // Find week from "Week Number" row (search first 10 rows)
@@ -4779,10 +4796,11 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
                   {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
                     <select value={selWeek || ""} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
-                      {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                      {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
                     </select>
                   )}
-                  {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek}</span>}
+                  {selWeek && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selWeek)}</span>}
+                  {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek} · {weekToDateRange(prevWeek, true)}</span>}
                 </div>
                 {weeks.length === 0 ? <EmptyState text="No application data yet. Go to Imports to upload a file." /> : (<>
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
@@ -5083,8 +5101,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <span style={{ fontSize: 13, color: T.textMuted }}>Filter:</span>
                   <select value={selW} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
                     <option value="all">All Weeks</option>
-                    {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                    {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
                   </select>
+                  {selW !== "all" && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selW)}</span>}
                 </div>
                 {filtered.length === 0 ? <EmptyState text={enrRecords.length === 0 ? "No data yet. Import a file to get started." : "No data for this week."} /> : (<>
                   <SectionLabel>By Marketer</SectionLabel>
@@ -5117,7 +5136,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
                   <select value={enrFilterWeek} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
                     <option value="all">All weeks</option>
-                    {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                    {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
                   </select>
                   <select value={enrFilterMarketer} onChange={e => setEnrFilterMarketer(e.target.value)} style={selCss}>
                     <option value="all">All marketers</option>
@@ -5221,10 +5240,11 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
                     {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
                       <select value={selWeek || ""} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
-                        {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                        {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
                       </select>
                     )}
-                    {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek}</span>}
+                    {selWeek && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selWeek)}</span>}
+                    {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek} · {weekToDateRange(prevWeek, true)}</span>}
                   </div>
                   {weeks.length === 0 ? <EmptyState text="No COE data yet. Go to Imports to upload a file." /> : (<>
                     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
@@ -5292,8 +5312,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
                     <select value={selW} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
                       <option value="all">All Weeks</option>
-                      {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                      {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
                     </select>
+                    {selW !== "all" && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selW)}</span>}
                   </div>
                   {filtered.length === 0 ? <EmptyState text={coeRecords.length === 0 ? "No data yet. Import a file to get started." : "No data for this week."} /> : (<>
                     <SectionLabel>Marketer Breakdown</SectionLabel>
@@ -5501,7 +5522,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
                     <select value={coeFilterWeek} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
                       <option value="all">All weeks</option>
-                      {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                      {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
                     </select>
                     <select value={coeFilterRto} onChange={e => setCoeFilterRto(e.target.value)} style={selCss}>
                       <option value="all">All RTOs</option>
