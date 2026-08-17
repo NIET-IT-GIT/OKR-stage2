@@ -5107,7 +5107,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
             <Pane>
               {coeError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{coeError}</div>}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
-                {[["overview","Overview"],["imports","Imports"],["data","Data"]].map(([v, label]) => (
+                {[["overview","Overview"],["marketer","Marketer"],["imports","Imports"],["data","Data"]].map(([v, label]) => (
                   <Btn key={v} small primary={coeTab === v} onClick={() => setCoeTab(v)}>{label}</Btn>
                 ))}
               </div>
@@ -5181,6 +5181,79 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         </table>
                       </div>
                     </>)}
+                  </>)}
+                </>);
+              })()}
+
+              {!coeLoading && coeTab === "marketer" && (() => {
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const selW = coeFilterWeek;
+                const filtered = (selW === "all" ? coeRecords : coeRecords.filter(r => r.week === selW)).filter(r => r.marketer);
+                const COE_COLS = [
+                  { rto: "NIET", type: "CoE", label: "NIET CoE" },
+                  { rto: "NIET", type: "Non-CoE", label: "NIET Non-CoE" },
+                  { rto: "CB", type: "CoE", label: "CB CoE" },
+                  { rto: "CB", type: "Non-CoE", label: "CB Non-CoE" },
+                  { rto: "Rhodes", type: "Accepted & Paid", label: "Rhodes" },
+                ];
+                const mTotals = {};
+                filtered.forEach(r => { mTotals[r.marketer] = (mTotals[r.marketer] || 0) + 1; });
+                const marketers = Object.entries(mTotals).sort((a, b) => b[1] - a[1]).map(([m]) => m);
+                const maxTotal = mTotals[marketers[0]] || 1;
+                const matrix = {};
+                filtered.forEach(r => { if (!matrix[r.marketer]) matrix[r.marketer] = {}; const k = `${r.rto} ${r.type}`; matrix[r.marketer][k] = (matrix[r.marketer][k] || 0) + 1; });
+                const colTotals = {};
+                COE_COLS.forEach(c => { colTotals[`${c.rto} ${c.type}`] = filtered.filter(r => r.rto === c.rto && r.type === c.type).length; });
+                return (<>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                    <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                    <select value={selW} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
+                      <option value="all">All Weeks</option>
+                      {weeks.map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                  </div>
+                  {filtered.length === 0 ? <EmptyState text={coeRecords.length === 0 ? "No data yet. Import a file to get started." : "No data for this week."} /> : (<>
+                    <SectionLabel>Marketer Breakdown</SectionLabel>
+                    <div style={{ overflowX: "auto", marginBottom: 28 }}>
+                      <table style={{ borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...thCss, minWidth: 130 }}>Marketer</th>
+                            {COE_COLS.map(c => <th key={c.label} style={{ ...thCss, textAlign: "right", minWidth: 90 }}>{c.label}</th>)}
+                            <th style={{ ...thCss, textAlign: "right", minWidth: 70 }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {marketers.map(m => {
+                            const row = matrix[m] || {};
+                            const total = mTotals[m] || 0;
+                            return (<tr key={m}>
+                              <td style={{ ...tdCss, fontWeight: 600 }}>{m}</td>
+                              {COE_COLS.map(c => { const n = row[`${c.rto} ${c.type}`] || 0; return <td key={c.label} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: n ? T.text : T.textMuted }}>{n || "—"}</td>; })}
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.brand }}>{total}</td>
+                            </tr>);
+                          })}
+                          <tr style={{ background: T.raised }}>
+                            <td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Total</td>
+                            {COE_COLS.map(c => { const n = colTotals[`${c.rto} ${c.type}`] || 0; return <td key={c.label} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, borderBottom: "none" }}>{n || "—"}</td>; })}
+                            <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{filtered.length}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <SectionLabel>By Marketer</SectionLabel>
+                    <div style={{ marginBottom: 8 }}>
+                      {marketers.map(m => {
+                        const n = mTotals[m] || 0;
+                        return (<div key={m} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                          <div style={{ width: 140, fontSize: 13, textAlign: "right", color: T.text, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m}</div>
+                          <div style={{ flex: 1, height: 20, background: T.raised, borderRadius: 4, overflow: "hidden", border: `1px solid ${T.border}` }}>
+                            <div style={{ width: `${(n / maxTotal) * 100}%`, height: "100%", background: T.brand, borderRadius: 4, minWidth: n > 0 ? 4 : 0 }} />
+                          </div>
+                          <div style={{ width: 36, fontSize: 13, fontFamily: F.mono, textAlign: "right", fontWeight: 700, flexShrink: 0 }}>{n}</div>
+                        </div>);
+                      })}
+                    </div>
                   </>)}
                 </>);
               })()}
