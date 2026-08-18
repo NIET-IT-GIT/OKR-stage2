@@ -2453,6 +2453,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [checkinResult, setCheckinResult] = useState(null);
   const [checkinScope, setCheckinScope] = useState({ deptId: "", teamId: "", userId: "" });
   const [checkinPreview, setCheckinPreview] = useState(null);
+  const [showCheckinDialog, setShowCheckinDialog] = useState(false);
   const [rejectOkr, setRejectOkr] = useState(null);
   const [editingSub, setEditingSub] = useState(null);
   const [editingApproved, setEditingApproved] = useState(null);
@@ -3280,6 +3281,62 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               <Btn primary disabled={checkinPreview.recipients.length === 0}
                 onClick={() => { const { periods, period, scope } = checkinPreview; setCheckinPreview(null); sendCheckin(periods || [period], scope); }}>
                 📨 Confirm &amp; Send to {checkinPreview.recipients.length} recipient{checkinPreview.recipients.length !== 1 ? "s" : ""}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+      {showCheckinDialog && (
+        <div onClick={() => setShowCheckinDialog(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "100%", maxWidth: 500 }}>
+            <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>📨 Send Check-In</div>
+              <div style={{ fontSize: 12, color: T.textDim, marginTop: 4 }}>Select periods and recipients, then preview before sending.</div>
+            </div>
+            <div style={{ padding: "20px 24px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Periods</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+                {["daily","weekly","monthly","quarterly","biannual","annual"].map(p => (
+                  <label key={p} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, cursor: "pointer", userSelect: "none", padding: "5px 11px", borderRadius: 7, border: `1px solid ${checkinPeriods.includes(p) ? T.brandBorder : T.border}`, background: checkinPeriods.includes(p) ? T.brandDim : T.raised, color: checkinPeriods.includes(p) ? T.brand : T.textDim }}>
+                    <input type="checkbox" checked={checkinPeriods.includes(p)} onChange={e => setCheckinPeriods(prev => e.target.checked ? [...prev, p] : prev.filter(x => x !== p))} style={{ accentColor: T.brand, margin: 0 }} />
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </label>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Recipients</div>
+              <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
+                <select value={checkinScope.deptId} onChange={e => setCheckinScope({ deptId: e.target.value, teamId: "", userId: "" })}
+                  style={{ padding: "8px 12px", fontSize: 13, fontFamily: F.body, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", width: "100%" }}>
+                  <option value="">All Departments</option>
+                  {depts.slice().sort((a,b) => a.name.localeCompare(b.name)).map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+                {checkinScope.deptId && (() => {
+                  const scopeTeams = depts.find(d => d.id === checkinScope.deptId)?.teams || [];
+                  return scopeTeams.length > 0 ? (
+                    <select value={checkinScope.teamId} onChange={e => setCheckinScope(p => ({ ...p, teamId: e.target.value, userId: "" }))}
+                      style={{ padding: "8px 12px", fontSize: 13, fontFamily: F.body, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", width: "100%" }}>
+                      <option value="">All Teams</option>
+                      {scopeTeams.slice().sort((a,b) => a.name.localeCompare(b.name)).map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  ) : null;
+                })()}
+                <select value={checkinScope.userId} onChange={e => setCheckinScope(p => ({ ...p, userId: e.target.value }))}
+                  style={{ padding: "8px 12px", fontSize: 13, fontFamily: F.body, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", width: "100%" }}>
+                  <option value="">All Members</option>
+                  {resolveScopePool({ deptId: checkinScope.deptId, teamId: checkinScope.teamId }).slice().sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                    <option key={u.id} value={u.id}>{u.name}{u.deptId !== checkinScope.deptId ? ` (${depts.find(d=>d.id===u.deptId)?.name||""})` : ""}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ padding: "14px 24px", borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <Btn onClick={() => setShowCheckinDialog(false)}>Cancel</Btn>
+              <Btn primary disabled={!checkinPeriods.length} onClick={() => { setShowCheckinDialog(false); previewCheckin(checkinPeriods, checkinScope); }}>
+                Preview &amp; Send
               </Btn>
             </div>
           </div>
@@ -4238,56 +4295,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <Metric label="No" value={periodSubs.filter(s => s.answer === "no").length} status="red" />
                   <Metric label="Approved" value={periodSubs.filter(s => s.approval === "approved").length} status="green" />
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  {/* Period checkboxes */}
-                  {["daily","weekly","monthly","quarterly","biannual","annual"].map(p => (
-                    <label key={p} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, cursor: "pointer", userSelect: "none", padding: "4px 9px", borderRadius: 7, border: `1px solid ${checkinPeriods.includes(p) ? T.brandBorder : T.border}`, background: checkinPeriods.includes(p) ? T.brandDim : T.surface, color: checkinPeriods.includes(p) ? T.brand : T.textDim }}>
-                      <input type="checkbox" checked={checkinPeriods.includes(p)} onChange={e => setCheckinPeriods(prev => e.target.checked ? [...prev, p] : prev.filter(x => x !== p))} style={{ accentColor: T.brand, margin: 0 }} />
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </label>
-                  ))}
-                  <div style={{ width: 1, height: 24, background: T.border, margin: "0 2px" }} />
-                  {/* Dept */}
-                  <select value={checkinScope.deptId}
-                    onChange={e => setCheckinScope({ deptId: e.target.value, teamId: "", userId: "" })}
-                    style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 180 }}>
-                    <option value="">All Departments</option>
-                    {depts.slice().sort((a,b) => a.name.localeCompare(b.name)).map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                  {/* Team — only if dept selected */}
-                  {checkinScope.deptId && (() => {
-                    const scopeTeams = depts.find(d => d.id === checkinScope.deptId)?.teams || [];
-                    return scopeTeams.length > 0 ? (
-                      <select value={checkinScope.teamId}
-                        onChange={e => setCheckinScope(p => ({ ...p, teamId: e.target.value, userId: "" }))}
-                        style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 160 }}>
-                        <option value="">All Teams</option>
-                        {scopeTeams.slice().sort((a,b) => a.name.localeCompare(b.name)).map(t => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
-                        ))}
-                      </select>
-                    ) : null;
-                  })()}
-                  {/* Member */}
-                  {(() => {
-                    const pool = resolveScopePool({ deptId: checkinScope.deptId, teamId: checkinScope.teamId });
-                    return (
-                      <select value={checkinScope.userId}
-                        onChange={e => setCheckinScope(p => ({ ...p, userId: e.target.value }))}
-                        style={{ padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, outline: "none", maxWidth: 180 }}>
-                        <option value="">All Members</option>
-                        {pool.slice().sort((a,b) => a.name.localeCompare(b.name)).map(u => (
-                          <option key={u.id} value={u.id}>{u.name} {u.deptId !== checkinScope.deptId ? `(${depts.find(d=>d.id===u.deptId)?.name||""})` : ""}</option>
-                        ))}
-                      </select>
-                    );
-                  })()}
-                  <Btn primary onClick={() => previewCheckin(checkinPeriods, checkinScope)} disabled={sendingCheckin || !checkinPeriods.length}>
-                    {sendingCheckin ? "Sending…" : `📨 Send ${checkinPeriods.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" & ")} Check-In`}
-                  </Btn>
-                </div>
+                <Btn primary onClick={() => setShowCheckinDialog(true)} disabled={sendingCheckin}>
+                  {sendingCheckin ? "Sending…" : "📨 Send Check-In"}
+                </Btn>
               </div>
               {checkinResult && (
                 <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
