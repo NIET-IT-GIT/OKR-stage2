@@ -2365,7 +2365,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
   const [projSearch, setProjSearch] = useState("");
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", startDate: "", due: "", income: "", margin: "" });
+  const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", startDate: "", due: "", income: "", margin: "", contributeRate: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [subFilter, setSubFilter] = useState("all");
@@ -2590,10 +2590,11 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       }).filter(Boolean);
       const ppLines = kd.krs.filter(kr => kr.type === "project_profit").map(kr => {
         const yearProjects = projects.filter(p => p.mgrId === u.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
-        const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+        const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
         const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
         const missing = yearProjects.filter(p => p.income == null || p.margin == null).length;
-        return `    Proj Profit KR — ${kr.label}: $${actual.toLocaleString()} of $${(kr.target || 0).toLocaleString()} (${pct}%)${missing > 0 ? ` [⚠ ${missing} project(s) missing income/margin]` : ""} · Year ${kr.krYear || "?"}`;
+        const hasPartialRate = yearProjects.some(p => p.contributeRate != null && p.contributeRate < 100);
+        return `    Proj Profit KR — ${kr.label}: $${actual.toLocaleString()} of $${(kr.target || 0).toLocaleString()} (${pct}%)${missing > 0 ? ` [⚠ ${missing} project(s) missing income/margin]` : ""}${hasPartialRate ? " [⚡ partial rates applied]" : ""} · Year ${kr.krYear || "?"}`;
       });
       return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines, krLines, ppLines };
     });
@@ -2702,7 +2703,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
       let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
       if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
-      if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)`;
+      if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)${p.contributeRate != null && p.contributeRate < 100 ? ` [Owner's KR share: ${p.contributeRate}%]` : ""}`;
       const logEntries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
       if (logEntries.length) line += `\n    Latest Log: ${logEntries[0].text.slice(0, 100)}${logEntries[0].text.length > 100 ? "…" : ""}`;
       return line;
@@ -4773,7 +4774,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             <button onClick={() => {
                               if (isDetailsOpen) { setEditProjId(null); return; }
                               setEditProjId(p.id);
-                              setEditProjForm({ name: p.name, status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "" });
+                              setEditProjForm({ name: p.name, status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "", contributeRate: p.contributeRate != null ? String(p.contributeRate) : "" });
                             }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                               {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                             </button>
@@ -4802,7 +4803,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                                 </div>
                               </div>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                                 <div>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
                                   <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
@@ -4812,8 +4813,24 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   <Input type="number" value={editProjForm.margin} onChange={e => setEditProjForm(f => ({ ...f, margin: e.target.value }))} placeholder="e.g. 30" min="0" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
                                 </div>
                                 <div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution Rate (%)</div>
+                                  <Input type="number" value={editProjForm.contributeRate} onChange={e => setEditProjForm(f => ({ ...f, contributeRate: e.target.value }))} placeholder="100 (default)" min="1" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                                  <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3 }}>Leave blank if sole owner</div>
+                                </div>
+                                <div>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit (Auto)</div>
-                                  <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: editProjForm.income !== "" && editProjForm.margin !== "" ? T.ok : T.textMuted, fontWeight: 700 }}>{editProjForm.income !== "" && editProjForm.margin !== "" ? `$${Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100).toLocaleString()}` : "—"}</div>
+                                  {(() => {
+                                    const hasData = editProjForm.income !== "" && editProjForm.margin !== "";
+                                    const fullProfit = hasData ? Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100) : null;
+                                    const rate = editProjForm.contributeRate !== "" ? Math.min(100, Math.max(1, Number(editProjForm.contributeRate))) : 100;
+                                    const myProfit = fullProfit != null ? Math.round(fullProfit * rate / 100) : null;
+                                    return (
+                                      <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: hasData ? T.ok : T.textMuted, fontWeight: 700 }}>
+                                        {fullProfit != null ? `$${fullProfit.toLocaleString()}` : "—"}
+                                        {fullProfit != null && rate < 100 && <div style={{ fontSize: 11, color: T.brand, fontWeight: 600, marginTop: 2 }}>Your KR: ${myProfit.toLocaleString()} ({rate}%)</div>}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                               <div style={{ marginBottom: 16 }}>
@@ -4833,7 +4850,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 <Btn primary small disabled={!editProjForm.name.trim()} onClick={() => {
                                   const becomingCompleted = editProjForm.status === "completed" && p.status !== "completed";
                                   const revertingFromCompleted = editProjForm.status !== "completed" && p.status === "completed";
-                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, ...(becomingCompleted && { completedYear: new Date().getFullYear() }), ...(revertingFromCompleted && { completedYear: null }), updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                                  const cr = editProjForm.contributeRate !== "" ? Math.min(100, Math.max(1, Number(editProjForm.contributeRate))) : null;
+                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, ...(becomingCompleted && { completedYear: new Date().getFullYear() }), ...(revertingFromCompleted && { completedYear: null }), updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                                   setEditProjId(null);
                                 }}>Save Details</Btn>
                               </div>
@@ -5897,7 +5915,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                       const mk = currentFYMonthKey();
                                       const mTgt = isMonthly ? (Number(kr.monthlyTargets[mk]) || 0) : null;
                                       const mAct = isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : null;
-                                      const lbPPAct = kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; return (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); })() : null;
+                                      const lbPPAct = kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; return (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0); })() : null;
                                       const pct = kr.type === "project_profit" ? (kr.target > 0 ? Math.min(Math.round(lbPPAct / kr.target * 100), 100) : 0) : krCompletion(kr);
                                       const st = getStatus(pct);
                                       return (
@@ -5918,7 +5936,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                               : kr.type === "progress" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                                               : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
-                                              : kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; const lbAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return <span style={{ textAlign: "right", fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>${lbAct.toLocaleString()}</span>; })()
+                                              : kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; const lbAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0); return <span style={{ textAlign: "right", fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>${lbAct.toLocaleString()}</span>; })()
                                               : isMonthly ? <NumInput value={mAct} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: n } })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
                                               : <NumInput value={kr.actual} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: n })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
@@ -6463,7 +6481,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [newProj, setNewProj] = useState({ name: "", startDate: "", due: "" });
   const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "", contributeRate: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [syncPrompt, setSyncPrompt] = useState(null);
@@ -7255,7 +7273,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
                         setEditProjId(p.id);
-                        setEditProjForm({ status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "" });
+                        setEditProjForm({ status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "", contributeRate: p.contributeRate != null ? String(p.contributeRate) : "" });
                       }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                         {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                       </button>
@@ -7281,7 +7299,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                         </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
                           <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
@@ -7291,8 +7309,24 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <Input type="number" value={editProjForm.margin} onChange={e => setEditProjForm(f => ({ ...f, margin: e.target.value }))} placeholder="e.g. 30" min="0" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
                         </div>
                         <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution Rate (%)</div>
+                          <Input type="number" value={editProjForm.contributeRate} onChange={e => setEditProjForm(f => ({ ...f, contributeRate: e.target.value }))} placeholder="100 (default)" min="1" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3 }}>Leave blank if sole owner</div>
+                        </div>
+                        <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit (Auto)</div>
-                          <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: editProjForm.income !== "" && editProjForm.margin !== "" ? T.ok : T.textMuted, fontWeight: 700 }}>{editProjForm.income !== "" && editProjForm.margin !== "" ? `$${Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100).toLocaleString()}` : "—"}</div>
+                          {(() => {
+                            const hasData = editProjForm.income !== "" && editProjForm.margin !== "";
+                            const fullProfit = hasData ? Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100) : null;
+                            const rate = editProjForm.contributeRate !== "" ? Math.min(100, Math.max(1, Number(editProjForm.contributeRate))) : 100;
+                            const myProfit = fullProfit != null ? Math.round(fullProfit * rate / 100) : null;
+                            return (
+                              <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: hasData ? T.ok : T.textMuted, fontWeight: 700 }}>
+                                {fullProfit != null ? `$${fullProfit.toLocaleString()}` : "—"}
+                                {fullProfit != null && rate < 100 && <div style={{ fontSize: 11, color: T.brand, fontWeight: 600, marginTop: 2 }}>Your KR: ${myProfit.toLocaleString()} ({rate}%)</div>}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                       <div style={{ marginBottom: 16 }}>
@@ -7310,11 +7344,12 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
+                          const cr = editProjForm.contributeRate !== "" ? Math.min(100, Math.max(1, Number(editProjForm.contributeRate))) : null;
                           if (editProjForm.status === "completed" && p.status !== "completed") {
                             const submit = window.confirm("Submit for System Admin approval?");
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           } else {
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           }
                           setEditProjId(null);
                         }}>Save Details</Btn>
@@ -7463,7 +7498,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         </div>
                         {ppKrsTeam.map((kr, ki) => {
                           const ppTGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
-                          const ppTAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && ppTGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                          const ppTAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && ppTGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                           const ppTPct = kr.target > 0 ? Math.min(Math.round(ppTAct / kr.target * 100), 100) : 0;
                           const ppTSt = getStatus(ppTPct);
                           const ppTMissing = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && ppTGetCY(p) === kr.krYear && (p.income == null || p.margin == null)).length;
@@ -7618,7 +7653,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [newProj, setNewProj] = useState({ name: "", startDate: "", due: "" });
   const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "", contributeRate: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [logPopup, setLogPopup] = useState(null);
@@ -7874,16 +7909,19 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   ) : kr.type === "project_profit" ? (
                     (() => {
                       const kpiGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
-                      const kpiAct = projects.filter(p => p.mgrId === user.id && p.status === "completed" && kpiGetCY(p) === kr.krYear).reduce((acc, p) => acc + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                      const kpiYearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && kpiGetCY(p) === kr.krYear);
+                      const kpiAct = kpiYearProjects.reduce((acc, p) => acc + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                       const kpiPct = kr.target > 0 ? Math.min(Math.round(kpiAct / kr.target * 100), 100) : 0;
                       const kpiSt = getStatus(kpiPct);
-                      const kpiMissing = projects.filter(p => p.mgrId === user.id && p.status === "completed" && kpiGetCY(p) === kr.krYear && (p.income == null || p.margin == null)).length;
+                      const kpiMissing = kpiYearProjects.filter(p => p.income == null || p.margin == null).length;
+                      const kpiHasPartial = kpiYearProjects.some(p => p.contributeRate != null && p.contributeRate < 100);
                       return (
                         <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
                           <div>
                             <div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[kpiSt].color }}>${kpiAct.toLocaleString()}</div>
                             <div style={{ fontSize: 12, color: T.textMuted }}>of ${(kr.target || 0).toLocaleString()} profit · Year {kr.krYear || "?"}</div>
                             {kpiMissing > 0 && <div style={{ fontSize: 11, color: T.warn, marginTop: 3 }}>⚠ {kpiMissing} project{kpiMissing !== 1 ? "s" : ""} missing income/margin</div>}
+                            {kpiHasPartial && <div style={{ fontSize: 11, color: T.brand, marginTop: 2 }}>⚡ Partial contribution rates applied</div>}
                           </div>
                           <div style={{ flex: 1 }}><Bar value={kpiPct} status={kpiSt} h={10} /></div>
                           <div>
@@ -7967,7 +8005,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
             const _pkMem = okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod);
             const hasSub = okrPeriod === "all" ? (isMonthly ? Object.values(kr.monthlyActuals || {}).some(v => v != null) : kr.actual != null) : (state.okrSubmissions || []).some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMem && s.answer !== null);
-            const ppActual = kr.type === "project_profit" ? (() => { const getCompletedYear = p => { if (p.completedYear) return p.completedYear; const parts = (p.updatedDate || "").split("/"); return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null; }; return projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear).reduce((sum, p) => sum + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); })() : null;
+            const { ppActual, ppHasPartial } = kr.type === "project_profit" ? (() => { const getCompletedYear = p => { if (p.completedYear) return p.completedYear; const parts = (p.updatedDate || "").split("/"); return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null; }; const ppYrProj = projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear); return { ppActual: ppYrProj.reduce((sum, p) => sum + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0), ppHasPartial: ppYrProj.some(p => p.contributeRate != null && p.contributeRate < 100) }; })() : { ppActual: null, ppHasPartial: false };
             const ppPct = kr.type === "project_profit" && kr.target > 0 ? Math.min(Math.round(ppActual / kr.target * 100), 100) : null;
             const ppSt = ppPct != null ? getStatus(ppPct) : null;
             return (
@@ -7980,6 +8018,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
                   {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress · affects rate proportionally</span>}
                   {kr.type === "project_profit" && <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Project Profit · auto-tracked</span>}
+                  {kr.type === "project_profit" && ppHasPartial && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>⚡ Partial rates</span>}
                   {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Monthly Breakdown</span>}
                   {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                 </div>
@@ -8159,10 +8198,11 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                     {ppKrs.map(kr => {
                       const yearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
-                      const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                      const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                       const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
                       const st = getStatus(pct);
                       const missingMargin = yearProjects.filter(p => p.income == null || p.margin == null).length;
+                      const hasPartialRate = yearProjects.some(p => p.contributeRate != null && p.contributeRate < 100);
                       return (
                         <Card key={kr.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${T.ok}` }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
@@ -8182,6 +8222,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                             <span style={{ fontSize: 11, color: T.textMuted }}>{yearProjects.length} completed project{yearProjects.length !== 1 ? "s" : ""} in {kr.krYear}</span>
                             {missingMargin > 0 && <span style={{ fontSize: 11, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 5, padding: "1px 6px" }}>⚠ {missingMargin} project{missingMargin !== 1 ? "s" : ""} missing income/margin — not counted</span>}
+                            {hasPartialRate && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px" }}>⚡ Partial rates applied</span>}
                           </div>
                         </Card>
                       );
@@ -8446,10 +8487,11 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       </div>
                       {ppKrs.map((kr, idx) => {
                         const yearProjects = projects.filter(p => p.mgrId === memberId && p.status === "completed" && getCompletedYear(p) === kr.krYear);
-                        const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                        const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                         const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
                         const st = getStatus(pct);
                         const missingMargin = yearProjects.filter(p => p.income == null || p.margin == null).length;
+                        const hasPartialRate = yearProjects.some(p => p.contributeRate != null && p.contributeRate < 100);
                         return (
                           <div key={kr.id} style={{ padding: "12px 16px 12px 19px", borderLeft: `3px solid ${T.ok}`, borderBottom: idx < ppKrs.length - 1 ? `1px solid ${T.border}` : "none" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -8461,6 +8503,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                 <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 6 }}>Target: ${(kr.target || 0).toLocaleString()} profit · Year {kr.krYear || "?"}</div>
                                 <Bar value={pct} status={st} h={5} />
                                 {missingMargin > 0 && <div style={{ marginTop: 4, fontSize: 11, color: T.warn }}>⚠ {missingMargin} project{missingMargin !== 1 ? "s" : ""} missing income/margin — not counted</div>}
+                                {hasPartialRate && <div style={{ marginTop: 3, fontSize: 11, color: T.brand }}>⚡ Partial rates applied</div>}
                               </div>
                               <div style={{ textAlign: "right", flexShrink: 0 }}>
                                 <div style={{ fontSize: 16, fontWeight: 800, color: st === "met" ? T.ok : st === "near" ? T.warn : T.bad, fontFamily: F.mono }}>${actual.toLocaleString()}</div>
@@ -8645,7 +8688,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
                         setEditProjId(p.id);
-                        setEditProjForm({ status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "" });
+                        setEditProjForm({ status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "", contributeRate: p.contributeRate != null ? String(p.contributeRate) : "" });
                       }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                         {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                       </button>
@@ -8671,7 +8714,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                         </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
                           <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
@@ -8681,8 +8724,24 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <Input type="number" value={editProjForm.margin} onChange={e => setEditProjForm(f => ({ ...f, margin: e.target.value }))} placeholder="e.g. 30" min="0" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
                         </div>
                         <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution Rate (%)</div>
+                          <Input type="number" value={editProjForm.contributeRate} onChange={e => setEditProjForm(f => ({ ...f, contributeRate: e.target.value }))} placeholder="100 (default)" min="1" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3 }}>Leave blank if sole owner</div>
+                        </div>
+                        <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit (Auto)</div>
-                          <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: editProjForm.income !== "" && editProjForm.margin !== "" ? T.ok : T.textMuted, fontWeight: 700 }}>{editProjForm.income !== "" && editProjForm.margin !== "" ? `$${Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100).toLocaleString()}` : "—"}</div>
+                          {(() => {
+                            const hasData = editProjForm.income !== "" && editProjForm.margin !== "";
+                            const fullProfit = hasData ? Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100) : null;
+                            const rate = editProjForm.contributeRate !== "" ? Math.min(100, Math.max(1, Number(editProjForm.contributeRate))) : 100;
+                            const myProfit = fullProfit != null ? Math.round(fullProfit * rate / 100) : null;
+                            return (
+                              <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: hasData ? T.ok : T.textMuted, fontWeight: 700 }}>
+                                {fullProfit != null ? `$${fullProfit.toLocaleString()}` : "—"}
+                                {fullProfit != null && rate < 100 && <div style={{ fontSize: 11, color: T.brand, fontWeight: 600, marginTop: 2 }}>Your KR: ${myProfit.toLocaleString()} ({rate}%)</div>}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                       <div style={{ marginBottom: 16 }}>
@@ -8700,11 +8759,12 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                         <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                         <Btn primary small onClick={() => {
+                          const cr = editProjForm.contributeRate !== "" ? Math.min(100, Math.max(1, Number(editProjForm.contributeRate))) : null;
                           if (editProjForm.status === "completed" && p.status !== "completed") {
                             const submit = window.confirm("Submit for System Admin approval?");
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           } else {
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           }
                           setEditProjId(null);
                         }}>Save Details</Btn>
