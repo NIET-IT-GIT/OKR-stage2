@@ -2365,7 +2365,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
   const [projSearch, setProjSearch] = useState("");
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", due: "", contribution: "" });
+  const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", startDate: "", due: "", income: "", margin: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [subFilter, setSubFilter] = useState("all");
@@ -2486,7 +2486,7 @@ DATA RULES:
 - Yes/no KRs may include a reported actual value (e.g. total sales revenue). When a yes/no KR actual value and a tracker KR cover a similar metric, the yes/no KR actual is the confirmed reported figure and takes precedence over the tracker value.
 - Progress KRs record a cumulative running total toward a target and contribute proportionally to completion rate (actual ÷ target × 100%). They are used for project-oriented goals like annual profit targets where multiple check-ins occur through the year.
 - Financial data (Income, Net Profit, Expenses) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
-- Project data includes all manager-owned projects: name, department, responsible manager, status (active/completed), progress (0–100%), due date, and optional contribution ($). Proactively flag projects that are overdue or have low progress close to their due date.
+- Project data includes all manager-owned projects: name, department, responsible manager, status (active/pending approval/completed), progress (0–100%), start date, due date, optional income ($), optional profit margin (%), and computed profit ($). Proactively flag projects that are overdue or have low progress close to their due date.
 
 RESPONSE STYLE:
 - Lead with the direct answer, then supporting detail.
@@ -2686,8 +2686,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
       const mgrName = mgr?.name || "—";
       const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
-      let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}% | Due: ${p.due || "TBD"}${overdue}`;
-      if (p.contribution != null) line += ` | Contribution: ${fmtMoney(p.contribution)}`;
+      let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
+      if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
+      if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)`;
       const logEntries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
       if (logEntries.length) line += `\n    Latest Log: ${logEntries[0].text.slice(0, 100)}${logEntries[0].text.length > 100 ? "…" : ""}`;
       return line;
@@ -4648,7 +4649,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               <Metric label="Pending Approval" value={projects.filter(p => p.status === "pending approval").length} status="blue"   />
               <Metric label="Completed"       value={projects.filter(p => p.status === "completed").length}         status="green"  />
               {projects.length > 0 && <Metric label="Avg Progress" value={`${Math.round(projects.reduce((a, p) => a + p.progress, 0) / projects.length)}%`} />}
-              {(() => { const tc = projects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
+              {(() => { const ti = projects.reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Total Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
+              {(() => { const tp = projects.reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Total Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
             </div>
             <div style={{ marginBottom: 16 }}>
               <Input
@@ -4698,7 +4700,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             <Bar value={draftProg} status={ps} h={6} />
                             <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                             <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
-                            {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                            {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
+                            {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                             <Btn primary small disabled={!progChanged} onClick={() => {
                               dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { progress: draftProg, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                               setProgressEdits(d => { const n = { ...d }; delete n[p.id]; return n; });
@@ -4709,14 +4712,14 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             <button onClick={() => {
                               if (isDetailsOpen) { setEditProjId(null); return; }
                               setEditProjId(p.id);
-                              setEditProjForm({ name: p.name, status: p.status, due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                              setEditProjForm({ name: p.name, status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "" });
                             }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                               {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                             </button>
                           </div>
                           {isDetailsOpen && (
                             <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                                 <div>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Name</div>
                                   <Input value={editProjForm.name} onChange={e => setEditProjForm(f => ({ ...f, name: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
@@ -4730,14 +4733,27 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   </select>
                                 </div>
                                 <div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Start Date</div>
+                                  <Input type="date" value={editProjForm.startDate} onChange={e => setEditProjForm(f => ({ ...f, startDate: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
+                                </div>
+                                <div>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
                                   <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                                 </div>
                               </div>
-                              <div style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution to Date ($)</div>
-                                <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
-                                <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
+                                  <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit Margin (%)</div>
+                                  <Input type="number" value={editProjForm.margin} onChange={e => setEditProjForm(f => ({ ...f, margin: e.target.value }))} placeholder="e.g. 30" min="0" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit (Auto)</div>
+                                  <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: editProjForm.income !== "" && editProjForm.margin !== "" ? T.ok : T.textMuted, fontWeight: 700 }}>{editProjForm.income !== "" && editProjForm.margin !== "" ? `$${Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100).toLocaleString()}` : "—"}</div>
+                                </div>
                               </div>
                               <div style={{ marginBottom: 16 }}>
                                 <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Project Logbook</div>
@@ -4754,7 +4770,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                                 <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                                 <Btn primary small disabled={!editProjForm.name.trim()} onClick={() => {
-                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                                   setEditProjId(null);
                                 }}>Save Details</Btn>
                               </div>
@@ -4786,14 +4802,15 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             <div style={{ padding: "12px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                               <div>
                                 <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                                <div style={{ fontSize: 12, color: T.textMuted }}>{mgr ? `${mgr.name} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
+                                <div style={{ fontSize: 12, color: T.textMuted }}>{mgr ? `${mgr.name} · ` : ""}{p.startDate ? `Start: ${p.startDate} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                               </div>
                               <Tag type="review" label="PENDING APPROVAL" small />
                             </div>
                             <div style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${T.border}` }}>
                               <Bar value={draftProg} status={ps} h={6} />
                               <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
-                              {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                              {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
+                            {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                             </div>
                             <div style={{ padding: "8px 18px", display: "flex", justifyContent: "flex-end", gap: 8 }}>
                               <Btn small onClick={() => { if (window.confirm(`Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "active", updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Reject</Btn>
@@ -6357,10 +6374,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   useEffect(() => { if (page === "checkin") onReload(); }, [page]); // eslint-disable-line
-  const [newProj, setNewProj] = useState({ name: "", due: "" });
+  const [newProj, setNewProj] = useState({ name: "", startDate: "", due: "" });
   const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ status: "active", due: "", contribution: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [syncPrompt, setSyncPrompt] = useState(null);
@@ -7065,7 +7082,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 <Metric label="Pending Approval" value={myProjects.filter(p => p.status === "pending approval").length} status="blue" />
                 <Metric label="Completed" value={myProjects.filter(p => p.status === "completed").length} status="green" />
                 <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
-                {(() => { const tc = myProjects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const ti = myProjects.reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Total Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const tp = myProjects.reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Total Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
               </div>
             )}
             {user.projectAccess && (
@@ -7081,11 +7099,15 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Term 2 NAPLAN Prep" style={{ width: "100%" }} />
                       </div>
                       <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Start Date</div>
+                        <Input type="date" value={newProj.startDate} onChange={e => setNewProj(p => ({ ...p, startDate: e.target.value }))} style={{ width: 160 }} />
+                      </div>
+                      <div>
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
                         <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
                       </div>
-                      <Btn primary disabled={!newProj.name.trim()} onClick={() => { dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name.trim(), status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Create</Btn>
-                      <Btn onClick={() => { setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Cancel</Btn>
+                      <Btn primary disabled={!newProj.name.trim() || !newProj.startDate} onClick={() => { dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name.trim(), status: "active", startDate: newProj.startDate, due: newProj.due || "TBD", progress: 0, income: null, margin: null } }); setNewProj({ name: "", startDate: "", due: "" }); setShowNewProj(false); }}>Create</Btn>
+                      <Btn onClick={() => { setNewProj({ name: "", startDate: "", due: "" }); setShowNewProj(false); }}>Cancel</Btn>
                     </div>
                   </Card>
                 )}
@@ -7102,7 +7124,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}{p.startDate ? `Start: ${p.startDate} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag type={p.status === "active" ? "pending" : p.status === "pending approval" ? "review" : "approved"} label={p.status === "active" ? "ACTIVE" : p.status === "pending approval" ? "PENDING APPROVAL" : "COMPLETED"} small />
@@ -7114,7 +7136,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     {p.mgrId === user.id ? <>
                       <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                       <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
-                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                      {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
+                      {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                       <Btn primary small disabled={!progChanged} onClick={() => {
                         if (draftProg === 100 && p.status === "active") {
                           if (!window.confirm("Progress is now 100%. Mark as completed?")) {
@@ -7133,7 +7156,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       }}>Save</Btn>
                     </> : <>
                       <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
-                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                      {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
+                      {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                     </>}
                   </div>
                   {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const truncated = latest.text.length > 160; const preview = truncated ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}{truncated && <button onClick={e => { e.stopPropagation(); setLogPopup({ text: latest.text, date: latest.date, projName: p.name }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, padding: "0 0 0 4px", fontFamily: F.body }}>Read more →</button>}</div>; })()}
@@ -7142,7 +7166,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
                         setEditProjId(p.id);
-                        setEditProjForm({ status: p.status, due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                        setEditProjForm({ status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "" });
                       }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                         {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                       </button>
@@ -7150,7 +7174,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   )}
                   {isDetailsOpen && (
                     <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
@@ -7160,14 +7184,27 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           </select>
                         </div>
                         <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Start Date</div>
+                          <Input type="date" value={editProjForm.startDate} onChange={e => setEditProjForm(f => ({ ...f, startDate: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
+                        </div>
+                        <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
                           <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                         </div>
                       </div>
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution to Date ($)</div>
-                        <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
-                        <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
+                          <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit Margin (%)</div>
+                          <Input type="number" value={editProjForm.margin} onChange={e => setEditProjForm(f => ({ ...f, margin: e.target.value }))} placeholder="e.g. 30" min="0" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit (Auto)</div>
+                          <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: editProjForm.income !== "" && editProjForm.margin !== "" ? T.ok : T.textMuted, fontWeight: 700 }}>{editProjForm.income !== "" && editProjForm.margin !== "" ? `$${Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100).toLocaleString()}` : "—"}</div>
+                        </div>
                       </div>
                       <div style={{ marginBottom: 16 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Project Logbook</div>
@@ -7186,9 +7223,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         <Btn primary small onClick={() => {
                           if (editProjForm.status === "completed" && p.status !== "completed") {
                             const submit = window.confirm("Submit for System Admin approval?");
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           } else {
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           }
                           setEditProjId(null);
                         }}>Save Details</Btn>
@@ -7451,10 +7488,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [histPeriod, setHistPeriod] = useState("all");
   const [syncing, setSyncing] = useState(false);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
-  const [newProj, setNewProj] = useState({ name: "", due: "" });
+  const [newProj, setNewProj] = useState({ name: "", startDate: "", due: "" });
   const [showNewProj, setShowNewProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
-  const [editProjForm, setEditProjForm] = useState({ status: "active", due: "", contribution: "" });
+  const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [logPopup, setLogPopup] = useState(null);
@@ -8260,7 +8297,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 <Metric label="Pending Approval" value={myProjects.filter(p => p.status === "pending approval").length} status="blue" />
                 <Metric label="Completed" value={myProjects.filter(p => p.status === "completed").length} status="green" />
                 <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
-                {(() => { const tc = myProjects.reduce((a, p) => a + (p.contribution || 0), 0); return tc > 0 ? <Metric label="Total Contribution" value={`$${tc.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const ti = myProjects.reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Total Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const tp = myProjects.reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Total Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
               </div>
             )}
             {user.projectAccess && (
@@ -8276,11 +8314,15 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <Input value={newProj.name} onChange={e => setNewProj(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Term 2 NAPLAN Prep" style={{ width: "100%" }} />
                       </div>
                       <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Start Date</div>
+                        <Input type="date" value={newProj.startDate} onChange={e => setNewProj(p => ({ ...p, startDate: e.target.value }))} style={{ width: 160 }} />
+                      </div>
+                      <div>
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
                         <Input type="date" value={newProj.due} onChange={e => setNewProj(p => ({ ...p, due: e.target.value }))} style={{ width: 160 }} />
                       </div>
-                      <Btn primary disabled={!newProj.name.trim()} onClick={() => { dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name.trim(), status: "active", due: newProj.due || "TBD", progress: 0, contribution: null } }); setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Create</Btn>
-                      <Btn onClick={() => { setNewProj({ name: "", due: "" }); setShowNewProj(false); }}>Cancel</Btn>
+                      <Btn primary disabled={!newProj.name.trim() || !newProj.startDate} onClick={() => { dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: user.id, name: newProj.name.trim(), status: "active", startDate: newProj.startDate, due: newProj.due || "TBD", progress: 0, income: null, margin: null } }); setNewProj({ name: "", startDate: "", due: "" }); setShowNewProj(false); }}>Create</Btn>
+                      <Btn onClick={() => { setNewProj({ name: "", startDate: "", due: "" }); setShowNewProj(false); }}>Cancel</Btn>
                     </div>
                   </Card>
                 )}
@@ -8297,7 +8339,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>{p.mgrId !== user.id && (() => { const owner = users.find(u => u.id === p.mgrId); return owner ? <span>Owner: {owner.name} · </span> : null; })()}{p.startDate ? `Start: ${p.startDate} · ` : ""}Due: {p.due}{p.updatedDate ? ` · Updated: ${p.updatedDate}` : ""}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag type={p.status === "active" ? "pending" : p.status === "pending approval" ? "review" : "approved"} label={p.status === "active" ? "ACTIVE" : p.status === "pending approval" ? "PENDING APPROVAL" : "COMPLETED"} small />
@@ -8309,7 +8351,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     {p.mgrId === user.id ? <>
                       <Input value={draftProg} onChange={e => setProgressEdits(d => ({ ...d, [p.id]: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))} style={{ width: 52, textAlign: "right", padding: "5px 8px", fontSize: 14, fontFamily: F.mono }} />
                       <span style={{ fontSize: 13, color: T.textMuted }}>%</span>
-                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                      {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
+                      {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                       <Btn primary small disabled={!progChanged} onClick={() => {
                         if (draftProg === 100 && p.status === "active") {
                           if (!window.confirm("Progress is now 100%. Mark as completed?")) {
@@ -8328,7 +8371,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       }}>Save</Btn>
                     </> : <>
                       <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono }}>{draftProg}%</span>
-                      {p.contribution != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Contribution: ${p.contribution.toLocaleString()}</span>}
+                      {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
+                      {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                     </>}
                   </div>
                   {!isDetailsOpen && (() => { const entries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []); const latest = entries[0]; if (!latest) return null; const truncated = latest.text.length > 160; const preview = truncated ? latest.text.slice(0, 160) + "…" : latest.text; return <div style={{ padding: "6px 18px 4px", fontSize: 13, color: T.textSoft, lineHeight: 1.5 }}>{latest.date && <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6 }}>{latest.date}</span>}{preview}{truncated && <button onClick={e => { e.stopPropagation(); setLogPopup({ text: latest.text, date: latest.date, projName: p.name }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, padding: "0 0 0 4px", fontFamily: F.body }}>Read more →</button>}</div>; })()}
@@ -8337,7 +8381,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <button onClick={() => {
                         if (isDetailsOpen) { setEditProjId(null); return; }
                         setEditProjId(p.id);
-                        setEditProjForm({ status: p.status, due: p.due || "", contribution: p.contribution != null ? String(p.contribution) : "" });
+                        setEditProjForm({ status: p.status, startDate: p.startDate || "", due: p.due || "", income: p.income != null ? String(p.income) : "", margin: p.margin != null ? String(p.margin) : "" });
                       }} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: T.textMuted, fontSize: 12, fontFamily: F.body }}>
                         {isDetailsOpen ? "▼ Edit Details" : "▸ Edit Details"}
                       </button>
@@ -8345,7 +8389,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   )}
                   {isDetailsOpen && (
                     <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
@@ -8355,14 +8399,27 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           </select>
                         </div>
                         <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Start Date</div>
+                          <Input type="date" value={editProjForm.startDate} onChange={e => setEditProjForm(f => ({ ...f, startDate: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
+                        </div>
+                        <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Due Date</div>
                           <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                         </div>
                       </div>
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Contribution to Date ($)</div>
-                        <Input type="number" value={editProjForm.contribution} onChange={e => setEditProjForm(f => ({ ...f, contribution: e.target.value }))} placeholder="e.g. 250000" style={{ width: 200, padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
-                        <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>Leave blank if not applicable</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
+                          <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit Margin (%)</div>
+                          <Input type="number" value={editProjForm.margin} onChange={e => setEditProjForm(f => ({ ...f, margin: e.target.value }))} placeholder="e.g. 30" min="0" max="100" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Profit (Auto)</div>
+                          <div style={{ padding: "7px 10px", fontSize: 14, fontFamily: F.mono, color: editProjForm.income !== "" && editProjForm.margin !== "" ? T.ok : T.textMuted, fontWeight: 700 }}>{editProjForm.income !== "" && editProjForm.margin !== "" ? `$${Math.round(Number(editProjForm.income) * Number(editProjForm.margin) / 100).toLocaleString()}` : "—"}</div>
+                        </div>
                       </div>
                       <div style={{ marginBottom: 16 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>Project Logbook</div>
@@ -8381,9 +8438,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <Btn primary small onClick={() => {
                           if (editProjForm.status === "completed" && p.status !== "completed") {
                             const submit = window.confirm("Submit for System Admin approval?");
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           } else {
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, due: editProjForm.due || p.due, contribution: editProjForm.contribution !== "" ? Number(editProjForm.contribution) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           }
                           setEditProjId(null);
                         }}>Save Details</Btn>
