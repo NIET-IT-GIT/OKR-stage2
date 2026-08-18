@@ -2359,7 +2359,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     }
   }, [selDept, page]);
   const [selTeam, setSelTeam] = useState(null);
-  const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
+  const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false });
   const [addTarget, setAddTarget] = useState(null);
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
@@ -2438,7 +2438,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [lbExpandedMember, setLbExpandedMember] = useState(null);
   const [lbEditKr, setLbEditKr] = useState(null);
   const [lbAddMember, setLbAddMember] = useState(null);
-  const [lbKrForm, setLbKrForm] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
+  const [lbKrForm, setLbKrForm] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false });
   const [confirmDeleteKr, setConfirmDeleteKr] = useState(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
@@ -3040,7 +3040,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     const newId = `N${Date.now().toString(36).slice(-4).toUpperCase()}`;
     const baseKr = { id: newId, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
     const kr = newKr.krType === "tracker"
-      ? { ...baseKr, type: "tracker", target: 0, actual: null }
+      ? { ...baseKr, type: "tracker", target: 0, actual: null, disallowZero: !!newKr.disallowZero }
       : newKr.krType === "progress"
       ? { ...baseKr, type: "progress", target: Number(newKr.target), actual: null }
       : newKr.krType === "manager-fill"
@@ -3053,7 +3053,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
     if (teamId) triggerSyncPrompt(deptId, teamId);
     if (newKr.useMonthlyTargets) setExpandedMonthlyKr(newId);
-    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); setAddTarget(null);
+    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false }); setAddTarget(null);
   }
   function startResize(key, e) {
     e.preventDefault();
@@ -3174,7 +3174,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
           : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
           : currentFYMonthKey();
         const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
-        freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", krIsMonthly: !!(kr.monthlyTargets), period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
+        freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", krIsMonthly: !!(kr.monthlyTargets), krDisallowZero: !!(kr.disallowZero), period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
         const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr), isMonthly: !!(kr.monthlyTargets) }));
         emailSections.push({ period, periodKey, dateRange, krs: krsForEmail });
       }
@@ -3508,7 +3508,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   if ((newKr.krType === "progress" || newKr.krType === "project_profit") && newKr.target === "") return;
                   const base = { id: kr.id, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
                   let updated;
-                  if (newKr.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
+                  if (newKr.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual, disallowZero: !!newKr.disallowZero };
                   else if (newKr.krType === "progress") updated = { ...base, type: "progress", target: Number(newKr.target), actual: kr.actual };
                   else if (newKr.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(newKr.target), actual: kr.actual };
                   else if (newKr.krType === "project_profit") updated = { ...base, type: "project_profit", period: "annual", target: Number(newKr.target), krYear: Number(newKr.krYear) || new Date().getFullYear(), actual: null };
@@ -3517,7 +3517,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   dispatch({ type: "REPLACE_KR", deptId, teamId, krId: kr.id, kr: updated });
                   if (teamId) triggerSyncPrompt(deptId, teamId);
                   setAddTarget(null);
-                  setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {} });
+                  setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {}, disallowZero: false });
                 };
                 return (
                   <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
@@ -3569,6 +3569,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                           Monthly targets
                         </label>
                       )}
+                      {isTracker && (
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                          <input type="checkbox" checked={!!newKr.disallowZero} onChange={e => setNewKr(p => ({ ...p, disallowZero: e.target.checked }))} style={{ accentColor: T.bad }} />
+                          Block zero submission
+                        </label>
+                      )}
                     </div>
                     )}
                     {isStandard && newKr.useMonthlyTargets && (
@@ -3599,7 +3605,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <Btn primary small onClick={saveEdit}>✓ Save Changes</Btn>
-                      <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {} }); }}>Cancel</Btn>
+                      <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {}, disallowZero: false }); }}>Cancel</Btn>
                     </div>
                   </div>
                 );
@@ -3633,7 +3639,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : kr.type === "project_profit" ? "project_profit" : "";
                       const isMonthlyKr = !!kr.monthlyTargets;
                       setAddTarget(`edit-${kr.id}`);
-                      setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, krYear: String(kr.krYear || ""), monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, kr.monthlyTargets?.[m.key] ?? 0])) });
+                      setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, krYear: String(kr.krYear || ""), monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, kr.monthlyTargets?.[m.key] ?? 0])), disallowZero: !!kr.disallowZero });
                     }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", cursor: "pointer", color: T.brand, fontSize: 13 }}>✏</button>
                     <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "2px 9px", cursor: "pointer", color: T.bad, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>×</button>
                   </div>
@@ -3644,7 +3650,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               const targetKey = teamId || `dept-${deptId}`;
               if (addTarget !== targetKey) return (
                 <div style={{ padding: "10px 16px" }}>
-                  <Btn small onClick={() => { setAddTarget(targetKey); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: adminOkrPeriod !== "all" ? adminOkrPeriod : "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>+ Add Key Result</Btn>
+                  <Btn small onClick={() => { setAddTarget(targetKey); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: adminOkrPeriod !== "all" ? adminOkrPeriod : "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, disallowZero: false }); }}>+ Add Key Result</Btn>
                 </div>
               );
               const isTracker = newKr.krType === "tracker";
@@ -3702,6 +3708,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         Monthly targets
                       </label>
                     )}
+                    {isTracker && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                        <input type="checkbox" checked={!!newKr.disallowZero} onChange={e => setNewKr(p => ({ ...p, disallowZero: e.target.checked }))} style={{ accentColor: T.bad }} />
+                        Block zero submission
+                      </label>
+                    )}
                   </div>
                   )}
                   {isStandard && newKr.useMonthlyTargets && (
@@ -3721,7 +3733,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   )}
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn primary small onClick={() => addKr(deptId, teamId)}>✓ Add Key Result</Btn>
-                    <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {} }); }}>Cancel</Btn>
+                    <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {}, disallowZero: false }); }}>Cancel</Btn>
                   </div>
                 </div>
               );
@@ -3945,9 +3957,15 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       )}
                       <div style={{ padding: "8px 16px", background: T.brandDim, borderTop: `1px solid ${T.brandBorder}`, display: "flex", gap: 24, flexWrap: "wrap" }}>
                         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: "#7c3aed", fontWeight: 600 }}>
-                          <input type="checkbox" checked={newKr.krType === "tracker"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "tracker" : "", useMonthlyTargets: false }))} style={{ accentColor: "#7c3aed" }} />
+                          <input type="checkbox" checked={newKr.krType === "tracker"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "tracker" : "", useMonthlyTargets: false, disallowZero: false }))} style={{ accentColor: "#7c3aed" }} />
                           Tracker — record values only, does not affect completion rate
                         </label>
+                        {newKr.krType === "tracker" && (
+                          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: T.bad, fontWeight: 500 }}>
+                            <input type="checkbox" checked={!!newKr.disallowZero} onChange={e => setNewKr(p => ({ ...p, disallowZero: e.target.checked }))} style={{ accentColor: T.bad }} />
+                            Block zero submission
+                          </label>
+                        )}
                         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", color: "#0771e3", fontWeight: 600 }}>
                           <input type="checkbox" checked={newKr.krType === "progress"} onChange={e => setNewKr(p => ({ ...p, krType: e.target.checked ? "progress" : "", useMonthlyTargets: false }))} style={{ accentColor: "#0771e3" }} />
                           Progress — records cumulative progress toward target; affects rate proportionally
@@ -3960,7 +3978,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     </div>
                   ) : (
                     <div style={{ padding: "10px 16px" }}>
-                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: sectionPeriod, useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
+                      <button onClick={() => { setAddTarget(teamId || `dept-${deptId}`); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: sectionPeriod, useMonthlyTargets: false, krType: "", monthlyTargets: {}, disallowZero: false }); }} style={{ background: "none", border: `1px dashed ${T.border}`, borderRadius: 6, padding: "8px 14px", cursor: "pointer", color: T.brand, fontSize: 13, fontWeight: 600, width: "100%", fontFamily: F.body }}>+ Add Key Result</button>
                     </div>
                   )}
                   {hiddenCols.size > 0 && (
@@ -5829,7 +5847,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                           if (isProjProfit && (lbKrForm.target === "" || !lbKrForm.krYear)) return;
                                           const base = { id: kr.id, label: lbKrForm.label, unit: lbKrForm.unit.trim(), dataSource: lbKrForm.dataSource.trim(), operator: lbKrForm.operator || ">=", period: lbKrForm.period || "monthly" };
                                           let updated;
-                                          if (lbKrForm.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
+                                          if (lbKrForm.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual, disallowZero: !!lbKrForm.disallowZero };
                                           else if (lbKrForm.krType === "progress") updated = { ...base, type: "progress", target: Number(lbKrForm.target), actual: kr.actual };
                                           else if (lbKrForm.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: kr.actual };
                                           else if (isProjProfit) updated = { id: kr.id, label: lbKrForm.label, type: "project_profit", period: "annual", target: Number(lbKrForm.target), krYear: Number(lbKrForm.krYear) || new Date().getFullYear(), actual: null };
@@ -5837,7 +5855,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                           else updated = { ...base, target: Number(lbKrForm.target), actual: kr.actual };
                                           dispatch({ type: "REPLACE_MEMBER_KR", memberId: m.id, krId: kr.id, kr: updated });
                                           setLbEditKr(null);
-                                          setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
+                                          setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false });
                                         };
                                         return (
                                           <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
@@ -5882,6 +5900,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                                   Monthly targets
                                                 </label>
                                               )}
+                                              {isTracker && (
+                                                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                                  <input type="checkbox" checked={!!lbKrForm.disallowZero} onChange={e => setLbKrForm(p => ({ ...p, disallowZero: e.target.checked }))} style={{ accentColor: T.bad }} />
+                                                  Block zero submission
+                                                </label>
+                                              )}
                                             </div>
                                             {isStandard && lbKrForm.useMonthlyTargets && (
                                               <div style={{ marginBottom: 8 }}>
@@ -5906,7 +5930,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                             )}
                                             <div style={{ display: "flex", gap: 8 }}>
                                               <Btn primary small onClick={saveLbEdit}>✓ Save Changes</Btn>
-                                              <Btn small onClick={() => { setLbEditKr(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); }}>Cancel</Btn>
+                                              <Btn small onClick={() => { setLbEditKr(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false }); }}>Cancel</Btn>
                                             </div>
                                           </div>
                                         );
@@ -5925,6 +5949,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                             <div>
                                               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={kr.label}>{kr.label}</span>
                                               {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
+                                              {kr.type === "tracker" && kr.disallowZero && <span style={{ fontSize: 10, color: T.bad, background: T.badDim, border: `1px solid ${T.badBorder || T.bad}`, borderRadius: 8, padding: "1px 5px", display: "inline-block", marginLeft: 3 }}>No zeros</span>}
                                               {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress</span>}
                                               {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Mgr Fill</span>}
                                               {kr.type === "project_profit" && <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Proj Profit · auto</span>}
@@ -5946,7 +5971,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                               const isMonthlyKr = !!kr.monthlyTargets;
                                               setLbAddMember(null);
                                               setLbEditKr({ memberId: m.id, krId: kr.id });
-                                              setLbKrForm({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, kr.monthlyTargets?.[mo.key] ?? 0])), krYear: String(kr.krYear || "") });
+                                              setLbKrForm({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, kr.monthlyTargets?.[mo.key] ?? 0])), krYear: String(kr.krYear || ""), disallowZero: !!kr.disallowZero });
                                             }} title="Edit this KR" style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 5px", cursor: "pointer", color: T.brand, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✏</button>
                                             <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
                                               title="Delete this OKR"
@@ -6006,7 +6031,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 if (isProjProfit && (lbKrForm.target === "" || !lbKrForm.krYear)) return;
                                 const base = { id: `mkr_${Date.now().toString(36)}`, label: lbKrForm.label, unit: lbKrForm.unit.trim(), dataSource: lbKrForm.dataSource.trim(), operator: lbKrForm.operator || ">=", period: lbKrForm.period || "monthly" };
                                 let kr;
-                                if (lbKrForm.krType === "tracker") kr = { ...base, type: "tracker", target: 0, actual: null };
+                                if (lbKrForm.krType === "tracker") kr = { ...base, type: "tracker", target: 0, actual: null, disallowZero: !!lbKrForm.disallowZero };
                                 else if (lbKrForm.krType === "progress") kr = { ...base, type: "progress", target: Number(lbKrForm.target), actual: null };
                                 else if (lbKrForm.krType === "manager-fill") kr = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: null };
                                 else if (isProjProfit) kr = { id: `mkr_${Date.now().toString(36)}`, label: lbKrForm.label, type: "project_profit", period: "annual", target: Number(lbKrForm.target), krYear: Number(lbKrForm.krYear) || new Date().getFullYear(), actual: null };
@@ -6014,7 +6039,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 else kr = { ...base, target: Number(lbKrForm.target), actual: null };
                                 dispatch({ type: "ADD_MEMBER_KR", memberId: m.id, kr });
                                 setLbAddMember(null);
-                                setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
+                                setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false });
                               };
                               return (
                                 <div style={{ padding: "14px 16px", background: T.brandDim, borderTop: `2px solid ${T.brand}`, marginTop: 8 }}>
@@ -6059,6 +6084,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                         Monthly targets
                                       </label>
                                     )}
+                                    {isTracker && (
+                                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                        <input type="checkbox" checked={!!lbKrForm.disallowZero} onChange={e => setLbKrForm(p => ({ ...p, disallowZero: e.target.checked }))} style={{ accentColor: T.bad }} />
+                                        Block zero submission
+                                      </label>
+                                    )}
                                   </div>
                                   {isStandard && lbKrForm.useMonthlyTargets && (
                                     <div style={{ marginBottom: 8 }}>
@@ -6072,13 +6103,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   )}
                                   <div style={{ display: "flex", gap: 8 }}>
                                     <Btn primary small onClick={addLbKr}>✓ Add Key Result</Btn>
-                                    <Btn small onClick={() => { setLbAddMember(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); }}>Cancel</Btn>
+                                    <Btn small onClick={() => { setLbAddMember(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false }); }}>Cancel</Btn>
                                   </div>
                                 </div>
                               );
                             })() : (
                               <div style={{ marginTop: 10 }}>
-                                <Btn small onClick={() => { setLbEditKr(null); setLbAddMember(m.id); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); }}>+ Add Key Result</Btn>
+                                <Btn small onClick={() => { setLbEditKr(null); setLbAddMember(m.id); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "", disallowZero: false }); }}>+ Add Key Result</Btn>
                               </div>
                             )}
                           </div>
@@ -6914,7 +6945,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                             <Input value={trackerInput[s.id] || ""} onChange={e => setTrackerInput(p => ({ ...p, [s.id]: e.target.value }))} placeholder="Enter value" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>{s.krType === "progress" ? "Record Progress" : "Record"}</Btn>
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id] || (s.krType === "tracker" && s.krDisallowZero && Number(trackerInput[s.id]) === 0)}>{s.krType === "progress" ? "Record Progress" : "Record"}</Btn>
+                            {s.krType === "tracker" && s.krDisallowZero && trackerInput[s.id] === "0" && <span style={{ fontSize: 11, color: T.bad, whiteSpace: "nowrap" }}>Cannot be 0</span>}
                           </div>
                         ) : (noReason?.id !== s.id && yesConfirm?.id !== s.id) ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -7130,7 +7162,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     )}
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setEditingSub(null)}>Cancel</Btn>
-                                      <Btn primary small onClick={() => { const newAnswer = (s.krType === "tracker" || s.krType === "progress") ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }}>Save Changes</Btn>
+                                      <Btn primary small onClick={() => { const newAnswer = (s.krType === "tracker" || s.krType === "progress") ? "submitted" : editingSub.answer; const newActual = Number(editingSub.actual) || 0; dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: newAnswer, actualValue: newActual }); setEditingSub(null); }} disabled={s.krType === "tracker" && s.krDisallowZero && Number(editingSub?.actual) === 0}>Save Changes</Btn>
                                     </div>
                                   </div>
                                 )}
@@ -8274,7 +8306,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                             <Input value={trackerInput[s.id] || ""} onChange={e => setTrackerInput(p => ({ ...p, [s.id]: e.target.value }))} placeholder="Enter value" style={{ width: 110, textAlign: "right", fontFamily: F.mono }} />
                             {s.krUnit && <span style={{ fontSize: 13, color: T.textMuted }}>{s.krUnit}</span>}
-                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id]}>{s.krType === "progress" ? "Record Progress" : "Record"}</Btn>
+                            <Btn primary small onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "submitted", actualValue: Number(trackerInput[s.id]) || 0 }); setTrackerInput(p => ({ ...p, [s.id]: "" })); }} disabled={!trackerInput[s.id] || (s.krType === "tracker" && s.krDisallowZero && Number(trackerInput[s.id]) === 0)}>{s.krType === "progress" ? "Record Progress" : "Record"}</Btn>
+                            {s.krType === "tracker" && s.krDisallowZero && trackerInput[s.id] === "0" && <span style={{ fontSize: 11, color: T.bad, whiteSpace: "nowrap" }}>Cannot be 0</span>}
                           </div>
                         ) : (noReason?.id !== s.id && yesConfirm?.id !== s.id) ? (
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
