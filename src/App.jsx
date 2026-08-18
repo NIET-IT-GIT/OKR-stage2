@@ -4649,8 +4649,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               <Metric label="Pending Approval" value={projects.filter(p => p.status === "pending approval").length} status="blue"   />
               <Metric label="Completed"       value={projects.filter(p => p.status === "completed").length}         status="green"  />
               {projects.length > 0 && <Metric label="Avg Progress" value={`${Math.round(projects.reduce((a, p) => a + p.progress, 0) / projects.length)}%`} />}
-              {(() => { const ti = projects.reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Total Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
-              {(() => { const tp = projects.reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Total Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
+              {(() => { const ti = projects.filter(p => p.status !== "completed").reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Estimated Income" value={`$${ti.toLocaleString()}`} status="blue" /> : null; })()}
+              {(() => { const tp = projects.filter(p => p.status !== "completed").reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Estimated Profit" value={`$${tp.toLocaleString()}`} status="blue" /> : null; })()}
+              {(() => { const ti = projects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Completed Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
+              {(() => { const tp = projects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Completed Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
             </div>
             <div style={{ marginBottom: 16 }}>
               <Input
@@ -7082,8 +7084,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 <Metric label="Pending Approval" value={myProjects.filter(p => p.status === "pending approval").length} status="blue" />
                 <Metric label="Completed" value={myProjects.filter(p => p.status === "completed").length} status="green" />
                 <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
-                {(() => { const ti = myProjects.reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Total Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
-                {(() => { const tp = myProjects.reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Total Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const ti = myProjects.filter(p => p.status !== "completed").reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Estimated Income" value={`$${ti.toLocaleString()}`} status="blue" /> : null; })()}
+                {(() => { const tp = myProjects.filter(p => p.status !== "completed").reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Estimated Profit" value={`$${tp.toLocaleString()}`} status="blue" /> : null; })()}
+                {(() => { const ti = myProjects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Completed Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const tp = myProjects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Completed Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
               </div>
             )}
             {user.projectAccess && (
@@ -8297,8 +8301,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 <Metric label="Pending Approval" value={myProjects.filter(p => p.status === "pending approval").length} status="blue" />
                 <Metric label="Completed" value={myProjects.filter(p => p.status === "completed").length} status="green" />
                 <Metric label="Avg Progress" value={`${Math.round(myProjects.reduce((a, p) => a + p.progress, 0) / myProjects.length)}%`} />
-                {(() => { const ti = myProjects.reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Total Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
-                {(() => { const tp = myProjects.reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Total Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const ti = myProjects.filter(p => p.status !== "completed").reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Estimated Income" value={`$${ti.toLocaleString()}`} status="blue" /> : null; })()}
+                {(() => { const tp = myProjects.filter(p => p.status !== "completed").reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Estimated Profit" value={`$${tp.toLocaleString()}`} status="blue" /> : null; })()}
+                {(() => { const ti = myProjects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Completed Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
+                {(() => { const tp = myProjects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Completed Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
               </div>
             )}
             {user.projectAccess && (
