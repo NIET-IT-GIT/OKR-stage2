@@ -168,7 +168,7 @@ function krCompletion(kr) {
   }
 }
 function calcRate(krs) {
-  const scored = (krs || []).filter(kr => kr.type !== "tracker");
+  const scored = (krs || []).filter(kr => kr.type !== "tracker" && kr.type !== "project_profit");
   if (!scored.length) return 0;
   return scored.reduce((sum, kr) => sum + krCompletion(kr), 0) / scored.length;
 }
@@ -237,7 +237,7 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
   return scores.reduce((a, b) => a + b, 0) / scores.length;
 }
 function getStatus(r) { if (r == null) return "none"; return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
-function memberHasRateKrs(krs) { return (krs || []).some(kr => kr.type !== "tracker"); }
+function memberHasRateKrs(krs) { return (krs || []).some(kr => kr.type !== "tracker" && kr.type !== "project_profit"); }
 function fmt(v) { return typeof v === "number" ? (v % 1 ? v.toFixed(1) : v.toLocaleString()) : v; }
 function currentFYQuarter() {
   const d = new Date();
@@ -2359,7 +2359,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     }
   }, [selDept, page]);
   const [selTeam, setSelTeam] = useState(null);
-  const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
+  const [newKr, setNewKr] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
   const [addTarget, setAddTarget] = useState(null);
   const [showGenReport, setShowGenReport] = useState(false);
   const [genPeriod, setGenPeriod] = useState({ label: "", from: "", to: "" });
@@ -2438,7 +2438,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [lbExpandedMember, setLbExpandedMember] = useState(null);
   const [lbEditKr, setLbEditKr] = useState(null);
   const [lbAddMember, setLbAddMember] = useState(null);
-  const [lbKrForm, setLbKrForm] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
+  const [lbKrForm, setLbKrForm] = useState({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
   const [confirmDeleteKr, setConfirmDeleteKr] = useState(null);
   const [syncNote, setSyncNote] = useState(null);
   const syncNoteTimer = useRef(null);
@@ -2485,6 +2485,7 @@ DATA RULES:
 - Tracker KRs record numerical values only and do not affect completion rates.
 - Yes/no KRs may include a reported actual value (e.g. total sales revenue). When a yes/no KR actual value and a tracker KR cover a similar metric, the yes/no KR actual is the confirmed reported figure and takes precedence over the tracker value.
 - Progress KRs record a cumulative running total toward a target and contribute proportionally to completion rate (actual ÷ target × 100%). They are used for project-oriented goals like annual profit targets where multiple check-ins occur through the year.
+- Project Profit KRs are annual KRs assigned to managers. Their actual value is auto-calculated from the sum of (income × margin %) of projects the manager owns that were completed in the KR's target year. No check-ins are generated for this type. They do not contribute to the monthly completion rate shown in OKR stats. Treat them as a separate, always-current progress indicator for the manager's revenue contribution.
 - Financial data (Income, Net Profit, Expenses) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
 - Project data includes all manager-owned projects: name, department, responsible manager, status (active/pending approval/completed), progress (0–100%), start date, due date, optional income ($), optional profit margin (%), and computed profit ($). Proactively flag projects that are overdue or have low progress close to their due date.
 
@@ -2540,6 +2541,11 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
   function buildChatContext() {
     const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
     const now = new Date();
+    const getCompletedYear = p => {
+      if (p.completedYear) return p.completedYear;
+      const parts = (p.updatedDate || "").split("/");
+      return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
+    };
     const today = now.toISOString().slice(0, 10);
     const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
     // Match Company Overview monthly view: submissions sent in current calendar month, period in daily/weekly/monthly
@@ -2576,13 +2582,20 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         const entries = krSubs.map(s => `${s.actualValue ?? 0}${kr.unit ? " " + kr.unit : ""} (${s.dateRange || s.periodKey})`).join(", ");
         return `    Tracker — ${kr.label}: ${entries}`;
       }).filter(Boolean);
-      const krLines = kd.krs.filter(kr => kr.type !== "tracker" && kr.type !== "manager-fill").map(kr => {
+      const krLines = kd.krs.filter(kr => kr.type !== "tracker" && kr.type !== "manager-fill" && kr.type !== "project_profit").map(kr => {
         const latest = okrSubmissions.filter(s => s.memberId === u.id && s.krId === kr.id && s.answer !== null)
           .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
         if (!latest || latest.actualValue == null) return null;
         return `    KR — ${kr.label}: ${latest.answer === "yes" ? "✓ Yes" : "✗ No"} · actual ${latest.actualValue}${kr.unit ? " " + kr.unit : ""} (${latest.dateRange || latest.periodKey})`;
       }).filter(Boolean);
-      return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines, krLines };
+      const ppLines = kd.krs.filter(kr => kr.type === "project_profit").map(kr => {
+        const yearProjects = projects.filter(p => p.mgrId === u.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+        const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+        const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
+        const missing = yearProjects.filter(p => p.income == null || p.margin == null).length;
+        return `    Proj Profit KR — ${kr.label}: $${actual.toLocaleString()} of $${(kr.target || 0).toLocaleString()} (${pct}%)${missing > 0 ? ` [⚠ ${missing} project(s) missing income/margin]` : ""} · Year ${kr.krYear || "?"}`;
+      });
+      return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines, krLines, ppLines };
     });
 
     // Dept rates = average of eligible member rates (same as Company Overview deptRanks)
@@ -2607,6 +2620,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       else line += ` — no check-ins sent this month`;
       if (m.trackerLines.length) line += "\n" + m.trackerLines.join("\n");
       if (m.krLines.length) line += "\n" + m.krLines.join("\n");
+      if (m.ppLines && m.ppLines.length) line += "\n" + m.ppLines.join("\n");
       return line;
     }).join("\n");
 
@@ -3030,13 +3044,15 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
       ? { ...baseKr, type: "progress", target: Number(newKr.target), actual: null }
       : newKr.krType === "manager-fill"
       ? { ...baseKr, type: "manager-fill", target: Number(newKr.target), actual: null }
+      : newKr.krType === "project_profit"
+      ? { ...baseKr, type: "project_profit", period: "annual", target: Number(newKr.target), krYear: Number(newKr.krYear) || new Date().getFullYear(), actual: null }
       : newKr.useMonthlyTargets
         ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
         : { ...baseKr, target: Number(newKr.target), actual: null };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
     if (teamId) triggerSyncPrompt(deptId, teamId);
     if (newKr.useMonthlyTargets) setExpandedMonthlyKr(newId);
-    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); setAddTarget(null);
+    setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); setAddTarget(null);
   }
   function startResize(key, e) {
     e.preventDefault();
@@ -3151,7 +3167,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
         if (!krList.length) continue;
         const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
-        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`) && kr.type !== "manager-fill");
+        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`) && kr.type !== "manager-fill" && kr.type !== "project_profit");
         if (!freshKrs.length) continue;
         const monthKey = period === "monthly" ? periodKey
           : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
@@ -3482,23 +3498,25 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               if (addTarget === `edit-${kr.id}`) {
                 const isTracker = newKr.krType === "tracker";
                 const isMgrFill = newKr.krType === "manager-fill";
-                const isStandard = !isTracker && newKr.krType !== "progress" && !isMgrFill;
+                const isProjectProfit = newKr.krType === "project_profit";
+                const isStandard = !isTracker && newKr.krType !== "progress" && !isMgrFill && !isProjectProfit;
                 const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
                 const saveEdit = () => {
                   if (!newKr.label) return;
-                  if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && newKr.target === "") return;
-                  if (newKr.krType === "progress" && newKr.target === "") return;
+                  if (newKr.krType !== "tracker" && newKr.krType !== "progress" && newKr.krType !== "project_profit" && !newKr.useMonthlyTargets && newKr.target === "") return;
+                  if ((newKr.krType === "progress" || newKr.krType === "project_profit") && newKr.target === "") return;
                   const base = { id: kr.id, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
                   let updated;
                   if (newKr.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
                   else if (newKr.krType === "progress") updated = { ...base, type: "progress", target: Number(newKr.target), actual: kr.actual };
                   else if (newKr.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(newKr.target), actual: kr.actual };
+                  else if (newKr.krType === "project_profit") updated = { ...base, type: "project_profit", period: "annual", target: Number(newKr.target), krYear: Number(newKr.krYear) || new Date().getFullYear(), actual: null };
                   else if (newKr.useMonthlyTargets) updated = { ...base, monthlyTargets: newKr.monthlyTargets, monthlyActuals: kr.monthlyActuals || {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) };
                   else updated = { ...base, target: Number(newKr.target), actual: kr.actual };
                   dispatch({ type: "REPLACE_KR", deptId, teamId, krId: kr.id, kr: updated });
                   if (teamId) triggerSyncPrompt(deptId, teamId);
                   setAddTarget(null);
-                  setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
+                  setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {} });
                 };
                 return (
                   <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
@@ -3510,16 +3528,29 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         <option value="tracker">Tracker (number only)</option>
                         <option value="progress">Progress (cumulative)</option>
                         <option value="manager-fill">Manager Fill</option>
+                        <option value="project_profit">Project Profit (auto)</option>
                       </select>
-                      <select value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
+                      {!isProjectProfit && <select value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
                         <option value="quarterly">Quarterly</option>
                         <option value="biannual">Bi-Annual</option>
                         <option value="annual">Annual</option>
-                      </select>
+                      </select>}
                     </div>
+                    {isProjectProfit ? (
+                      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>$</span>
+                          <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Annual profit target *" style={{ width: 180, fontFamily: F.mono }} />
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>Year:</span>
+                          <Input value={newKr.krYear || ""} onChange={e => setNewKr(p => ({ ...p, krYear: e.target.value }))} placeholder={String(new Date().getFullYear())} style={{ width: 90, fontFamily: F.mono }} />
+                        </div>
+                      </div>
+                    ) : (
                     <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
                       {!isTracker && !newKr.useMonthlyTargets && (<>
                         <select value={newKr.operator || ">="} onChange={e => setNewKr(p => ({ ...p, operator: e.target.value }))} style={{ ...sel, width: 80 }}>
@@ -3538,6 +3569,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         </label>
                       )}
                     </div>
+                    )}
                     {isStandard && newKr.useMonthlyTargets && (
                       <div style={{ marginBottom: 8 }}>
                         <Input value={newKr.dreamTarget} onChange={e => setNewKr(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260, marginBottom: 10 }} />
@@ -3559,22 +3591,29 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                         Manager Fill — member will not receive a check-in; manager assesses yes/no + value in their portal.
                       </div>
                     )}
+                    {isProjectProfit && (
+                      <div style={{ fontSize: 12, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "7px 12px", marginBottom: 8 }}>
+                        Project Profit — actual is auto-calculated from this user's completed projects in the target year. No check-ins required.
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <Btn primary small onClick={saveEdit}>✓ Save Changes</Btn>
-                      <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
+                      <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {} }); }}>Cancel</Btn>
                     </div>
                   </div>
                 );
               }
               const isMonthly = !!kr.monthlyTargets;
-              const targetDisplay = kr.type === "tracker" ? "—" : isMonthly ? "Monthly breakdown" : `${kr.operator || ">="} ${fmt(kr.target)}`;
-              const typeLabel = kr.type === "tracker" ? "Tracker" : kr.type === "progress" ? "Progress" : kr.type === "manager-fill" ? "Mgr Fill" : "Standard";
+              const targetDisplay = kr.type === "tracker" ? "—" : kr.type === "project_profit" ? `$${(kr.target || 0).toLocaleString()} (${kr.krYear || "?"})` : isMonthly ? "Monthly breakdown" : `${kr.operator || ">="} ${fmt(kr.target)}`;
+              const typeLabel = kr.type === "tracker" ? "Tracker" : kr.type === "progress" ? "Progress" : kr.type === "manager-fill" ? "Mgr Fill" : kr.type === "project_profit" ? "Proj Profit" : "Standard";
               const typeStyle = kr.type === "tracker"
                 ? { color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd" }
                 : kr.type === "progress"
                 ? { color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}` }
                 : kr.type === "manager-fill"
                 ? { color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a" }
+                : kr.type === "project_profit"
+                ? { color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}` }
                 : { color: T.textMuted, background: T.raised, border: `1px solid ${T.border}` };
               return (
                 <div key={kr.id} style={{ display: "grid", gridTemplateColumns: KCOL_S, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -3590,10 +3629,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <span style={{ fontSize: 12, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.dataSource || "—"}</span>
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
                     <button onClick={() => {
-                      const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : "";
+                      const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : kr.type === "project_profit" ? "project_profit" : "";
                       const isMonthlyKr = !!kr.monthlyTargets;
                       setAddTarget(`edit-${kr.id}`);
-                      setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, kr.monthlyTargets?.[m.key] ?? 0])) });
+                      setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, krYear: String(kr.krYear || ""), monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, kr.monthlyTargets?.[m.key] ?? 0])) });
                     }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", cursor: "pointer", color: T.brand, fontSize: 13 }}>✏</button>
                     <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "2px 9px", cursor: "pointer", color: T.bad, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>×</button>
                   </div>
@@ -3609,7 +3648,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               );
               const isTracker = newKr.krType === "tracker";
               const isMgrFill = newKr.krType === "manager-fill";
-              const isStandard = !isTracker && newKr.krType !== "progress" && !isMgrFill;
+              const isProjectProfit = newKr.krType === "project_profit";
+              const isStandard = !isTracker && newKr.krType !== "progress" && !isMgrFill && !isProjectProfit;
               const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
               return (
                 <div style={{ padding: "14px 16px", background: T.brandDim, borderTop: `2px solid ${T.brand}` }}>
@@ -3621,16 +3661,29 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       <option value="tracker">Tracker (number only)</option>
                       <option value="progress">Progress (cumulative)</option>
                       <option value="manager-fill">Manager Fill</option>
+                      <option value="project_profit">Project Profit (auto)</option>
                     </select>
-                    <select value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
+                    {!isProjectProfit && <select value={newKr.period || "monthly"} onChange={e => setNewKr(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
                       <option value="daily">Daily</option>
                       <option value="weekly">Weekly</option>
                       <option value="monthly">Monthly</option>
                       <option value="quarterly">Quarterly</option>
                       <option value="biannual">Bi-Annual</option>
                       <option value="annual">Annual</option>
-                    </select>
+                    </select>}
                   </div>
+                  {isProjectProfit ? (
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>$</span>
+                        <Input value={newKr.target} onChange={e => setNewKr(p => ({ ...p, target: e.target.value }))} placeholder="Annual profit target *" style={{ width: 180, fontFamily: F.mono }} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 600 }}>Year:</span>
+                        <Input value={newKr.krYear || ""} onChange={e => setNewKr(p => ({ ...p, krYear: e.target.value }))} placeholder={String(new Date().getFullYear())} style={{ width: 90, fontFamily: F.mono }} />
+                      </div>
+                    </div>
+                  ) : (
                   <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
                     {!isTracker && !newKr.useMonthlyTargets && (<>
                       <select value={newKr.operator || ">="} onChange={e => setNewKr(p => ({ ...p, operator: e.target.value }))} style={{ ...sel, width: 80 }}>
@@ -3649,6 +3702,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       </label>
                     )}
                   </div>
+                  )}
                   {isStandard && newKr.useMonthlyTargets && (
                     <div style={{ marginBottom: 8 }}>
                       <Input value={newKr.dreamTarget} onChange={e => setNewKr(p => ({ ...p, dreamTarget: e.target.value }))} placeholder="Dream / annual target (optional)" style={{ width: 260 }} />
@@ -3659,9 +3713,14 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       Manager Fill — member will not receive a check-in; manager assesses yes/no + value in their portal.
                     </div>
                   )}
+                  {isProjectProfit && (
+                    <div style={{ fontSize: 12, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "7px 12px", marginBottom: 8 }}>
+                      Project Profit — actual is auto-calculated from this user's completed projects in the target year. No check-ins required.
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn primary small onClick={() => addKr(deptId, teamId)}>✓ Add Key Result</Btn>
-                    <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
+                    <Btn small onClick={() => { setAddTarget(null); setNewKr({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", krYear: "", monthlyTargets: {} }); }}>Cancel</Btn>
                   </div>
                 </div>
               );
@@ -4772,7 +4831,9 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                                 <Btn small onClick={() => setEditProjId(null)}>Cancel</Btn>
                                 <Btn primary small disabled={!editProjForm.name.trim()} onClick={() => {
-                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                                  const becomingCompleted = editProjForm.status === "completed" && p.status !== "completed";
+                                  const revertingFromCompleted = editProjForm.status !== "completed" && p.status === "completed";
+                                  dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editProjForm.name.trim(), status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, ...(becomingCompleted && { completedYear: new Date().getFullYear() }), ...(revertingFromCompleted && { completedYear: null }), updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                                   setEditProjId(null);
                                 }}>Save Details</Btn>
                               </div>
@@ -4815,8 +4876,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                             </div>
                             <div style={{ padding: "8px 18px", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                              <Btn small onClick={() => { if (window.confirm(`Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "active", updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Reject</Btn>
-                              <Btn primary small onClick={() => { if (window.confirm(`Approve "${p.name}" as completed?`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "completed", updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Approve</Btn>
+                              <Btn small onClick={() => { if (window.confirm(`Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "active", completedYear: null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Reject</Btn>
+                              <Btn primary small onClick={() => { if (window.confirm(`Approve "${p.name}" as completed?`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "completed", completedYear: new Date().getFullYear(), updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Approve</Btn>
                             </div>
                           </Card>
                         );
@@ -5740,22 +5801,25 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                       if (lbEditKr?.memberId === m.id && lbEditKr?.krId === kr.id) {
                                         const isTracker = lbKrForm.krType === "tracker";
                                         const isMgrFill = lbKrForm.krType === "manager-fill";
-                                        const isStandard = !isTracker && lbKrForm.krType !== "progress" && !isMgrFill;
+                                        const isProjProfit = lbKrForm.krType === "project_profit";
+                                        const isStandard = !isTracker && lbKrForm.krType !== "progress" && !isMgrFill && !isProjProfit;
                                         const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
                                         const saveLbEdit = () => {
                                           if (!lbKrForm.label) return;
-                                          if (lbKrForm.krType !== "tracker" && lbKrForm.krType !== "progress" && !lbKrForm.useMonthlyTargets && lbKrForm.target === "") return;
+                                          if (!isProjProfit && lbKrForm.krType !== "tracker" && lbKrForm.krType !== "progress" && !lbKrForm.useMonthlyTargets && lbKrForm.target === "") return;
                                           if (lbKrForm.krType === "progress" && lbKrForm.target === "") return;
+                                          if (isProjProfit && (lbKrForm.target === "" || !lbKrForm.krYear)) return;
                                           const base = { id: kr.id, label: lbKrForm.label, unit: lbKrForm.unit.trim(), dataSource: lbKrForm.dataSource.trim(), operator: lbKrForm.operator || ">=", period: lbKrForm.period || "monthly" };
                                           let updated;
                                           if (lbKrForm.krType === "tracker") updated = { ...base, type: "tracker", target: 0, actual: kr.actual };
                                           else if (lbKrForm.krType === "progress") updated = { ...base, type: "progress", target: Number(lbKrForm.target), actual: kr.actual };
                                           else if (lbKrForm.krType === "manager-fill") updated = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: kr.actual };
+                                          else if (isProjProfit) updated = { id: kr.id, label: lbKrForm.label, type: "project_profit", period: "annual", target: Number(lbKrForm.target), krYear: Number(lbKrForm.krYear) || new Date().getFullYear(), actual: null };
                                           else if (lbKrForm.useMonthlyTargets) updated = { ...base, monthlyTargets: lbKrForm.monthlyTargets, monthlyActuals: kr.monthlyActuals || {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
                                           else updated = { ...base, target: Number(lbKrForm.target), actual: kr.actual };
                                           dispatch({ type: "REPLACE_MEMBER_KR", memberId: m.id, krId: kr.id, kr: updated });
                                           setLbEditKr(null);
-                                          setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
+                                          setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
                                         };
                                         return (
                                           <div key={kr.id} style={{ padding: "14px 16px", background: T.warnDim, borderTop: `2px solid ${T.warn}`, borderBottom: `1px solid ${T.border}` }}>
@@ -5767,18 +5831,19 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                                 <option value="tracker">Tracker (number only)</option>
                                                 <option value="progress">Progress (cumulative)</option>
                                                 <option value="manager-fill">Manager Fill</option>
+                                                <option value="project_profit">Project Profit (auto)</option>
                                               </select>
-                                              <select value={lbKrForm.period || "monthly"} onChange={e => setLbKrForm(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
+                                              {!isProjProfit && <select value={lbKrForm.period || "monthly"} onChange={e => setLbKrForm(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
                                                 <option value="daily">Daily</option>
                                                 <option value="weekly">Weekly</option>
                                                 <option value="monthly">Monthly</option>
                                                 <option value="quarterly">Quarterly</option>
                                                 <option value="biannual">Bi-Annual</option>
                                                 <option value="annual">Annual</option>
-                                              </select>
+                                              </select>}
                                             </div>
                                             <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                              {!isTracker && !lbKrForm.useMonthlyTargets && (<>
+                                              {!isTracker && !isProjProfit && !lbKrForm.useMonthlyTargets && (<>
                                                 <select value={lbKrForm.operator || ">="} onChange={e => setLbKrForm(p => ({ ...p, operator: e.target.value }))} style={{ ...sel, width: 80 }}>
                                                   <option value=">=">≥</option>
                                                   <option value="<=">≤</option>
@@ -5786,8 +5851,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                                 </select>
                                                 <Input value={lbKrForm.target} onChange={e => setLbKrForm(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ width: 110 }} />
                                               </>)}
-                                              <Input value={lbKrForm.unit} onChange={e => setLbKrForm(p => ({ ...p, unit: e.target.value }))} placeholder="Unit (e.g. $, Days)" style={{ width: 150 }} />
-                                              <Input value={lbKrForm.dataSource} onChange={e => setLbKrForm(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ flex: 1, minWidth: 140 }} />
+                                              {isProjProfit && (<>
+                                                <span style={{ fontSize: 13, color: T.textMuted }}>$</span>
+                                                <Input value={lbKrForm.target} onChange={e => setLbKrForm(p => ({ ...p, target: e.target.value }))} placeholder="Annual profit target *" style={{ width: 160 }} />
+                                                <Input value={lbKrForm.krYear || ""} onChange={e => setLbKrForm(p => ({ ...p, krYear: e.target.value }))} placeholder="Year (e.g. 2026) *" style={{ width: 140 }} />
+                                              </>)}
+                                              {!isProjProfit && <Input value={lbKrForm.unit} onChange={e => setLbKrForm(p => ({ ...p, unit: e.target.value }))} placeholder="Unit (e.g. $, Days)" style={{ width: 150 }} />}
+                                              {!isProjProfit && <Input value={lbKrForm.dataSource} onChange={e => setLbKrForm(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ flex: 1, minWidth: 140 }} />}
                                               {isStandard && (
                                                 <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
                                                   <input type="checkbox" checked={!!lbKrForm.useMonthlyTargets} onChange={e => setLbKrForm(p => ({ ...p, useMonthlyTargets: e.target.checked }))} style={{ accentColor: T.brand }} />
@@ -5818,16 +5888,18 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                             )}
                                             <div style={{ display: "flex", gap: 8 }}>
                                               <Btn primary small onClick={saveLbEdit}>✓ Save Changes</Btn>
-                                              <Btn small onClick={() => { setLbEditKr(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
+                                              <Btn small onClick={() => { setLbEditKr(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); }}>Cancel</Btn>
                                             </div>
                                           </div>
                                         );
                                       }
-                                      const pct = krCompletion(kr); const st = getStatus(pct);
                                       const isMonthly = !!(kr.monthlyTargets);
                                       const mk = currentFYMonthKey();
                                       const mTgt = isMonthly ? (Number(kr.monthlyTargets[mk]) || 0) : null;
                                       const mAct = isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : null;
+                                      const lbPPAct = kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; return (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); })() : null;
+                                      const pct = kr.type === "project_profit" ? (kr.target > 0 ? Math.min(Math.round(lbPPAct / kr.target * 100), 100) : 0) : krCompletion(kr);
+                                      const st = getStatus(pct);
                                       return (
                                         <div key={kr.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                                           <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 130px 28px 30px", gap: 8, padding: "8px 10px", alignItems: "center", background: ki % 2 ? T.raised : "transparent", fontSize: 13 }}>
@@ -5837,23 +5909,26 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                               {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
                                               {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress</span>}
                                               {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Mgr Fill</span>}
+                                              {kr.type === "project_profit" && <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Proj Profit · auto</span>}
                                               {isMonthly && kr.type !== "tracker" && kr.type !== "progress" && <span style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 8, padding: "1px 5px", display: "inline-block", marginLeft: 4 }}>Monthly</span>}
                                             </div>
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>N/A</span>
+                                              : kr.type === "project_profit" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted, fontSize: 12 }}>${(kr.target || 0).toLocaleString()} ({kr.krYear || "?"})</span>
                                               : isMonthly ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted, fontSize: 12 }}>{kr.operator || ">="} {fmt(mTgt)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                                               : kr.type === "progress" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                                               : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
+                                              : kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; const lbAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return <span style={{ textAlign: "right", fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>${lbAct.toLocaleString()}</span>; })()
                                               : isMonthly ? <NumInput value={mAct} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: n } })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
                                               : <NumInput value={kr.actual} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: n })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
                                             {kr.type === "tracker" ? <span /> : <Bar value={pct} status={st} h={5} />}
                                             <button onClick={() => {
-                                              const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : "";
+                                              const krType = kr.type === "tracker" ? "tracker" : kr.type === "progress" ? "progress" : kr.type === "manager-fill" ? "manager-fill" : kr.type === "project_profit" ? "project_profit" : "";
                                               const isMonthlyKr = !!kr.monthlyTargets;
                                               setLbAddMember(null);
                                               setLbEditKr({ memberId: m.id, krId: kr.id });
-                                              setLbKrForm({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, kr.monthlyTargets?.[mo.key] ?? 0])) });
+                                              setLbKrForm({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, kr.monthlyTargets?.[mo.key] ?? 0])), krYear: String(kr.krYear || "") });
                                             }} title="Edit this KR" style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 5px", cursor: "pointer", color: T.brand, fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>✏</button>
                                             <button onClick={() => setConfirmDeleteKr({ memberId: m.id, memberName: m.name, krId: kr.id, krLabel: kr.label })}
                                               title="Delete this OKR"
@@ -5903,22 +5978,25 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             {lbAddMember === m.id ? (() => {
                               const isTracker = lbKrForm.krType === "tracker";
                               const isMgrFill = lbKrForm.krType === "manager-fill";
-                              const isStandard = !isTracker && lbKrForm.krType !== "progress" && !isMgrFill;
+                              const isProjProfit = lbKrForm.krType === "project_profit";
+                              const isStandard = !isTracker && lbKrForm.krType !== "progress" && !isMgrFill && !isProjProfit;
                               const sel = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", color: T.text, fontSize: 14, fontFamily: F.body, outline: "none" };
                               const addLbKr = () => {
                                 if (!lbKrForm.label) return;
-                                if (lbKrForm.krType !== "tracker" && lbKrForm.krType !== "progress" && !lbKrForm.useMonthlyTargets && lbKrForm.target === "") return;
+                                if (!isProjProfit && lbKrForm.krType !== "tracker" && lbKrForm.krType !== "progress" && !lbKrForm.useMonthlyTargets && lbKrForm.target === "") return;
                                 if (lbKrForm.krType === "progress" && lbKrForm.target === "") return;
+                                if (isProjProfit && (lbKrForm.target === "" || !lbKrForm.krYear)) return;
                                 const base = { id: `mkr_${Date.now().toString(36)}`, label: lbKrForm.label, unit: lbKrForm.unit.trim(), dataSource: lbKrForm.dataSource.trim(), operator: lbKrForm.operator || ">=", period: lbKrForm.period || "monthly" };
                                 let kr;
                                 if (lbKrForm.krType === "tracker") kr = { ...base, type: "tracker", target: 0, actual: null };
                                 else if (lbKrForm.krType === "progress") kr = { ...base, type: "progress", target: Number(lbKrForm.target), actual: null };
                                 else if (lbKrForm.krType === "manager-fill") kr = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: null };
+                                else if (isProjProfit) kr = { id: `mkr_${Date.now().toString(36)}`, label: lbKrForm.label, type: "project_profit", period: "annual", target: Number(lbKrForm.target), krYear: Number(lbKrForm.krYear) || new Date().getFullYear(), actual: null };
                                 else if (lbKrForm.useMonthlyTargets) kr = { ...base, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, 0])), monthlyActuals: {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
                                 else kr = { ...base, target: Number(lbKrForm.target), actual: null };
                                 dispatch({ type: "ADD_MEMBER_KR", memberId: m.id, kr });
                                 setLbAddMember(null);
-                                setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} });
+                                setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" });
                               };
                               return (
                                 <div style={{ padding: "14px 16px", background: T.brandDim, borderTop: `2px solid ${T.brand}`, marginTop: 8 }}>
@@ -5930,18 +6008,19 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                       <option value="tracker">Tracker (number only)</option>
                                       <option value="progress">Progress (cumulative)</option>
                                       <option value="manager-fill">Manager Fill</option>
+                                      <option value="project_profit">Project Profit (auto)</option>
                                     </select>
-                                    <select value={lbKrForm.period || "monthly"} onChange={e => setLbKrForm(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
+                                    {!isProjProfit && <select value={lbKrForm.period || "monthly"} onChange={e => setLbKrForm(p => ({ ...p, period: e.target.value }))} style={{ ...sel, minWidth: 120 }}>
                                       <option value="daily">Daily</option>
                                       <option value="weekly">Weekly</option>
                                       <option value="monthly">Monthly</option>
                                       <option value="quarterly">Quarterly</option>
                                       <option value="biannual">Bi-Annual</option>
                                       <option value="annual">Annual</option>
-                                    </select>
+                                    </select>}
                                   </div>
                                   <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                    {!isTracker && !lbKrForm.useMonthlyTargets && (<>
+                                    {!isTracker && !isProjProfit && !lbKrForm.useMonthlyTargets && (<>
                                       <select value={lbKrForm.operator || ">="} onChange={e => setLbKrForm(p => ({ ...p, operator: e.target.value }))} style={{ ...sel, width: 80 }}>
                                         <option value=">=">≥</option>
                                         <option value="<=">≤</option>
@@ -5949,8 +6028,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                       </select>
                                       <Input value={lbKrForm.target} onChange={e => setLbKrForm(p => ({ ...p, target: e.target.value }))} placeholder="Target *" style={{ width: 110 }} />
                                     </>)}
-                                    <Input value={lbKrForm.unit} onChange={e => setLbKrForm(p => ({ ...p, unit: e.target.value }))} placeholder="Unit (e.g. $, Days)" style={{ width: 150 }} />
-                                    <Input value={lbKrForm.dataSource} onChange={e => setLbKrForm(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ flex: 1, minWidth: 140 }} />
+                                    {isProjProfit && (<>
+                                      <span style={{ fontSize: 13, color: T.textMuted }}>$</span>
+                                      <Input value={lbKrForm.target} onChange={e => setLbKrForm(p => ({ ...p, target: e.target.value }))} placeholder="Annual profit target *" style={{ width: 160 }} />
+                                      <Input value={lbKrForm.krYear || ""} onChange={e => setLbKrForm(p => ({ ...p, krYear: e.target.value }))} placeholder="Year (e.g. 2026) *" style={{ width: 140 }} />
+                                    </>)}
+                                    {!isProjProfit && <Input value={lbKrForm.unit} onChange={e => setLbKrForm(p => ({ ...p, unit: e.target.value }))} placeholder="Unit (e.g. $, Days)" style={{ width: 150 }} />}
+                                    {!isProjProfit && <Input value={lbKrForm.dataSource} onChange={e => setLbKrForm(p => ({ ...p, dataSource: e.target.value }))} placeholder="Data source" style={{ flex: 1, minWidth: 140 }} />}
                                     {isStandard && (
                                       <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
                                         <input type="checkbox" checked={!!lbKrForm.useMonthlyTargets} onChange={e => setLbKrForm(p => ({ ...p, useMonthlyTargets: e.target.checked }))} style={{ accentColor: T.brand }} />
@@ -5970,13 +6054,13 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                   )}
                                   <div style={{ display: "flex", gap: 8 }}>
                                     <Btn primary small onClick={addLbKr}>✓ Add Key Result</Btn>
-                                    <Btn small onClick={() => { setLbAddMember(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>Cancel</Btn>
+                                    <Btn small onClick={() => { setLbAddMember(null); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); }}>Cancel</Btn>
                                   </div>
                                 </div>
                               );
                             })() : (
                               <div style={{ marginTop: 10 }}>
-                                <Btn small onClick={() => { setLbEditKr(null); setLbAddMember(m.id); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {} }); }}>+ Add Key Result</Btn>
+                                <Btn small onClick={() => { setLbEditKr(null); setLbAddMember(m.id); setLbKrForm({ label: "", target: "", dreamTarget: "", unit: "", dataSource: "", operator: ">=", period: "monthly", useMonthlyTargets: false, krType: "", monthlyTargets: {}, krYear: "" }); }}>+ Add Key Result</Btn>
                               </div>
                             )}
                           </div>
@@ -6696,7 +6780,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.label}</span>
                         {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Tracker</span>}
                         {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Mgr Fill</span>}
-                        {kr.type !== "tracker" && kr.type !== "manager-fill" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {kr.type === "project_profit" && <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Proj Profit</span>}
+                        {kr.type !== "tracker" && kr.type !== "manager-fill" && kr.type !== "project_profit" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         {kr.type === "tracker"
                           ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
@@ -7258,8 +7343,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 const r = hasRateKrs ? calcMemberRate(m.id, krs, allOkrSubs) : null;
                 const s = getStatus(r);
                 const groups = {};
-                krs.filter(kr => kr.type !== "manager-fill").forEach(kr => { const p = kr.period || "monthly"; if (!groups[p]) groups[p] = []; groups[p].push(kr); });
+                krs.filter(kr => kr.type !== "manager-fill" && kr.type !== "project_profit").forEach(kr => { const p = kr.period || "monthly"; if (!groups[p]) groups[p] = []; groups[p].push(kr); });
                 const mgrFillKrs = krs.filter(kr => kr.type === "manager-fill");
+                const ppKrsTeam = krs.filter(kr => kr.type === "project_profit");
                 const sortedPeriods = Object.keys(groups).sort((a, b) => PERIOD_ORDER.indexOf(a) - PERIOD_ORDER.indexOf(b));
                 return (
                   <Card key={m.id} style={{ marginBottom: 16, overflow: "hidden" }}>
@@ -7363,6 +7449,43 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                   dispatch({ type: "MANAGER_ASSESS_KR", memberId: m.id, memberName: m.name, deptId: m.deptId, kr, period: p, periodKey: pk, answer: aState.answer, actualValue: aState.value !== "" ? Number(aState.value) : null, approvedBy: user.id, newId: `ma_${m.id}_${kr.id}_${Date.now().toString(36)}` });
                                 }}>Save</Btn>
                                 {existingSub && <span style={{ fontSize: 12, color: T.textMuted }}>Last: <b style={{ color: existingSub.answer === "yes" ? T.ok : T.bad }}>{existingSub.answer}</b>{existingSub.actualValue != null ? ` · ${fmt(existingSub.actualValue)}${kr.unit ? ` ${kr.unit}` : ""}` : ""}</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {ppKrsTeam.length > 0 && (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px", background: T.okDim, borderBottom: `1px solid ${T.okBorder}`, borderTop: `1px solid ${T.border}` }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: T.ok, textTransform: "uppercase", letterSpacing: "0.07em", flex: 1 }}>Project Profit KRs</span>
+                          <span style={{ fontSize: 11, color: T.ok }}>auto-tracked from completed projects — read only</span>
+                        </div>
+                        {ppKrsTeam.map((kr, ki) => {
+                          const ppTGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
+                          const ppTAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && ppTGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                          const ppTPct = kr.target > 0 ? Math.min(Math.round(ppTAct / kr.target * 100), 100) : 0;
+                          const ppTSt = getStatus(ppTPct);
+                          const ppTMissing = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && ppTGetCY(p) === kr.krYear && (p.income == null || p.margin == null)).length;
+                          return (
+                            <div key={kr.id} style={{ padding: "12px 18px", borderBottom: ki < ppKrsTeam.length - 1 ? `1px solid ${T.border}` : "none", background: ki % 2 ? T.raised : "transparent" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                    <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textDim }}>{kr.id}</span>
+                                    <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{kr.label}</span>
+                                    <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px" }}>Proj Profit</span>
+                                    <span style={{ fontSize: 11, color: T.textMuted }}>Year {kr.krYear || "?"}</span>
+                                  </div>
+                                  <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 5 }}>Target: ${(kr.target || 0).toLocaleString()} profit</div>
+                                  <Bar value={ppTPct} status={ppTSt} h={5} />
+                                  {ppTMissing > 0 && <div style={{ fontSize: 11, color: T.warn, marginTop: 4 }}>⚠ {ppTMissing} project{ppTMissing !== 1 ? "s" : ""} missing income/margin — not counted</div>}
+                                </div>
+                                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                  <div style={{ fontSize: 20, fontWeight: 800, color: STATUS_THEME[ppTSt].color, fontFamily: F.mono }}>${ppTAct.toLocaleString()}</div>
+                                  <div style={{ fontSize: 11, color: T.textMuted }}>of ${(kr.target || 0).toLocaleString()}</div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: STATUS_THEME[ppTSt].color }}>{ppTPct}%</div>
+                                </div>
                               </div>
                             </div>
                           );
@@ -7581,7 +7704,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             {(myKpiPeriod === "all" ? kd.krs : kd.krs.filter(kr => (kr.period || "monthly") === myKpiPeriod)).map(kr => {
               // For standard KRs where kr.actual is null/0 (e.g. KR was synced after its check-ins were approved),
               // fall back to the most recent approved submission's actualValue so the display is meaningful.
-              const isStdKr = !kr.monthlyTargets && kr.type !== "tracker" && kr.type !== "progress" && kr.type !== "manager-fill";
+              const isStdKr = !kr.monthlyTargets && kr.type !== "tracker" && kr.type !== "progress" && kr.type !== "manager-fill" && kr.type !== "project_profit";
               const effectiveKr = (isStdKr && (kr.actual == null || kr.actual === 0))
                 ? (() => { const lastApproved = myOkrSubs.filter(sub => sub.krId === kr.id && sub.approval === "approved" && sub.answer === "yes" && sub.actualValue).sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0]; return lastApproved ? { ...kr, actual: lastApproved.actualValue } : kr; })()
                 : kr;
@@ -7608,9 +7731,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Tracker · does not affect rate</span>}
                       {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Progress · affects rate proportionally</span>}
                       {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Mgr Fill · assessed by manager</span>}
+                      {kr.type === "project_profit" && <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Project Profit · auto-tracked</span>}
                       {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>Monthly Breakdown</span>}
                       <span style={{ fontSize: 10, color: T.textDim, background: T.raised, padding: "1px 6px", borderRadius: 10, border: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{kr.period || "monthly"}</span>
-                      {kr.type !== "tracker" && kr.type !== "manager-fill" && <Tag type={s} />}
+                      {kr.type !== "tracker" && kr.type !== "manager-fill" && kr.type !== "project_profit" && <Tag type={s} />}
                       {kr.type === "manager-fill" && (() => { const mfSub = myOkrSubs.filter(s2 => s2.krId === kr.id && s2.managerFilled).sort((a,b)=>(b.answeredAt||"").localeCompare(a.answeredAt||""))[0]; return mfSub ? <Tag type={mfSub.answer === "yes" ? "green" : "red"} /> : <Tag type="none" />; })()}
                     </div>
                   </div>
@@ -7747,6 +7871,28 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <div style={{ fontSize: 11, color: "#7c3aed", opacity: 0.8 }}>does not affect rate</div>
                       </div>
                     </div>
+                  ) : kr.type === "project_profit" ? (
+                    (() => {
+                      const kpiGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
+                      const kpiAct = projects.filter(p => p.mgrId === user.id && p.status === "completed" && kpiGetCY(p) === kr.krYear).reduce((acc, p) => acc + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                      const kpiPct = kr.target > 0 ? Math.min(Math.round(kpiAct / kr.target * 100), 100) : 0;
+                      const kpiSt = getStatus(kpiPct);
+                      const kpiMissing = projects.filter(p => p.mgrId === user.id && p.status === "completed" && kpiGetCY(p) === kr.krYear && (p.income == null || p.margin == null)).length;
+                      return (
+                        <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
+                          <div>
+                            <div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[kpiSt].color }}>${kpiAct.toLocaleString()}</div>
+                            <div style={{ fontSize: 12, color: T.textMuted }}>of ${(kr.target || 0).toLocaleString()} profit · Year {kr.krYear || "?"}</div>
+                            {kpiMissing > 0 && <div style={{ fontSize: 11, color: T.warn, marginTop: 3 }}>⚠ {kpiMissing} project{kpiMissing !== 1 ? "s" : ""} missing income/margin</div>}
+                          </div>
+                          <div style={{ flex: 1 }}><Bar value={kpiPct} status={kpiSt} h={10} /></div>
+                          <div>
+                            <div style={{ fontSize: 26, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[kpiSt].color }}>{kpiPct}%</div>
+                            <Tag type={kpiSt} />
+                          </div>
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 20 }}>
                       <div><div style={{ fontSize: 34, fontWeight: 900, fontFamily: F.mono, color: STATUS_THEME[s].color }}>{fmt(effectiveKr.actual)}</div><div style={{ fontSize: 12, color: T.textMuted }}>{kr.type === "progress" ? "" : `${kr.operator || ">="} `}{fmt(kr.target)} target{kr.unit ? ` (${kr.unit})` : ""}</div></div>
@@ -7821,6 +7967,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
             const _pkMem = okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod);
             const hasSub = okrPeriod === "all" ? (isMonthly ? Object.values(kr.monthlyActuals || {}).some(v => v != null) : kr.actual != null) : (state.okrSubmissions || []).some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMem && s.answer !== null);
+            const ppActual = kr.type === "project_profit" ? (() => { const getCompletedYear = p => { if (p.completedYear) return p.completedYear; const parts = (p.updatedDate || "").split("/"); return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null; }; return projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear).reduce((sum, p) => sum + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); })() : null;
+            const ppPct = kr.type === "project_profit" && kr.target > 0 ? Math.min(Math.round(ppActual / kr.target * 100), 100) : null;
+            const ppSt = ppPct != null ? getStatus(ppPct) : null;
             return (
               <Fragment key={kr.id}>
               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "9px 16px", gap: 8, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -7830,16 +7979,17 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   {kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                   {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Tracker · does not affect rate</span>}
                   {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Progress · affects rate proportionally</span>}
+                  {kr.type === "project_profit" && <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Project Profit · auto-tracked</span>}
                   {isMonthly && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>Monthly Breakdown</span>}
                   {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", display: "inline-block" }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                 </div>
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)}` : kr.type === "progress" ? fmt(kr.target) : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? fmt(curActual) : fmt(kr.actual)}</span>}
-                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
-                {kr.type === "tracker" ? <span /> : hasSub ? <Bar value={pct} status={s} h={5} /> : <span />}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 12, color: "#7c3aed" }}>N/A</span> : kr.type === "project_profit" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>${(kr.target || 0).toLocaleString()} ({kr.krYear})</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? `${kr.operator||">="} ${fmt(curTarget)}` : kr.type === "progress" ? fmt(kr.target) : `${kr.operator || ">="} ${fmt(kr.target)}${kr.unit ? ` ${kr.unit}` : ""}`}</span>}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textDim }}>—</span> : kr.type === "project_profit" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>${(ppActual || 0).toLocaleString()}</span> : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{isMonthly ? fmt(curActual) : fmt(kr.actual)}</span>}
+                {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>{fmt(isMonthly ? curActual : kr.actual)}{kr.unit ? <span style={{ fontSize: 11, fontWeight: 400 }}> {kr.unit}</span> : ""}</span> : kr.type === "project_profit" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[ppSt || "none"].color }}>{ppPct ?? 0}%</span> : hasSub ? <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[s].color }}>{pct.toFixed(0)}%</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.textDim }}>N/A</span>}
+                {kr.type === "tracker" ? <span /> : kr.type === "project_profit" ? <Bar value={ppPct || 0} status={ppSt || "none"} h={5} /> : hasSub ? <Bar value={pct} status={s} h={5} /> : <span />}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
                   {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="View all months" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 11, fontWeight: 700 }}>📅</button>}
-                  {kr.type === "tracker" ? null : hasSub ? <Tag type={s} small /> : null}
+                  {kr.type === "tracker" ? null : kr.type === "project_profit" ? <Tag type={ppSt || "none"} small /> : hasSub ? <Tag type={s} small /> : null}
                 </div>
               </div>
               {isMonthly && expandedMonthlyKr === kr.id && (
@@ -7955,7 +8105,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         {kr.type === "tracker" && <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Tracker</span>}
                         {kr.type === "progress" && <span style={{ fontSize: 10, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Progress</span>}
                         {kr.type === "manager-fill" && <span style={{ fontSize: 10, color: "#d97706", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Mgr Fill</span>}
-                        {kr.type !== "tracker" && kr.type !== "progress" && kr.type !== "manager-fill" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
+                        {kr.type === "project_profit" && <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Proj Profit</span>}
+                        {kr.type !== "tracker" && kr.type !== "progress" && kr.type !== "manager-fill" && kr.type !== "project_profit" && kr.unit && <span style={{ fontSize: 11, color: T.textMuted }}>{kr.unit}</span>}
                         {okrPeriod === "all" && kr.period && <span style={{ fontSize: 10, color: T.textMuted, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{kr.period.charAt(0).toUpperCase() + kr.period.slice(1)}</span>}
                         {kr.type === "tracker"
                           ? <span style={{ fontSize: 12, fontFamily: F.mono, color: trackerVal ? "#7c3aed" : T.textDim, fontWeight: 700, textAlign: "right", flexShrink: 0 }}>{trackerVal ?? "N/A"}</span>
@@ -7991,6 +8142,53 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   {myPendingCheckins.length} pending check-in{myPendingCheckins.length !== 1 ? "s" : ""} — please respond below
                 </div>
               )}
+              {(() => {
+                const ppKrs = (memberData[user.id]?.krs || []).filter(kr => kr.type === "project_profit");
+                if (!ppKrs.length) return null;
+                const getCompletedYear = p => {
+                  if (p.completedYear) return p.completedYear;
+                  const parts = (p.updatedDate || "").split("/");
+                  return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
+                };
+                return (
+                  <div style={{ marginBottom: 24 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${T.okBorder}` }}>
+                      <div style={{ width: 4, height: 18, background: T.ok, borderRadius: 2 }} />
+                      <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Project Profit KRs</span>
+                      <span style={{ fontSize: 11, color: T.textMuted }}>auto-tracked from completed projects</span>
+                    </div>
+                    {ppKrs.map(kr => {
+                      const yearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+                      const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                      const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
+                      const st = getStatus(pct);
+                      const missingMargin = yearProjects.filter(p => p.income == null || p.margin == null).length;
+                      return (
+                        <Card key={kr.id} style={{ padding: "14px 18px", marginBottom: 8, borderLeft: `3px solid ${T.ok}` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+                                <span style={{ fontSize: 15, fontWeight: 700 }}>{kr.label}</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 5, padding: "1px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>Project Profit · auto</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: T.textMuted }}>Target: ${(kr.target || 0).toLocaleString()} · {kr.krYear}</div>
+                            </div>
+                            <div style={{ textAlign: "right", flexShrink: 0 }}>
+                              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: F.mono, color: STATUS_THEME[st].color }}>{pct}%</div>
+                              <div style={{ fontSize: 12, color: T.textMuted, fontFamily: F.mono }}>${actual.toLocaleString()} / ${(kr.target || 0).toLocaleString()}</div>
+                            </div>
+                          </div>
+                          <Bar value={pct} status={st} h={6} />
+                          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={{ fontSize: 11, color: T.textMuted }}>{yearProjects.length} completed project{yearProjects.length !== 1 ? "s" : ""} in {kr.krYear}</span>
+                            {missingMargin > 0 && <span style={{ fontSize: 11, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 5, padding: "1px 6px" }}>⚠ {missingMargin} project{missingMargin !== 1 ? "s" : ""} missing income/margin — not counted</span>}
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               {grouped.length === 0 && <EmptyState text="No check-ins yet. Admin will send them when due." />}
               {grouped.map(({ period, pending, answered }) => {
                 const byPK = {};
@@ -8217,6 +8415,66 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   </div>
                 )}
               </>);
+            })()}
+            {(() => {
+              const getCompletedYear = p => {
+                if (p.completedYear) return p.completedYear;
+                const parts = (p.updatedDate || "").split("/");
+                return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
+              };
+              const ppMembers = designatedApproveeIds
+                .map(memberId => {
+                  const ppKrs = (memberData[memberId]?.krs || []).filter(kr => kr.type === "project_profit");
+                  if (!ppKrs.length) return null;
+                  return { memberId, mem: users.find(u => u.id === memberId), ppKrs };
+                })
+                .filter(Boolean);
+              if (!ppMembers.length) return null;
+              return (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${T.okBorder}` }}>
+                    <div style={{ width: 4, height: 18, background: T.ok, borderRadius: 2 }} />
+                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Project Profit KRs</span>
+                    <span style={{ fontSize: 11, color: T.textMuted }}>auto-tracked from completed projects</span>
+                  </div>
+                  {ppMembers.map(({ memberId, mem, ppKrs }) => (
+                    <Card key={memberId} style={{ marginBottom: 10, overflow: "hidden" }}>
+                      <div style={{ padding: "11px 16px", background: T.raised, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+                        <Avatar letters={mem?.av || "?"} size={28} />
+                        <span style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{mem?.name || "Unknown"}</span>
+                        <span style={{ fontSize: 11, color: T.textDim, marginLeft: "auto" }}>{ppKrs.length} KR{ppKrs.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      {ppKrs.map((kr, idx) => {
+                        const yearProjects = projects.filter(p => p.mgrId === memberId && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+                        const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0);
+                        const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
+                        const st = getStatus(pct);
+                        const missingMargin = yearProjects.filter(p => p.income == null || p.margin == null).length;
+                        return (
+                          <div key={kr.id} style={{ padding: "12px 16px 12px 19px", borderLeft: `3px solid ${T.ok}`, borderBottom: idx < ppKrs.length - 1 ? `1px solid ${T.border}` : "none" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{kr.label}</span>
+                                  <span style={{ fontSize: 10, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>Proj Profit</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 6 }}>Target: ${(kr.target || 0).toLocaleString()} profit · Year {kr.krYear || "?"}</div>
+                                <Bar value={pct} status={st} h={5} />
+                                {missingMargin > 0 && <div style={{ marginTop: 4, fontSize: 11, color: T.warn }}>⚠ {missingMargin} project{missingMargin !== 1 ? "s" : ""} missing income/margin — not counted</div>}
+                              </div>
+                              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: st === "met" ? T.ok : st === "near" ? T.warn : T.bad, fontFamily: F.mono }}>${actual.toLocaleString()}</div>
+                                <div style={{ fontSize: 11, color: T.textMuted }}>of ${(kr.target || 0).toLocaleString()}</div>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: st === "met" ? T.ok : st === "near" ? T.warn : T.bad }}>{pct}%</div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </Card>
+                  ))}
+                </div>
+              );
             })()}
           </Pane>
         </>)}
