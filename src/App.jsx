@@ -4401,7 +4401,10 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                     ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 6, padding: "3px 8px" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                                     : s.krType === "progress"
                                     ? <span style={{ fontSize: 12, fontWeight: 700, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "3px 8px" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}{s.krTarget ? ` (${Math.min(Math.round((Number(s.actualValue || 0) / Number(s.krTarget)) * 100), 100)}%)` : ""}</span>
-                                    : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                    : <div style={{ textAlign: "right" }}>
+                                        <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad, background: s.answer === "yes" ? T.okDim : T.badDim, border: `1px solid ${s.answer === "yes" ? T.okBorder : T.badBorder}`, borderRadius: 6, padding: "3px 8px" }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                                        {s.actualValue != null && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</div>}
+                                      </div>}
                                 {s.answer !== null && s.approval === "pending"
                                   ? <div style={{ display: "flex", gap: 6 }}>
                                       <Btn small onClick={() => { setEditingSub({ id: s.id, answer: s.answer, actual: s.actualValue != null ? String(s.actualValue) : "" }); setRejectOkr(null); }}>✎ Edit</Btn>
@@ -7015,7 +7018,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                                 : s.krType === "progress"
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: T.brand }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}{s.krTarget ? ` (${Math.min(Math.round((Number(s.actualValue || 0) / Number(s.krTarget)) * 100), 100)}%)` : ""}</span>
-                                : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                : <div style={{ textAlign: "right" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                                    {s.actualValue != null && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</div>}
+                                  </div>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                               {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
                               {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 10, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
@@ -7110,7 +7116,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                       ? <span style={{ fontSize: 11, fontWeight: 700, background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd", borderRadius: 5, padding: "1px 6px" }}>Tracker</span>
                                       : s.krType === "progress"
                                       ? <span style={{ fontSize: 11, fontWeight: 700, background: T.brandDim, color: T.brand, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "1px 6px" }}>Progress</span>
-                                      : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                      : <div style={{ textAlign: "right" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                                    {s.actualValue != null && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</div>}
+                                  </div>}
                                     {s.approval === "pending"
                                       ? <div style={{ display: "flex", gap: 6 }}>
                                           <Btn small onClick={() => { setEditingSub({ id: s.id, answer: s.answer, actual: s.actualValue != null ? String(s.actualValue) : "" }); setRejectOkr(null); }}>✎ Edit</Btn>
@@ -8376,7 +8385,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9" }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
                                 : s.krType === "progress"
                                 ? <span style={{ fontSize: 12, fontWeight: 700, color: T.brand }}>Recorded: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}{s.krTarget ? ` (${Math.min(Math.round((Number(s.actualValue || 0) / Number(s.krTarget)) * 100), 100)}%)` : ""}</span>
-                                : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                : <div style={{ textAlign: "right" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                                    {s.actualValue != null && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</div>}
+                                  </div>}
                               <Tag type={s.approval === "approved" ? "approved" : s.approval === "rejected" ? "rejected" : "pending"} label={s.approval === "approved" ? "Approved" : s.approval === "rejected" ? "Rejected" : "Pending"} small />
                               {s.approvedBy === "auto" && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", color: "#10B981", borderRadius: 8, padding: "1px 6px", letterSpacing: "0.05em" }}>AUTO</span>}
                               {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 10, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
@@ -8454,7 +8466,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                                 {s.krType === "tracker" || s.krType === "progress"
                                   ? <span style={{ fontSize: 12, fontWeight: 700, color: s.krType === "tracker" ? "#6d28d9" : T.brand }}>{s.krType === "tracker" ? "Recorded" : "Progress"}: {s.actualValue ?? "—"}{s.krUnit ? ` ${s.krUnit}` : ""}</span>
-                                  : <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>}
+                                  : <div style={{ textAlign: "right" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: s.answer === "yes" ? T.ok : T.bad }}>{s.answer === "yes" ? "✓ Yes" : "✗ No"}</span>
+                                    {s.actualValue != null && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>Actual: {s.actualValue}{s.krUnit ? ` ${s.krUnit}` : ""}</div>}
+                                  </div>}
                                 {s.approval === "pending"
                                   ? <div style={{ display: "flex", gap: 6 }}>
                                       <Btn danger small onClick={() => setDesignatedRejectOkr({ id: s.id, actual: "" })}>Reject</Btn>
