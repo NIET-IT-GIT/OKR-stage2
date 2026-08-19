@@ -1141,6 +1141,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
       </div>
 
       <Card style={{ overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}><div style={{ minWidth: 760 }}>
         <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 140px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
           <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Actions</span>
         </div>
@@ -1289,6 +1290,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
             </div>
           );
         })}
+        </div></div>
       </Card>
     </Pane>
   </>);
@@ -1409,6 +1411,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
       )}
 
       <Card style={{ overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}><div style={{ minWidth: 650 }}>
         <div style={{ display: "grid", gridTemplateColumns: `1fr 200px 80px${onViewKrs ? " 110px" : ""} 160px`, padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
           <span>Department / Description</span><span>Head · College</span><span>Teams</span>{onViewKrs && <span>Key Results</span>}<span style={{ textAlign: "right" }}>Actions</span>
         </div>
@@ -1470,6 +1473,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
 
                     {d.krs.length > 0 && (
                       <Card style={{ overflow: "hidden", marginBottom: 14 }}>
+                        <div style={{ overflowX: "auto" }}><div style={{ minWidth: 540 }}>
                         <div style={{ padding: "9px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 12, fontWeight: 700, color: T.textMuted, letterSpacing: "0.05em" }}>DEPARTMENT KEY RESULTS</div>
                         {d.krs.map((kr, ki) => { const cr = krCompletion(kr); const cs = getStatus(cr);
                           return (<div key={kr.id} style={{ display: "grid", gridTemplateColumns: "50px 1fr 70px 70px 55px 130px 65px", padding: "9px 16px", gap: 8, alignItems: "center", background: ki % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
@@ -1481,10 +1485,12 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
                             <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={cs} small /></div>
                           </div>);
                         })}
+                        </div></div>
                       </Card>
                     )}
 
                     <Card style={{ overflow: "hidden", marginBottom: 14 }}>
+                      <div style={{ overflowX: "auto" }}><div style={{ minWidth: 560 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "28px 36px 1fr 120px 55px 140px 70px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                         <span>#</span><span></span><span>Name</span><span>Title</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                       </div>
@@ -1502,6 +1508,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
                           </div>
                         ))
                       }
+                      </div></div>
                     </Card>
 
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -1601,6 +1608,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
             </div>
           );
         })}
+        </div></div>
       </Card>
     </Pane>
   </>);
@@ -3228,7 +3236,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
 
   return (
     <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
-    <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
+    <div style={{ display: "flex", minHeight: "100dvh", fontFamily: F.body, background: T.bg, color: T.text }}>
       {logPopup && <div onClick={() => setLogPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, width: "100%", maxWidth: 640, maxHeight: "75vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}><div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}><div><div style={{ fontSize: 15, fontWeight: 700 }}>{logPopup.projName}</div>{logPopup.date && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{logPopup.date}</div>}</div><button onClick={() => setLogPopup(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "0 2px", marginLeft: 12 }}>✕</button></div><div style={{ padding: "16px 20px", overflowY: "auto", fontSize: 14, lineHeight: 1.65, color: T.text, whiteSpace: "pre-wrap" }}>{logPopup.text}</div></div></div>}
       {checkinPreview && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
@@ -3388,13 +3396,15 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     .sort((a, b) => { if (a.excluded !== b.excluded) return a.excluded ? 1 : -1; return (b.rate ?? -1) - (a.rate ?? -1); }) : [];
                   return (
                     <Card key={d.id} style={{ marginBottom: 8, overflow: "hidden" }}>
-                      <div onClick={() => setOvExpandedDept(p => p === d.id ? null : d.id)} style={{ padding: "16px 20px", cursor: "pointer", display: "grid", gridTemplateColumns: "36px 1fr 60px 180px 80px 24px", alignItems: "center", gap: 14 }}>
+                      <div style={{ overflowX: "auto" }}>
+                      <div onClick={() => setOvExpandedDept(p => p === d.id ? null : d.id)} style={{ padding: "16px 20px", cursor: "pointer", display: "grid", gridTemplateColumns: "36px 1fr 60px 180px 80px 24px", alignItems: "center", gap: 14, minWidth: 480 }}>
                         <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: i === 0 ? T.ok : i === deptRanks.length - 1 ? T.bad : T.textMuted }}>#{i + 1}</span>
                         <div><div style={{ fontSize: 16, fontWeight: 700 }}>{d.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{d.college} · {d.head} · {d.teams.length} teams</div></div>
                         <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
                         <Bar value={d.rate} status={d.status} h={7} />
                         <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={d.status} /></div>
                         <span style={{ fontSize: 11, color: T.textMuted, textAlign: "right" }}>{isExpanded ? "▲" : "▼"}</span>
+                      </div>
                       </div>
                       {isExpanded && (
                         <div style={{ borderTop: `1px solid ${T.border}`, padding: "14px 20px", background: T.bgSoft }}>
@@ -3533,10 +3543,12 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
             if (krs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {adminOkrPeriod === "all" ? "" : adminOkrPeriod + " "}KRs for this section yet.</div>;
             return (
               <Card style={{ overflow: "hidden" }}>
+                <div style={{ overflowX: "auto" }}><div style={{ minWidth: 760 }}>
                 <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                   <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                 </div>
                 {renderRows(krs, deptId, teamId)}
+                </div></div>
               </Card>
             );
           };
@@ -3797,6 +3809,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
             };
             const renderSetupSection = (krs, deptId, teamId) => (
               <Card style={{ overflow: "hidden", marginBottom: 0 }}>
+                <div style={{ overflowX: "auto" }}><div style={{ minWidth: 742 }}>
                 {krs.length > 0 && (<>
                   <div style={{ display: "grid", gridTemplateColumns: KCOL_S, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                     <span>ID</span><span>Key Result</span><span>Type</span><span>Period</span><span>Target</span><span>Unit</span><span>Data Source</span><span />
@@ -3807,6 +3820,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                   <div style={{ fontSize: 13, color: T.textMuted, padding: "12px 16px" }}>No KRs yet — add your first key result below.</div>
                 )}
                 {renderAddRow(deptId, teamId)}
+                </div></div>
               </Card>
             );
             const totalKrs = (d.krs || []).length + (d.teams || []).reduce((s, t) => s + (t.krs || []).length, 0);
@@ -4130,6 +4144,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                             <div style={{ borderTop: `1px solid ${T.border}`, padding: "14px 16px" }}>
                               {personalKrs.length > 0 && (
                                 <div style={{ marginBottom: 10 }}>
+                                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 510 }}>
                                   <div style={{ display: "grid", gridTemplateColumns: "1fr 52px 90px 90px 60px 90px 28px", gap: 8, padding: "5px 0 6px", fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${T.border}` }}>
                                     <span>Key Result</span><span>Op</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Unit</span><span>Period</span><span />
                                   </div>
@@ -4189,6 +4204,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                       </Fragment>
                                     );
                                   })}
+                                  </div></div>
                                 </div>
                               )}
                               {addPersonalKr?.memberId === member.id ? (
@@ -4515,6 +4531,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Email Send Log</div>
                     <div style={{ fontSize: 12, color: T.textMuted }}>{emailLogs.length} send event{emailLogs.length !== 1 ? "s" : ""} (last 100)</div>
                   </div>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 640 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "160px 80px 1fr 1fr 70px 70px 60px", gap: 8, padding: "5px 0 6px", fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: `1px solid ${T.border}` }}>
                     <span>Date / Time</span><span>Period</span><span>Date Range</span><span>Scope</span><span style={{ textAlign: "right" }}>Emails</span><span style={{ textAlign: "right" }}>Created</span><span style={{ textAlign: "right" }}>Fails</span>
                   </div>
@@ -4561,6 +4578,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       </div>
                     );
                   })}
+                  </div></div>
                 </div>
               )}
             </Pane>
@@ -5804,6 +5822,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
               const COL = "50px 32px 1fr 120px 110px 55px 150px 70px 56px";
               return (
                 <Card style={{ overflow: "hidden" }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 743 }}>
                   <div style={{ display: "grid", gridTemplateColumns: COL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                     <span>Rank</span><span></span><span>Name</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Rate</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span><span></span>
                   </div>
@@ -5843,6 +5862,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                 return (
                                   <div key={key} style={{ marginBottom: 14 }}>
                                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>{label} ({group.length})</div>
+                                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: 600 }}>
                                     <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 110px 55px 130px 28px 30px", gap: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.06em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
                                       <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span></span><span></span>
                                     </div>
@@ -6027,6 +6047,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                                         </div>
                                       );
                                     })}
+                                    </div></div>
                                   </div>
                                 );
                               })
@@ -6130,6 +6151,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                       </div>
                     );
                   })}
+                  </div></div>
                 </Card>
               );
             })()}
@@ -6138,7 +6160,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
 
         {confirmDeleteKr && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: "28px 32px", width: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: "28px 32px", width: "100%", maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}>
               <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8, color: T.text }}>Delete OKR?</div>
               <p style={{ fontSize: 14, color: T.textSoft, lineHeight: 1.6, margin: "0 0 6px" }}>
                 You are about to delete this OKR for <strong style={{ color: T.text }}>{confirmDeleteKr.memberName}</strong>:
@@ -6315,7 +6337,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
 
         {syncPrompt && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: "100%", maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
               <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>Sync KPIs to Team Members?</div>
               <p style={{ fontSize: 14, color: T.textSoft, marginBottom: 24, lineHeight: 1.6, margin: "0 0 24px" }}>
                 You updated KPIs for <strong>{syncPrompt.teamName}</strong>. Sync these changes to all team members' personal KPI lists?
@@ -6621,7 +6643,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
 
   return (
     <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
-    <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
+    <div style={{ display: "flex", minHeight: "100dvh", fontFamily: F.body, background: T.bg, color: T.text }}>
       {logPopup && <div onClick={() => setLogPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, width: "100%", maxWidth: 640, maxHeight: "75vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}><div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}><div><div style={{ fontSize: 15, fontWeight: 700 }}>{logPopup.projName}</div>{logPopup.date && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{logPopup.date}</div>}</div><button onClick={() => setLogPopup(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "0 2px", marginLeft: 12 }}>✕</button></div><div style={{ padding: "16px 20px", overflowY: "auto", fontSize: 14, lineHeight: 1.65, color: T.text, whiteSpace: "pre-wrap" }}>{logPopup.text}</div></div></div>}
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ approvals: pendingOkrSubs.length, checkin: myPendingCheckins.length }} />
       <div style={{ flex: 1, overflow: "auto" }}>
@@ -6760,10 +6782,12 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             if (krs.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "10px 0" }}>No {okrPeriod} KRs for this section yet.</div>;
             return (
               <Card style={{ overflow: "hidden" }}>
+                <div style={{ overflowX: "auto" }}><div style={{ minWidth: 760 }}>
                 <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                   <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span>Data Source</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                 </div>
                 {renderRows(krs, deptId, teamId)}
+                </div></div>
               </Card>
             );
           };
@@ -6876,7 +6900,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
               const s = getStatus(r);
               const memberProjCount = projects.filter(p => p.mgrId === m.id).length;
               return (
-                <Card key={m.id} style={{ padding: "14px 18px", marginBottom: 8 }}>
+                <Card key={m.id} style={{ marginBottom: 8, overflow: "hidden" }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 420, padding: "14px 18px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 55px 150px 70px", alignItems: "center", gap: 12 }}>
                     <Avatar letters={m.av} size={30} />
                     <div>
@@ -6890,6 +6915,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     <Bar value={r ?? 0} status={s} h={6} />
                     <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={s} small /></div>
                   </div>
+                  </div></div>
                 </Card>
               );
             })}
@@ -7452,6 +7478,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                 <Btn small primary={!isCurPK(period)} onClick={() => setMgrKpiPeriodKeys(prev => ({ ...prev, [period]: prevPeriodKey(period) }))}>← Prev</Btn>
                                 <Btn small primary={isCurPK(period)} onClick={() => setMgrKpiPeriodKeys(prev => ({ ...prev, [period]: currentPeriodKey(period) }))}>Current</Btn>
                               </div>
+                              <div style={{ overflowX: "auto" }}><div style={{ minWidth: 560 }}>
                               <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "5px 18px", gap: 8, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
                                 <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span>
                               </div>
@@ -7494,6 +7521,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                   </div>
                                 );
                               })}
+                              </div></div>
                             </div>
                           );
                         })
@@ -7644,7 +7672,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
 
         {syncPrompt && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+            <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: "100%", maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
               <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>Sync KPIs to Team Members?</div>
               <p style={{ fontSize: 14, color: T.textSoft, marginBottom: 24, lineHeight: 1.6, margin: "0 0 24px" }}>
                 You updated KPIs for <strong>{syncPrompt.teamName}</strong>. Sync these changes to all team members' personal KPI lists?
@@ -7740,7 +7768,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
 
   return (
     <MobileContext.Provider value={{ isMobile, drawerOpen, setDrawerOpen }}>
-    <div style={{ display: "flex", height: "100vh", fontFamily: F.body, background: T.bg, color: T.text }}>
+    <div style={{ display: "flex", minHeight: "100dvh", fontFamily: F.body, background: T.bg, color: T.text }}>
       {logPopup && <div onClick={() => setLogPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, width: "100%", maxWidth: 640, maxHeight: "75vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}><div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}><div><div style={{ fontSize: 15, fontWeight: 700 }}>{logPopup.projName}</div>{logPopup.date && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{logPopup.date}</div>}</div><button onClick={() => setLogPopup(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "0 2px", marginLeft: 12 }}>✕</button></div><div style={{ padding: "16px 20px", overflowY: "auto", fontSize: 14, lineHeight: 1.65, color: T.text, whiteSpace: "pre-wrap" }}>{logPopup.text}</div></div></div>}
       <Side items={navItems} active={page} onSelect={setPage} user={user} onLogout={onLogout} pendingCounts={{ checkin: myPendingCheckins.length, approvals: designatedPendingCount }} />
       <div style={{ flex: 1, overflow: "auto" }}>
@@ -8123,10 +8151,12 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             if (filtered.length === 0) return <div style={{ fontSize: 13, color: T.textMuted, padding: "8px 0" }}>No {okrPeriod} KRs yet.</div>;
             return (
               <Card style={{ overflow: "hidden" }}>
+                <div style={{ overflowX: "auto" }}><div style={{ minWidth: 610 }}>
                 <div style={{ display: "grid", gridTemplateColumns: KCOL, padding: "7px 16px", gap: 8, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
                   <span>ID</span><span>Key Result</span><span style={{ textAlign: "right" }}>Performance Target</span><span style={{ textAlign: "right" }}>Actual</span><span style={{ textAlign: "right" }}>%</span><span>Progress</span><span style={{ textAlign: "right" }}>Status</span>
                 </div>
                 {renderKrRows(filtered)}
+                </div></div>
               </Card>
             );
           };
