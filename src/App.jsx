@@ -2506,7 +2506,7 @@ RESPONSE STYLE:
 - Always name specific people and departments — never give vague summaries.
 - Proactively flag actionable items: red-status members, pending unanswered check-ins, departments below target.
 - Do not repeat the question. Do not explain the data structure unless asked.
-- Reply in the same language as the user's question (Chinese or English).
+- Always reply in English, regardless of the language the user writes in.
 - Never fabricate data. If the information is not in the provided context, say so clearly.
 
 PREDICTIVE ANALYSIS:
