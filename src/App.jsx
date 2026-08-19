@@ -1448,6 +1448,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
                 <span style={{ fontSize: 13, color: T.textSoft }}>{d.teams.length} team{d.teams.length !== 1 ? "s" : ""}</span>
                 {onViewKrs && <button onClick={() => onViewKrs(d.id)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>KR Editor →</button>}
                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <button onClick={() => dispatch({ type: "UPDATE_DEPT", deptId: d.id, updates: { admissionsAccess: !d.admissionsAccess } })} style={{ background: d.admissionsAccess ? "#e0f2fe" : T.raised, border: `1px solid ${d.admissionsAccess ? "#7dd3fc" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: d.admissionsAccess ? "#0369a1" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Applications & COE access for all members of this department">📋</button>
                   <button onClick={() => startEdit(d)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
                   {confirmDel === d.id ? (<>
                     <button onClick={() => { dispatch({ type: "REMOVE_DEPT", deptId: d.id }); setConfirmDel(null); if (selDept === d.id) setSelDept(null); }} style={{ background: T.bad, border: "none", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Confirm</button>
@@ -6630,6 +6631,52 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     syncNoteTimer.current = setTimeout(() => setSyncNote(null), 3500);
   }
 
+  const [enrTab, setEnrTab] = useState("overview");
+  const [enrRecords, setEnrRecords] = useState([]);
+  const [enrBatches, setEnrBatches] = useState([]);
+  const [enrLoaded, setEnrLoaded] = useState(false);
+  const [enrLoading, setEnrLoading] = useState(false);
+  const [enrFilterWeek, setEnrFilterWeek] = useState("all");
+  const [enrFilterMarketer, setEnrFilterMarketer] = useState("all");
+  const [enrFilterRto, setEnrFilterRto] = useState("all");
+  const [enrChartTooltip, setEnrChartTooltip] = useState(null);
+  const [enrError, setEnrError] = useState(null);
+  useEffect(() => {
+    if (!dept?.admissionsAccess) return;
+    if (!enrLoaded && !enrLoading) {
+      setEnrLoading(true);
+      dbGetEnrolments().then(r => {
+        setEnrRecords(r.enrolment_records);
+        setEnrBatches(r.enrolment_batches);
+        setEnrError(null);
+        setEnrLoaded(true);
+        setEnrLoading(false);
+      }).catch(e => { setEnrError(e.message); setEnrLoading(false); setEnrLoaded(true); });
+    }
+  }, [enrLoaded, enrLoading, dept?.admissionsAccess]);
+  const [coeTab, setCoeTab] = useState("overview");
+  const [coeRecords, setCoeRecords] = useState([]);
+  const [coeBatches, setCoeBatches] = useState([]);
+  const [coeLoaded, setCoeLoaded] = useState(false);
+  const [coeLoading, setCoeLoading] = useState(false);
+  const [coeFilterWeek, setCoeFilterWeek] = useState("all");
+  const [coeFilterRto, setCoeFilterRto] = useState("all");
+  const [coeFilterType, setCoeFilterType] = useState("all");
+  const [coeError, setCoeError] = useState(null);
+  useEffect(() => {
+    if (!dept?.admissionsAccess) return;
+    if (!coeLoaded && !coeLoading) {
+      setCoeLoading(true);
+      dbGetCoeData().then(r => {
+        setCoeRecords(r.coe_records);
+        setCoeBatches(r.coe_batches);
+        setCoeError(null);
+        setCoeLoaded(true);
+        setCoeLoading(false);
+      }).catch(e => { setCoeError(e.message); setCoeLoading(false); setCoeLoaded(true); });
+    }
+  }, [coeLoaded, coeLoading, dept?.admissionsAccess]);
+
   const navItems = [
     { id: "dashboard",    icon: "⬡", label: "Team Dashboard"       },
     { id: "okr-overview", icon: "⬡", label: "OKR Overview"         },
@@ -6639,6 +6686,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "members",      icon: "⬡", label: "Edit Member KPIs"     },
     { id: "reports",      icon: "⬡", label: "OKR Reports"          },
     ...(user.financeAccess ? [{ id: "financial", icon: "⬡", label: "Financial Performance" }] : []),
+    ...(dept?.admissionsAccess ? [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] : []),
   ];
 
   return (
@@ -7670,6 +7718,302 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           </Pane>
         </>)}
 
+        {page === "admissions" && dept?.admissionsAccess && (<>
+          <Header title="Weekly Applications Dashboard" sub="Marketer application tracking by RTO" />
+          <Pane>
+            {enrError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{enrError}</div>}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+              {[["overview","Overview"],["dashboard","Dashboard"],["data","Data"]].map(([v, label]) => (
+                <Btn key={v} small primary={enrTab === v} onClick={() => setEnrTab(v)}>{label}</Btn>
+              ))}
+            </div>
+            {enrLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading application data…</div>}
+            {!enrLoading && enrTab === "overview" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const selWeek = enrFilterWeek !== "all" && weeks.includes(enrFilterWeek) ? enrFilterWeek : (weeks[0] || null);
+              const weekRecs = selWeek ? enrRecords.filter(r => r.week === selWeek) : [];
+              const marketers = [...new Set(weekRecs.map(r => r.marketerName))].sort();
+              const rtos = [...new Set(weekRecs.map(r => r.rto))].sort();
+              const total = weekRecs.reduce((s, r) => s + r.count, 0);
+              const matrix = {};
+              weekRecs.forEach(r => { if (!matrix[r.marketerName]) matrix[r.marketerName] = {}; matrix[r.marketerName][r.rto] = (matrix[r.marketerName][r.rto] || 0) + r.count; });
+              const prevWeekIdx = selWeek ? weeks.indexOf(selWeek) + 1 : -1;
+              const prevWeek = prevWeekIdx > 0 && prevWeekIdx < weeks.length ? weeks[prevWeekIdx] : null;
+              const prevTotal = prevWeek ? enrRecords.filter(r => r.week === prevWeek).reduce((s, r) => s + r.count, 0) : null;
+              const diff = prevTotal !== null ? total - prevTotal : null;
+              const selCss = { padding: "7px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const thCss = { padding: "8px 14px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+              const tdCss = { padding: "8px 14px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
+              return (<>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                  <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                  {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
+                    <select value={selWeek || ""} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
+                      {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                    </select>
+                  )}
+                  {selWeek && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selWeek)}</span>}
+                  {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek} · {weekToDateRange(prevWeek, true)}</span>}
+                </div>
+                {weeks.length === 0 ? <EmptyState text="No application data yet." /> : (<>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                    <Metric label="Total Applications" value={total} status={total > 0 ? "green" : undefined} />
+                    <Metric label="Marketers" value={marketers.length} />
+                    <Metric label="RTOs" value={rtos.length} />
+                  </div>
+                  {weeks.length >= 2 && (() => {
+                    const LINE_COLORS = ["#4C8BF5","#E8542A","#2DB66F","#F5A623","#9B59B6","#1ABC9C","#E74C3C","#F39C12"];
+                    const chartWeeks = [...weeks].reverse();
+                    const allMarketers = [...new Set(enrRecords.map(r => r.marketerName))];
+                    const mTotals = allMarketers.map(m => [m, enrRecords.filter(r => r.marketerName === m).reduce((s, r) => s + r.count, 0)]);
+                    mTotals.sort((a, b) => b[1] - a[1]);
+                    const topMarketers = mTotals.slice(0, 8).map(x => x[0]);
+                    const weeklyTotals = {};
+                    topMarketers.forEach(m => { weeklyTotals[m] = {}; });
+                    enrRecords.forEach(r => { if (weeklyTotals[r.marketerName] !== undefined) weeklyTotals[r.marketerName][r.week] = (weeklyTotals[r.marketerName][r.week] || 0) + r.count; });
+                    const maxVal = Math.max(...topMarketers.flatMap(m => chartWeeks.map(w => weeklyTotals[m][w] || 0)));
+                    const yMax = Math.ceil(maxVal / 5) * 5 || 5;
+                    const PAD_L = 36, PAD_R = 16, PAD_T = 16, PAD_B = 68;
+                    const SVG_W = 700, SVG_H = 260;
+                    const cW = SVG_W - PAD_L - PAD_R, cH = SVG_H - PAD_T - PAD_B;
+                    const xPos = i => PAD_L + (i / (chartWeeks.length - 1)) * cW;
+                    const yPos = v => PAD_T + cH - (v / yMax) * cH;
+                    const buildPath = m => { let d = "", prevHad = false; chartWeeks.forEach((w, i) => { const v = weeklyTotals[m][w]; if (v !== undefined) { const x = xPos(i).toFixed(1), y = yPos(v).toFixed(1); d += prevHad ? ` L ${x} ${y}` : `M ${x} ${y}`; prevHad = true; } else { prevHad = false; } }); return d; };
+                    const yTicks = [0,1,2,3,4,5].map(i => Math.round((yMax / 5) * i));
+                    return (<>
+                      <SectionLabel style={{ marginTop: 4, marginBottom: 8 }}>Application Trend</SectionLabel>
+                      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 8px 4px", marginBottom: 20 }}>
+                        <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} width="100%" style={{ display: "block" }}>
+                          {yTicks.map(v => { const y = yPos(v); return (<g key={v}><line x1={PAD_L} y1={y} x2={PAD_L + cW} y2={y} stroke={T.border} strokeDasharray={v === 0 ? "0" : "3,3"} strokeWidth="1" /><text x={PAD_L - 6} y={y + 4} textAnchor="end" fontSize="10" fill={T.textMuted}>{v}</text></g>); })}
+                          <line x1={PAD_L} y1={PAD_T + cH} x2={PAD_L + cW} y2={PAD_T + cH} stroke={T.border} strokeWidth="1" />
+                          {chartWeeks.map((w, i) => (<text key={w} x={xPos(i).toFixed(1)} y={PAD_T + cH + 10} textAnchor="end" fontSize="10" fill={T.textMuted} transform={`rotate(-40, ${xPos(i).toFixed(1)}, ${PAD_T + cH + 10})`}>{w}</text>))}
+                          {topMarketers.map((m, mi) => { const color = LINE_COLORS[mi]; return (<g key={m}><path d={buildPath(m)} stroke={color} strokeWidth="2.2" fill="none" strokeLinejoin="round" />{chartWeeks.map((w, i) => { const v = weeklyTotals[m][w]; if (v === undefined) return null; return (<circle key={w} cx={xPos(i).toFixed(1)} cy={yPos(v).toFixed(1)} r="4.5" fill={color} stroke={T.surface} strokeWidth="1.5" style={{ cursor: "pointer" }} onMouseEnter={() => setEnrChartTooltip({ marketer: m, week: w, count: v, x: xPos(i), y: yPos(v) })} onMouseLeave={() => setEnrChartTooltip(null)} />); })}</g>); })}
+                          {enrChartTooltip && (() => { const { marketer, week, count, x, y } = enrChartTooltip; const tipW = 152, tipH = 46; const tx = x > SVG_W / 2 ? x - tipW - 10 : x + 12; const ty = Math.max(PAD_T, Math.min(y - tipH / 2, PAD_T + cH - tipH)); return (<g style={{ pointerEvents: "none" }}><rect x={tx} y={ty} width={tipW} height={tipH} rx="5" fill={T.raised} stroke={T.border} strokeWidth="1" /><text x={tx + 9} y={ty + 17} fontSize="11" fontWeight="700" fill={T.text}>{marketer}</text><text x={tx + 9} y={ty + 33} fontSize="11" fill={T.textMuted}>{week} · {count} applications</text></g>); })()}
+                        </svg>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "0 8px 8px", marginTop: 2 }}>
+                          {topMarketers.map((m, i) => (<div key={m} style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 14, height: 3, background: LINE_COLORS[i], borderRadius: 2, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.textMuted }}>{m}</span></div>))}
+                          {allMarketers.length > 8 && <span style={{ fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>· Showing top 8 marketers</span>}
+                        </div>
+                      </div>
+                    </>);
+                  })()}
+                  {weekRecs.length === 0 ? <EmptyState text="No records for this week." /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr><th style={thCss}>Marketer</th>{rtos.map(rto => <th key={rto} style={{ ...thCss, textAlign: "right", color: T.brand }}>{rto}</th>)}<th style={{ ...thCss, textAlign: "right" }}>Total</th></tr></thead>
+                        <tbody>
+                          {marketers.map(m => { const rowTotal = rtos.reduce((s, rto) => s + (matrix[m]?.[rto] || 0), 0); return (<tr key={m}><td style={{ ...tdCss, fontWeight: 600 }}>{m}</td>{rtos.map(rto => <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: matrix[m]?.[rto] ? T.text : T.textMuted }}>{matrix[m]?.[rto] || "—"}</td>)}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.brand }}>{rowTotal}</td></tr>); })}
+                          <tr style={{ background: T.raised }}><td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Grand Total</td>{rtos.map(rto => { const n = weekRecs.filter(r => r.rto === rto).reduce((s, r) => s + r.count, 0); return <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, borderBottom: "none" }}>{n}</td>; })}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{total}</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {weeks.length > 1 && (<>
+                    <SectionLabel style={{ marginTop: 28 }}>All Weeks</SectionLabel>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr>{["Week","Total","Marketers","Top Marketer"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {weeks.map(w => { const wR = enrRecords.filter(r => r.week === w); const wTot = wR.reduce((s, r) => s + r.count, 0); const mMap = {}; wR.forEach(r => { mMap[r.marketerName] = (mMap[r.marketerName] || 0) + r.count; }); const topM = Object.entries(mMap).sort((a, b) => b[1] - a[1])[0]; return (<tr key={w} style={{ cursor: "pointer", background: w === selWeek ? T.brandDim : "transparent" }} onClick={() => setEnrFilterWeek(w)}><td style={{ ...tdCss, fontWeight: w === selWeek ? 700 : 400, color: w === selWeek ? T.brand : T.text }}>{w}</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700 }}>{wTot}</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono }}>{new Set(wR.map(r => r.marketerName)).size}</td><td style={tdCss}>{topM ? `${topM[0]} (${topM[1]})` : "—"}</td></tr>); })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>)}
+                </>)}
+              </>);
+            })()}
+            {!enrLoading && enrTab === "dashboard" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const selW = enrFilterWeek;
+              const filtered = selW === "all" ? enrRecords : enrRecords.filter(r => r.week === selW);
+              const mMap = {}; filtered.forEach(r => { mMap[r.marketerName] = (mMap[r.marketerName] || 0) + r.count; });
+              const byMarketer = Object.entries(mMap).sort((a, b) => b[1] - a[1]);
+              const maxM = byMarketer[0]?.[1] || 1;
+              const rMap = {}; filtered.forEach(r => { rMap[r.rto] = (rMap[r.rto] || 0) + r.count; });
+              const byRto = Object.entries(rMap).sort((a, b) => b[1] - a[1]);
+              const maxR = byRto[0]?.[1] || 1;
+              const selCss = { padding: "7px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const barRow = (label, n, max, color) => (<div key={label} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}><div style={{ width: 150, fontSize: 13, textAlign: "right", color: T.text, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div><div style={{ flex: 1, height: 20, background: T.raised, borderRadius: 4, overflow: "hidden", border: `1px solid ${T.border}` }}><div style={{ width: `${(n / max) * 100}%`, height: "100%", background: color, borderRadius: 4, minWidth: n > 0 ? 4 : 0 }} /></div><div style={{ width: 36, fontSize: 13, fontFamily: F.mono, textAlign: "right", fontWeight: 700, flexShrink: 0 }}>{n}</div></div>);
+              return (<>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                  <span style={{ fontSize: 13, color: T.textMuted }}>Filter:</span>
+                  <select value={selW} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
+                    <option value="all">All Weeks</option>
+                    {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                  </select>
+                  {selW !== "all" && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selW)}</span>}
+                </div>
+                {filtered.length === 0 ? <EmptyState text={enrRecords.length === 0 ? "No data yet." : "No data for this week."} /> : (<>
+                  <SectionLabel>By Marketer</SectionLabel>
+                  <div style={{ marginBottom: 24 }}>{byMarketer.map(([name, n]) => barRow(name, n, maxM, T.brand))}</div>
+                  <SectionLabel>By RTO</SectionLabel>
+                  <div style={{ marginBottom: 8 }}>{byRto.map(([name, n]) => barRow(name, n, maxR, T.ok))}</div>
+                </>)}
+              </>);
+            })()}
+            {!enrLoading && enrTab === "data" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const marketers = [...new Set(enrRecords.map(r => r.marketerName))].sort();
+              const rtos = [...new Set(enrRecords.map(r => r.rto))].sort();
+              const filtered = enrRecords.filter(r => {
+                if (enrFilterWeek !== "all" && r.week !== enrFilterWeek) return false;
+                if (enrFilterMarketer !== "all" && r.marketerName !== enrFilterMarketer) return false;
+                if (enrFilterRto !== "all" && r.rto !== enrFilterRto) return false;
+                return true;
+              }).sort((a, b) => b.week.localeCompare(a.week) || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
+              const exportCSV = () => { const hdr = ["Week","Marketer","RTO","Count"]; const rows = filtered.map(r => [r.week, r.marketerName, r.rto, r.count]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "applications.csv" }); a.click(); URL.revokeObjectURL(a.href); };
+              const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
+              return (<>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+                  <select value={enrFilterWeek} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}><option value="all">All weeks</option>{weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}</select>
+                  <select value={enrFilterMarketer} onChange={e => setEnrFilterMarketer(e.target.value)} style={selCss}><option value="all">All marketers</option>{marketers.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                  <select value={enrFilterRto} onChange={e => setEnrFilterRto(e.target.value)} style={selCss}><option value="all">All RTOs</option>{rtos.map(r => <option key={r} value={r}>{r}</option>)}</select>
+                  <Btn small onClick={exportCSV}>Export CSV</Btn>
+                </div>
+                <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {enrRecords.length} records</div>
+                {filtered.length === 0 ? <EmptyState text={enrRecords.length === 0 ? "No records yet." : "No records match the current filters."} /> : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                      <thead><tr>{["Week","Marketer","RTO","Count"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                      <tbody>{filtered.map((r, i) => (<tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.week}</td><td style={{ padding: "7px 12px" }}>{r.marketerName}</td><td style={{ padding: "7px 12px" }}>{r.rto}</td><td style={{ padding: "7px 12px", fontFamily: F.mono, fontWeight: 700, textAlign: "right" }}>{r.count}</td></tr>))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </>);
+            })()}
+          </Pane>
+        </>)}
+
+        {page === "coe" && dept?.admissionsAccess && (() => {
+          const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+          const tdCss = { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
+          const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+          return (<>
+            <Header title="COE Dashboard" sub="Weekly COE & Non-CoE applicant records by RTO" />
+            <Pane>
+              {coeError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{coeError}</div>}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {[["overview","Overview"],["marketer","Marketer"],["data","Data"]].map(([v, label]) => (
+                  <Btn key={v} small primary={coeTab === v} onClick={() => setCoeTab(v)}>{label}</Btn>
+                ))}
+              </div>
+              {coeLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading COE data…</div>}
+              {!coeLoading && coeTab === "overview" && (() => {
+                const NIET_ROWS = [{ rto: "NIET", type: "CoE" }, { rto: "NIET", type: "Non-CoE" }, { rto: "CB", type: "CoE" }, { rto: "CB", type: "Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid" }];
+                const EDUCARE_ROWS = [{ rto: "Educare BNE", type: "CoE" }, { rto: "Educare GC", type: "CoE" }, { rto: "Educare ONLINE", type: "Accepted & Paid" }, { rto: "Educare GC", type: "Non-CoE" }, { rto: "Educare BNE", type: "Non-CoE" }, { rto: "Educare Dom", type: "Accepted & Paid" }];
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const selWeek = coeFilterWeek !== "all" && weeks.includes(coeFilterWeek) ? coeFilterWeek : (weeks[0] || null);
+                const weekRecs = selWeek ? coeRecords.filter(r => r.week === selWeek) : [];
+                const prevWeekIdx = selWeek ? weeks.indexOf(selWeek) + 1 : -1;
+                const prevWeek = prevWeekIdx > 0 && prevWeekIdx < weeks.length ? weeks[prevWeekIdx] : null;
+                const prevTotal = prevWeek ? coeRecords.filter(r => r.week === prevWeek).length : null;
+                const diff = prevTotal !== null ? weekRecs.length - prevTotal : null;
+                const nietCbRhodesTotal = weekRecs.filter(r => !r.rto.startsWith("Educare")).length;
+                const educareTotal = weekRecs.filter(r => r.rto.startsWith("Educare")).length;
+                const renderSectionTable = (rows, label) => { const sectionRecs = rows.map(c => ({ ...c, n: weekRecs.filter(r => r.rto === c.rto && r.type === c.type).length })); const subtotal = sectionRecs.reduce((s, c) => s + c.n, 0); return (<><SectionLabel>{label}</SectionLabel><div style={{ overflowX: "auto", marginBottom: 24 }}><table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 480 }}><thead><tr><th style={thCss}>RTO</th><th style={thCss}>Type</th><th style={{ ...thCss, textAlign: "right" }}>Records</th></tr></thead><tbody>{sectionRecs.map(c => (<tr key={`${c.rto}-${c.type}`}><td style={{ ...tdCss, fontWeight: 600 }}>{c.rto}</td><td style={tdCss}>{c.type}</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: c.n ? T.text : T.textMuted }}>{c.n || "—"}</td></tr>))}<tr style={{ background: T.raised }}><td colSpan={2} style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Subtotal</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{subtotal}</td></tr></tbody></table></div></>); };
+                return (<>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                    <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                    {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
+                      <select value={selWeek || ""} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
+                        {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                      </select>
+                    )}
+                    {selWeek && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selWeek)}</span>}
+                    {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek} · {weekToDateRange(prevWeek, true)}</span>}
+                  </div>
+                  {weeks.length === 0 ? <EmptyState text="No COE data yet." /> : (<>
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                      <Metric label="Total Records" value={weekRecs.length} status={weekRecs.length > 0 ? "green" : undefined} />
+                      <Metric label="NIET / CB / Rhodes" value={nietCbRhodesTotal} />
+                      <Metric label="Educare" value={educareTotal} />
+                    </div>
+                    {renderSectionTable(NIET_ROWS, "NIET / CB / Rhodes")}
+                    {renderSectionTable(EDUCARE_ROWS, "Educare")}
+                    {weekRecs.length > 0 && (<>
+                      <SectionLabel>Student Records</SectionLabel>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                          <thead><tr>{["Student ID","RTO","Type","Course Name","Agent","Marketer","Created By","Onshore/Offshore"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                          <tbody>{weekRecs.sort((a, b) => a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type) || a.studentId.localeCompare(b.studentId)).map((r, i) => (<tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td><td style={{ padding: "7px 12px", fontWeight: 600 }}>{r.rto}</td><td style={{ padding: "7px 12px" }}>{r.type}</td><td style={{ padding: "7px 12px" }}>{r.courseName}</td><td style={{ padding: "7px 12px" }}>{r.agent}</td><td style={{ padding: "7px 12px" }}>{r.marketer}</td><td style={{ padding: "7px 12px" }}>{r.createdBy}</td><td style={{ padding: "7px 12px" }}>{r.onshoreOffshore}</td></tr>))}</tbody>
+                        </table>
+                      </div>
+                    </>)}
+                  </>)}
+                </>);
+              })()}
+              {!coeLoading && coeTab === "marketer" && (() => {
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const selW = coeFilterWeek;
+                const filtered = (selW === "all" ? coeRecords : coeRecords.filter(r => r.week === selW)).filter(r => r.marketer);
+                const COE_COLS = [{ rto: "NIET", type: "CoE", label: "NIET CoE" }, { rto: "NIET", type: "Non-CoE", label: "NIET Non-CoE" }, { rto: "CB", type: "CoE", label: "CB CoE" }, { rto: "CB", type: "Non-CoE", label: "CB Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid", label: "Rhodes" }, { rto: "Educare BNE", type: "CoE", label: "EDU BNE CoE" }, { rto: "Educare GC", type: "CoE", label: "EDU GC CoE" }, { rto: "Educare ONLINE", type: "Accepted & Paid", label: "EDU ONLINE" }, { rto: "Educare GC", type: "Non-CoE", label: "EDU GC Non-CoE" }, { rto: "Educare BNE", type: "Non-CoE", label: "EDU BNE Non-CoE" }, { rto: "Educare Dom", type: "Accepted & Paid", label: "EDU Dom" }];
+                const mTotals = {}; filtered.forEach(r => { mTotals[r.marketer] = (mTotals[r.marketer] || 0) + 1; });
+                const marketers = Object.entries(mTotals).sort((a, b) => b[1] - a[1]).map(([m]) => m);
+                const maxTotal = mTotals[marketers[0]] || 1;
+                const matrix = {}; filtered.forEach(r => { if (!matrix[r.marketer]) matrix[r.marketer] = {}; const k = `${r.rto} ${r.type}`; matrix[r.marketer][k] = (matrix[r.marketer][k] || 0) + 1; });
+                const colTotals = {}; COE_COLS.forEach(c => { colTotals[`${c.rto} ${c.type}`] = filtered.filter(r => r.rto === c.rto && r.type === c.type).length; });
+                return (<>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                    <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                    <select value={selW} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
+                      <option value="all">All Weeks</option>
+                      {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                    </select>
+                    {selW !== "all" && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selW)}</span>}
+                  </div>
+                  {filtered.length === 0 ? <EmptyState text={coeRecords.length === 0 ? "No data yet." : "No data for this week."} /> : (<>
+                    <SectionLabel>Marketer Breakdown</SectionLabel>
+                    <div style={{ overflowX: "auto", marginBottom: 28 }}>
+                      <table style={{ borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr><th style={{ ...thCss, minWidth: 130 }}>Marketer</th>{COE_COLS.map(c => <th key={c.label} style={{ ...thCss, textAlign: "right", minWidth: 90 }}>{c.label}</th>)}<th style={{ ...thCss, textAlign: "right", minWidth: 70 }}>Total</th></tr></thead>
+                        <tbody>
+                          {marketers.map(m => { const row = matrix[m] || {}; const total = mTotals[m] || 0; return (<tr key={m}><td style={{ ...tdCss, fontWeight: 600 }}>{m}</td>{COE_COLS.map(c => { const n = row[`${c.rto} ${c.type}`] || 0; return <td key={c.label} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: n ? T.text : T.textMuted }}>{n || "—"}</td>; })}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.brand }}>{total}</td></tr>); })}
+                          <tr style={{ background: T.raised }}><td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Total</td>{COE_COLS.map(c => { const n = colTotals[`${c.rto} ${c.type}`] || 0; return <td key={c.label} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, borderBottom: "none" }}>{n || "—"}</td>; })}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{filtered.length}</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <SectionLabel>By Marketer</SectionLabel>
+                    <div style={{ marginBottom: 8 }}>
+                      {marketers.map(m => { const n = mTotals[m] || 0; return (<div key={m} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}><div style={{ width: 140, fontSize: 13, textAlign: "right", color: T.text, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m}</div><div style={{ flex: 1, height: 20, background: T.raised, borderRadius: 4, overflow: "hidden", border: `1px solid ${T.border}` }}><div style={{ width: `${(n / maxTotal) * 100}%`, height: "100%", background: T.brand, borderRadius: 4, minWidth: n > 0 ? 4 : 0 }} /></div><div style={{ width: 36, fontSize: 13, fontFamily: F.mono, textAlign: "right", fontWeight: 700, flexShrink: 0 }}>{n}</div></div>); })}
+                    </div>
+                  </>)}
+                </>);
+              })()}
+              {!coeLoading && coeTab === "data" && (() => {
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const rtos = [...new Set(coeRecords.map(r => r.rto))].sort();
+                const types = [...new Set(coeRecords.map(r => r.type))].sort();
+                const filtered = coeRecords.filter(r => {
+                  if (coeFilterWeek !== "all" && r.week !== coeFilterWeek) return false;
+                  if (coeFilterRto !== "all" && r.rto !== coeFilterRto) return false;
+                  if (coeFilterType !== "all" && r.type !== coeFilterType) return false;
+                  return true;
+                }).sort((a, b) => b.week.localeCompare(a.week) || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
+                const exportCSV = () => { const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"]; const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.createdBy, r.onshoreOffshore, r.pathway]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "coe_records.csv" }); a.click(); URL.revokeObjectURL(a.href); };
+                const colHdr = ["Student ID","RTO","Type","Week","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"];
+                return (<>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+                    <select value={coeFilterWeek} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}><option value="all">All weeks</option>{weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}</select>
+                    <select value={coeFilterRto} onChange={e => setCoeFilterRto(e.target.value)} style={selCss}><option value="all">All RTOs</option>{rtos.map(r => <option key={r} value={r}>{r}</option>)}</select>
+                    <select value={coeFilterType} onChange={e => setCoeFilterType(e.target.value)} style={selCss}><option value="all">All types</option>{types.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <Btn small onClick={exportCSV}>Export CSV</Btn>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {coeRecords.length} records</div>
+                  {filtered.length === 0 ? <EmptyState text={coeRecords.length === 0 ? "No records yet." : "No records match the current filters."} /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr>{colHdr.map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                        <tbody>{filtered.map((r, i) => (<tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td><td style={{ padding: "7px 12px", fontWeight: 600 }}>{r.rto}</td><td style={{ padding: "7px 12px" }}>{r.type}</td><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.week}</td><td style={{ padding: "7px 12px" }}>{r.courseName}</td><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.intakeDate}</td><td style={{ padding: "7px 12px" }}>{r.agent}</td><td style={{ padding: "7px 12px" }}>{r.marketer}</td><td style={{ padding: "7px 12px" }}>{r.createdBy}</td><td style={{ padding: "7px 12px" }}>{r.onshoreOffshore}</td><td style={{ padding: "7px 12px" }}>{r.pathway}</td></tr>))}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </>);
+              })()}
+            </Pane>
+          </>);
+        })()}
+
         {syncPrompt && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: "100%", maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
@@ -7756,6 +8100,52 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const designatedApproveeSubs = (state.okrSubmissions || []).filter(s => designatedApproveeIds.includes(s.memberId) && s.answer !== null && !s.managerFilled);
   const designatedPendingCount = designatedApproveeSubs.filter(s => s.approval === "pending").length;
 
+  const [enrTab, setEnrTab] = useState("overview");
+  const [enrRecords, setEnrRecords] = useState([]);
+  const [enrBatches, setEnrBatches] = useState([]);
+  const [enrLoaded, setEnrLoaded] = useState(false);
+  const [enrLoading, setEnrLoading] = useState(false);
+  const [enrFilterWeek, setEnrFilterWeek] = useState("all");
+  const [enrFilterMarketer, setEnrFilterMarketer] = useState("all");
+  const [enrFilterRto, setEnrFilterRto] = useState("all");
+  const [enrChartTooltip, setEnrChartTooltip] = useState(null);
+  const [enrError, setEnrError] = useState(null);
+  useEffect(() => {
+    if (!myDept?.admissionsAccess) return;
+    if (!enrLoaded && !enrLoading) {
+      setEnrLoading(true);
+      dbGetEnrolments().then(r => {
+        setEnrRecords(r.enrolment_records);
+        setEnrBatches(r.enrolment_batches);
+        setEnrError(null);
+        setEnrLoaded(true);
+        setEnrLoading(false);
+      }).catch(e => { setEnrError(e.message); setEnrLoading(false); setEnrLoaded(true); });
+    }
+  }, [enrLoaded, enrLoading, myDept?.admissionsAccess]);
+  const [coeTab, setCoeTab] = useState("overview");
+  const [coeRecords, setCoeRecords] = useState([]);
+  const [coeBatches, setCoeBatches] = useState([]);
+  const [coeLoaded, setCoeLoaded] = useState(false);
+  const [coeLoading, setCoeLoading] = useState(false);
+  const [coeFilterWeek, setCoeFilterWeek] = useState("all");
+  const [coeFilterRto, setCoeFilterRto] = useState("all");
+  const [coeFilterType, setCoeFilterType] = useState("all");
+  const [coeError, setCoeError] = useState(null);
+  useEffect(() => {
+    if (!myDept?.admissionsAccess) return;
+    if (!coeLoaded && !coeLoading) {
+      setCoeLoading(true);
+      dbGetCoeData().then(r => {
+        setCoeRecords(r.coe_records);
+        setCoeBatches(r.coe_batches);
+        setCoeError(null);
+        setCoeLoaded(true);
+        setCoeLoading(false);
+      }).catch(e => { setCoeError(e.message); setCoeLoading(false); setCoeLoaded(true); });
+    }
+  }, [coeLoaded, coeLoading, myDept?.admissionsAccess]);
+
   const navItems = [
     { id: "mykpis",       icon: "⬡", label: "My OKRs"          },
     { id: "checkin",      icon: "⬡", label: "OKR Check-In"     },
@@ -7764,6 +8154,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "reports",      icon: "⬡", label: "OKR Reports"      },
     ...(designatedApproveeIds.length > 0 ? [{ id: "approvals", icon: "⬡", label: "Approvals" }] : []),
     ...(user.projectAccess ? [{ id: "projects", icon: "⬡", label: "Projects" }] : []),
+    ...(myDept?.admissionsAccess ? [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] : []),
   ];
 
   return (
@@ -8911,6 +9302,302 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             })()}
           </Pane>
         </>)}
+
+        {page === "admissions" && myDept?.admissionsAccess && (<>
+          <Header title="Weekly Applications Dashboard" sub="Marketer application tracking by RTO" />
+          <Pane>
+            {enrError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{enrError}</div>}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+              {[["overview","Overview"],["dashboard","Dashboard"],["data","Data"]].map(([v, label]) => (
+                <Btn key={v} small primary={enrTab === v} onClick={() => setEnrTab(v)}>{label}</Btn>
+              ))}
+            </div>
+            {enrLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading application data…</div>}
+            {!enrLoading && enrTab === "overview" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const selWeek = enrFilterWeek !== "all" && weeks.includes(enrFilterWeek) ? enrFilterWeek : (weeks[0] || null);
+              const weekRecs = selWeek ? enrRecords.filter(r => r.week === selWeek) : [];
+              const marketers = [...new Set(weekRecs.map(r => r.marketerName))].sort();
+              const rtos = [...new Set(weekRecs.map(r => r.rto))].sort();
+              const total = weekRecs.reduce((s, r) => s + r.count, 0);
+              const matrix = {};
+              weekRecs.forEach(r => { if (!matrix[r.marketerName]) matrix[r.marketerName] = {}; matrix[r.marketerName][r.rto] = (matrix[r.marketerName][r.rto] || 0) + r.count; });
+              const prevWeekIdx = selWeek ? weeks.indexOf(selWeek) + 1 : -1;
+              const prevWeek = prevWeekIdx > 0 && prevWeekIdx < weeks.length ? weeks[prevWeekIdx] : null;
+              const prevTotal = prevWeek ? enrRecords.filter(r => r.week === prevWeek).reduce((s, r) => s + r.count, 0) : null;
+              const diff = prevTotal !== null ? total - prevTotal : null;
+              const selCss = { padding: "7px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const thCss = { padding: "8px 14px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+              const tdCss = { padding: "8px 14px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
+              return (<>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                  <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                  {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
+                    <select value={selWeek || ""} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
+                      {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                    </select>
+                  )}
+                  {selWeek && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selWeek)}</span>}
+                  {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek} · {weekToDateRange(prevWeek, true)}</span>}
+                </div>
+                {weeks.length === 0 ? <EmptyState text="No application data yet." /> : (<>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                    <Metric label="Total Applications" value={total} status={total > 0 ? "green" : undefined} />
+                    <Metric label="Marketers" value={marketers.length} />
+                    <Metric label="RTOs" value={rtos.length} />
+                  </div>
+                  {weeks.length >= 2 && (() => {
+                    const LINE_COLORS = ["#4C8BF5","#E8542A","#2DB66F","#F5A623","#9B59B6","#1ABC9C","#E74C3C","#F39C12"];
+                    const chartWeeks = [...weeks].reverse();
+                    const allMarketers = [...new Set(enrRecords.map(r => r.marketerName))];
+                    const mTotals = allMarketers.map(m => [m, enrRecords.filter(r => r.marketerName === m).reduce((s, r) => s + r.count, 0)]);
+                    mTotals.sort((a, b) => b[1] - a[1]);
+                    const topMarketers = mTotals.slice(0, 8).map(x => x[0]);
+                    const weeklyTotals = {};
+                    topMarketers.forEach(m => { weeklyTotals[m] = {}; });
+                    enrRecords.forEach(r => { if (weeklyTotals[r.marketerName] !== undefined) weeklyTotals[r.marketerName][r.week] = (weeklyTotals[r.marketerName][r.week] || 0) + r.count; });
+                    const maxVal = Math.max(...topMarketers.flatMap(m => chartWeeks.map(w => weeklyTotals[m][w] || 0)));
+                    const yMax = Math.ceil(maxVal / 5) * 5 || 5;
+                    const PAD_L = 36, PAD_R = 16, PAD_T = 16, PAD_B = 68;
+                    const SVG_W = 700, SVG_H = 260;
+                    const cW = SVG_W - PAD_L - PAD_R, cH = SVG_H - PAD_T - PAD_B;
+                    const xPos = i => PAD_L + (i / (chartWeeks.length - 1)) * cW;
+                    const yPos = v => PAD_T + cH - (v / yMax) * cH;
+                    const buildPath = m => { let d = "", prevHad = false; chartWeeks.forEach((w, i) => { const v = weeklyTotals[m][w]; if (v !== undefined) { const x = xPos(i).toFixed(1), y = yPos(v).toFixed(1); d += prevHad ? ` L ${x} ${y}` : `M ${x} ${y}`; prevHad = true; } else { prevHad = false; } }); return d; };
+                    const yTicks = [0,1,2,3,4,5].map(i => Math.round((yMax / 5) * i));
+                    return (<>
+                      <SectionLabel style={{ marginTop: 4, marginBottom: 8 }}>Application Trend</SectionLabel>
+                      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 8px 4px", marginBottom: 20 }}>
+                        <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} width="100%" style={{ display: "block" }}>
+                          {yTicks.map(v => { const y = yPos(v); return (<g key={v}><line x1={PAD_L} y1={y} x2={PAD_L + cW} y2={y} stroke={T.border} strokeDasharray={v === 0 ? "0" : "3,3"} strokeWidth="1" /><text x={PAD_L - 6} y={y + 4} textAnchor="end" fontSize="10" fill={T.textMuted}>{v}</text></g>); })}
+                          <line x1={PAD_L} y1={PAD_T + cH} x2={PAD_L + cW} y2={PAD_T + cH} stroke={T.border} strokeWidth="1" />
+                          {chartWeeks.map((w, i) => (<text key={w} x={xPos(i).toFixed(1)} y={PAD_T + cH + 10} textAnchor="end" fontSize="10" fill={T.textMuted} transform={`rotate(-40, ${xPos(i).toFixed(1)}, ${PAD_T + cH + 10})`}>{w}</text>))}
+                          {topMarketers.map((m, mi) => { const color = LINE_COLORS[mi]; return (<g key={m}><path d={buildPath(m)} stroke={color} strokeWidth="2.2" fill="none" strokeLinejoin="round" />{chartWeeks.map((w, i) => { const v = weeklyTotals[m][w]; if (v === undefined) return null; return (<circle key={w} cx={xPos(i).toFixed(1)} cy={yPos(v).toFixed(1)} r="4.5" fill={color} stroke={T.surface} strokeWidth="1.5" style={{ cursor: "pointer" }} onMouseEnter={() => setEnrChartTooltip({ marketer: m, week: w, count: v, x: xPos(i), y: yPos(v) })} onMouseLeave={() => setEnrChartTooltip(null)} />); })}</g>); })}
+                          {enrChartTooltip && (() => { const { marketer, week, count, x, y } = enrChartTooltip; const tipW = 152, tipH = 46; const tx = x > SVG_W / 2 ? x - tipW - 10 : x + 12; const ty = Math.max(PAD_T, Math.min(y - tipH / 2, PAD_T + cH - tipH)); return (<g style={{ pointerEvents: "none" }}><rect x={tx} y={ty} width={tipW} height={tipH} rx="5" fill={T.raised} stroke={T.border} strokeWidth="1" /><text x={tx + 9} y={ty + 17} fontSize="11" fontWeight="700" fill={T.text}>{marketer}</text><text x={tx + 9} y={ty + 33} fontSize="11" fill={T.textMuted}>{week} · {count} applications</text></g>); })()}
+                        </svg>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "0 8px 8px", marginTop: 2 }}>
+                          {topMarketers.map((m, i) => (<div key={m} style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 14, height: 3, background: LINE_COLORS[i], borderRadius: 2, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.textMuted }}>{m}</span></div>))}
+                          {allMarketers.length > 8 && <span style={{ fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>· Showing top 8 marketers</span>}
+                        </div>
+                      </div>
+                    </>);
+                  })()}
+                  {weekRecs.length === 0 ? <EmptyState text="No records for this week." /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr><th style={thCss}>Marketer</th>{rtos.map(rto => <th key={rto} style={{ ...thCss, textAlign: "right", color: T.brand }}>{rto}</th>)}<th style={{ ...thCss, textAlign: "right" }}>Total</th></tr></thead>
+                        <tbody>
+                          {marketers.map(m => { const rowTotal = rtos.reduce((s, rto) => s + (matrix[m]?.[rto] || 0), 0); return (<tr key={m}><td style={{ ...tdCss, fontWeight: 600 }}>{m}</td>{rtos.map(rto => <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: matrix[m]?.[rto] ? T.text : T.textMuted }}>{matrix[m]?.[rto] || "—"}</td>)}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.brand }}>{rowTotal}</td></tr>); })}
+                          <tr style={{ background: T.raised }}><td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Grand Total</td>{rtos.map(rto => { const n = weekRecs.filter(r => r.rto === rto).reduce((s, r) => s + r.count, 0); return <td key={rto} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, borderBottom: "none" }}>{n}</td>; })}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{total}</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {weeks.length > 1 && (<>
+                    <SectionLabel style={{ marginTop: 28 }}>All Weeks</SectionLabel>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr>{["Week","Total","Marketers","Top Marketer"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {weeks.map(w => { const wR = enrRecords.filter(r => r.week === w); const wTot = wR.reduce((s, r) => s + r.count, 0); const mMap = {}; wR.forEach(r => { mMap[r.marketerName] = (mMap[r.marketerName] || 0) + r.count; }); const topM = Object.entries(mMap).sort((a, b) => b[1] - a[1])[0]; return (<tr key={w} style={{ cursor: "pointer", background: w === selWeek ? T.brandDim : "transparent" }} onClick={() => setEnrFilterWeek(w)}><td style={{ ...tdCss, fontWeight: w === selWeek ? 700 : 400, color: w === selWeek ? T.brand : T.text }}>{w}</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700 }}>{wTot}</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono }}>{new Set(wR.map(r => r.marketerName)).size}</td><td style={tdCss}>{topM ? `${topM[0]} (${topM[1]})` : "—"}</td></tr>); })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>)}
+                </>)}
+              </>);
+            })()}
+            {!enrLoading && enrTab === "dashboard" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const selW = enrFilterWeek;
+              const filtered = selW === "all" ? enrRecords : enrRecords.filter(r => r.week === selW);
+              const mMap = {}; filtered.forEach(r => { mMap[r.marketerName] = (mMap[r.marketerName] || 0) + r.count; });
+              const byMarketer = Object.entries(mMap).sort((a, b) => b[1] - a[1]);
+              const maxM = byMarketer[0]?.[1] || 1;
+              const rMap = {}; filtered.forEach(r => { rMap[r.rto] = (rMap[r.rto] || 0) + r.count; });
+              const byRto = Object.entries(rMap).sort((a, b) => b[1] - a[1]);
+              const maxR = byRto[0]?.[1] || 1;
+              const selCss = { padding: "7px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const barRow = (label, n, max, color) => (<div key={label} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}><div style={{ width: 150, fontSize: 13, textAlign: "right", color: T.text, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div><div style={{ flex: 1, height: 20, background: T.raised, borderRadius: 4, overflow: "hidden", border: `1px solid ${T.border}` }}><div style={{ width: `${(n / max) * 100}%`, height: "100%", background: color, borderRadius: 4, minWidth: n > 0 ? 4 : 0 }} /></div><div style={{ width: 36, fontSize: 13, fontFamily: F.mono, textAlign: "right", fontWeight: 700, flexShrink: 0 }}>{n}</div></div>);
+              return (<>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                  <span style={{ fontSize: 13, color: T.textMuted }}>Filter:</span>
+                  <select value={selW} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}>
+                    <option value="all">All Weeks</option>
+                    {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                  </select>
+                  {selW !== "all" && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selW)}</span>}
+                </div>
+                {filtered.length === 0 ? <EmptyState text={enrRecords.length === 0 ? "No data yet." : "No data for this week."} /> : (<>
+                  <SectionLabel>By Marketer</SectionLabel>
+                  <div style={{ marginBottom: 24 }}>{byMarketer.map(([name, n]) => barRow(name, n, maxM, T.brand))}</div>
+                  <SectionLabel>By RTO</SectionLabel>
+                  <div style={{ marginBottom: 8 }}>{byRto.map(([name, n]) => barRow(name, n, maxR, T.ok))}</div>
+                </>)}
+              </>);
+            })()}
+            {!enrLoading && enrTab === "data" && (() => {
+              const weeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+              const marketers = [...new Set(enrRecords.map(r => r.marketerName))].sort();
+              const rtos = [...new Set(enrRecords.map(r => r.rto))].sort();
+              const filtered = enrRecords.filter(r => {
+                if (enrFilterWeek !== "all" && r.week !== enrFilterWeek) return false;
+                if (enrFilterMarketer !== "all" && r.marketerName !== enrFilterMarketer) return false;
+                if (enrFilterRto !== "all" && r.rto !== enrFilterRto) return false;
+                return true;
+              }).sort((a, b) => b.week.localeCompare(a.week) || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
+              const exportCSV = () => { const hdr = ["Week","Marketer","RTO","Count"]; const rows = filtered.map(r => [r.week, r.marketerName, r.rto, r.count]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "applications.csv" }); a.click(); URL.revokeObjectURL(a.href); };
+              const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+              const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
+              return (<>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+                  <select value={enrFilterWeek} onChange={e => setEnrFilterWeek(e.target.value)} style={selCss}><option value="all">All weeks</option>{weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}</select>
+                  <select value={enrFilterMarketer} onChange={e => setEnrFilterMarketer(e.target.value)} style={selCss}><option value="all">All marketers</option>{marketers.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                  <select value={enrFilterRto} onChange={e => setEnrFilterRto(e.target.value)} style={selCss}><option value="all">All RTOs</option>{rtos.map(r => <option key={r} value={r}>{r}</option>)}</select>
+                  <Btn small onClick={exportCSV}>Export CSV</Btn>
+                </div>
+                <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {enrRecords.length} records</div>
+                {filtered.length === 0 ? <EmptyState text={enrRecords.length === 0 ? "No records yet." : "No records match the current filters."} /> : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                      <thead><tr>{["Week","Marketer","RTO","Count"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                      <tbody>{filtered.map((r, i) => (<tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.week}</td><td style={{ padding: "7px 12px" }}>{r.marketerName}</td><td style={{ padding: "7px 12px" }}>{r.rto}</td><td style={{ padding: "7px 12px", fontFamily: F.mono, fontWeight: 700, textAlign: "right" }}>{r.count}</td></tr>))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </>);
+            })()}
+          </Pane>
+        </>)}
+
+        {page === "coe" && myDept?.admissionsAccess && (() => {
+          const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+          const tdCss = { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
+          const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
+          return (<>
+            <Header title="COE Dashboard" sub="Weekly COE & Non-CoE applicant records by RTO" />
+            <Pane>
+              {coeError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{coeError}</div>}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {[["overview","Overview"],["marketer","Marketer"],["data","Data"]].map(([v, label]) => (
+                  <Btn key={v} small primary={coeTab === v} onClick={() => setCoeTab(v)}>{label}</Btn>
+                ))}
+              </div>
+              {coeLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading COE data…</div>}
+              {!coeLoading && coeTab === "overview" && (() => {
+                const NIET_ROWS = [{ rto: "NIET", type: "CoE" }, { rto: "NIET", type: "Non-CoE" }, { rto: "CB", type: "CoE" }, { rto: "CB", type: "Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid" }];
+                const EDUCARE_ROWS = [{ rto: "Educare BNE", type: "CoE" }, { rto: "Educare GC", type: "CoE" }, { rto: "Educare ONLINE", type: "Accepted & Paid" }, { rto: "Educare GC", type: "Non-CoE" }, { rto: "Educare BNE", type: "Non-CoE" }, { rto: "Educare Dom", type: "Accepted & Paid" }];
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const selWeek = coeFilterWeek !== "all" && weeks.includes(coeFilterWeek) ? coeFilterWeek : (weeks[0] || null);
+                const weekRecs = selWeek ? coeRecords.filter(r => r.week === selWeek) : [];
+                const prevWeekIdx = selWeek ? weeks.indexOf(selWeek) + 1 : -1;
+                const prevWeek = prevWeekIdx > 0 && prevWeekIdx < weeks.length ? weeks[prevWeekIdx] : null;
+                const prevTotal = prevWeek ? coeRecords.filter(r => r.week === prevWeek).length : null;
+                const diff = prevTotal !== null ? weekRecs.length - prevTotal : null;
+                const nietCbRhodesTotal = weekRecs.filter(r => !r.rto.startsWith("Educare")).length;
+                const educareTotal = weekRecs.filter(r => r.rto.startsWith("Educare")).length;
+                const renderSectionTable = (rows, label) => { const sectionRecs = rows.map(c => ({ ...c, n: weekRecs.filter(r => r.rto === c.rto && r.type === c.type).length })); const subtotal = sectionRecs.reduce((s, c) => s + c.n, 0); return (<><SectionLabel>{label}</SectionLabel><div style={{ overflowX: "auto", marginBottom: 24 }}><table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", maxWidth: 480 }}><thead><tr><th style={thCss}>RTO</th><th style={thCss}>Type</th><th style={{ ...thCss, textAlign: "right" }}>Records</th></tr></thead><tbody>{sectionRecs.map(c => (<tr key={`${c.rto}-${c.type}`}><td style={{ ...tdCss, fontWeight: 600 }}>{c.rto}</td><td style={tdCss}>{c.type}</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: c.n ? T.text : T.textMuted }}>{c.n || "—"}</td></tr>))}<tr style={{ background: T.raised }}><td colSpan={2} style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Subtotal</td><td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{subtotal}</td></tr></tbody></table></div></>); };
+                return (<>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                    <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                    {weeks.length === 0 ? <span style={{ fontSize: 13, color: T.textMuted }}>No data yet</span> : (
+                      <select value={selWeek || ""} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
+                        {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                      </select>
+                    )}
+                    {selWeek && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selWeek)}</span>}
+                    {diff !== null && <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, background: diff >= 0 ? T.okDim : T.badDim, color: diff >= 0 ? T.ok : T.bad, border: `1px solid ${diff >= 0 ? T.okBorder : T.badBorder}`, fontFamily: F.mono }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff)} vs {prevWeek} · {weekToDateRange(prevWeek, true)}</span>}
+                  </div>
+                  {weeks.length === 0 ? <EmptyState text="No COE data yet." /> : (<>
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                      <Metric label="Total Records" value={weekRecs.length} status={weekRecs.length > 0 ? "green" : undefined} />
+                      <Metric label="NIET / CB / Rhodes" value={nietCbRhodesTotal} />
+                      <Metric label="Educare" value={educareTotal} />
+                    </div>
+                    {renderSectionTable(NIET_ROWS, "NIET / CB / Rhodes")}
+                    {renderSectionTable(EDUCARE_ROWS, "Educare")}
+                    {weekRecs.length > 0 && (<>
+                      <SectionLabel>Student Records</SectionLabel>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                          <thead><tr>{["Student ID","RTO","Type","Course Name","Agent","Marketer","Created By","Onshore/Offshore"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                          <tbody>{weekRecs.sort((a, b) => a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type) || a.studentId.localeCompare(b.studentId)).map((r, i) => (<tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td><td style={{ padding: "7px 12px", fontWeight: 600 }}>{r.rto}</td><td style={{ padding: "7px 12px" }}>{r.type}</td><td style={{ padding: "7px 12px" }}>{r.courseName}</td><td style={{ padding: "7px 12px" }}>{r.agent}</td><td style={{ padding: "7px 12px" }}>{r.marketer}</td><td style={{ padding: "7px 12px" }}>{r.createdBy}</td><td style={{ padding: "7px 12px" }}>{r.onshoreOffshore}</td></tr>))}</tbody>
+                        </table>
+                      </div>
+                    </>)}
+                  </>)}
+                </>);
+              })()}
+              {!coeLoading && coeTab === "marketer" && (() => {
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const selW = coeFilterWeek;
+                const filtered = (selW === "all" ? coeRecords : coeRecords.filter(r => r.week === selW)).filter(r => r.marketer);
+                const COE_COLS = [{ rto: "NIET", type: "CoE", label: "NIET CoE" }, { rto: "NIET", type: "Non-CoE", label: "NIET Non-CoE" }, { rto: "CB", type: "CoE", label: "CB CoE" }, { rto: "CB", type: "Non-CoE", label: "CB Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid", label: "Rhodes" }, { rto: "Educare BNE", type: "CoE", label: "EDU BNE CoE" }, { rto: "Educare GC", type: "CoE", label: "EDU GC CoE" }, { rto: "Educare ONLINE", type: "Accepted & Paid", label: "EDU ONLINE" }, { rto: "Educare GC", type: "Non-CoE", label: "EDU GC Non-CoE" }, { rto: "Educare BNE", type: "Non-CoE", label: "EDU BNE Non-CoE" }, { rto: "Educare Dom", type: "Accepted & Paid", label: "EDU Dom" }];
+                const mTotals = {}; filtered.forEach(r => { mTotals[r.marketer] = (mTotals[r.marketer] || 0) + 1; });
+                const marketers = Object.entries(mTotals).sort((a, b) => b[1] - a[1]).map(([m]) => m);
+                const maxTotal = mTotals[marketers[0]] || 1;
+                const matrix = {}; filtered.forEach(r => { if (!matrix[r.marketer]) matrix[r.marketer] = {}; const k = `${r.rto} ${r.type}`; matrix[r.marketer][k] = (matrix[r.marketer][k] || 0) + 1; });
+                const colTotals = {}; COE_COLS.forEach(c => { colTotals[`${c.rto} ${c.type}`] = filtered.filter(r => r.rto === c.rto && r.type === c.type).length; });
+                return (<>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                    <span style={{ fontSize: 13, color: T.textMuted }}>Week:</span>
+                    <select value={selW} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}>
+                      <option value="all">All Weeks</option>
+                      {weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}
+                    </select>
+                    {selW !== "all" && <span style={{ fontSize: 12, color: T.textMuted }}>{weekToDateRange(selW)}</span>}
+                  </div>
+                  {filtered.length === 0 ? <EmptyState text={coeRecords.length === 0 ? "No data yet." : "No data for this week."} /> : (<>
+                    <SectionLabel>Marketer Breakdown</SectionLabel>
+                    <div style={{ overflowX: "auto", marginBottom: 28 }}>
+                      <table style={{ borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr><th style={{ ...thCss, minWidth: 130 }}>Marketer</th>{COE_COLS.map(c => <th key={c.label} style={{ ...thCss, textAlign: "right", minWidth: 90 }}>{c.label}</th>)}<th style={{ ...thCss, textAlign: "right", minWidth: 70 }}>Total</th></tr></thead>
+                        <tbody>
+                          {marketers.map(m => { const row = matrix[m] || {}; const total = mTotals[m] || 0; return (<tr key={m}><td style={{ ...tdCss, fontWeight: 600 }}>{m}</td>{COE_COLS.map(c => { const n = row[`${c.rto} ${c.type}`] || 0; return <td key={c.label} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: n ? T.text : T.textMuted }}>{n || "—"}</td>; })}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: T.brand }}>{total}</td></tr>); })}
+                          <tr style={{ background: T.raised }}><td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Total</td>{COE_COLS.map(c => { const n = colTotals[`${c.rto} ${c.type}`] || 0; return <td key={c.label} style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, borderBottom: "none" }}>{n || "—"}</td>; })}<td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.brand, borderBottom: "none" }}>{filtered.length}</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <SectionLabel>By Marketer</SectionLabel>
+                    <div style={{ marginBottom: 8 }}>
+                      {marketers.map(m => { const n = mTotals[m] || 0; return (<div key={m} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}><div style={{ width: 140, fontSize: 13, textAlign: "right", color: T.text, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m}</div><div style={{ flex: 1, height: 20, background: T.raised, borderRadius: 4, overflow: "hidden", border: `1px solid ${T.border}` }}><div style={{ width: `${(n / maxTotal) * 100}%`, height: "100%", background: T.brand, borderRadius: 4, minWidth: n > 0 ? 4 : 0 }} /></div><div style={{ width: 36, fontSize: 13, fontFamily: F.mono, textAlign: "right", fontWeight: 700, flexShrink: 0 }}>{n}</div></div>); })}
+                    </div>
+                  </>)}
+                </>);
+              })()}
+              {!coeLoading && coeTab === "data" && (() => {
+                const weeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+                const rtos = [...new Set(coeRecords.map(r => r.rto))].sort();
+                const types = [...new Set(coeRecords.map(r => r.type))].sort();
+                const filtered = coeRecords.filter(r => {
+                  if (coeFilterWeek !== "all" && r.week !== coeFilterWeek) return false;
+                  if (coeFilterRto !== "all" && r.rto !== coeFilterRto) return false;
+                  if (coeFilterType !== "all" && r.type !== coeFilterType) return false;
+                  return true;
+                }).sort((a, b) => b.week.localeCompare(a.week) || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
+                const exportCSV = () => { const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"]; const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.createdBy, r.onshoreOffshore, r.pathway]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "coe_records.csv" }); a.click(); URL.revokeObjectURL(a.href); };
+                const colHdr = ["Student ID","RTO","Type","Week","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"];
+                return (<>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+                    <select value={coeFilterWeek} onChange={e => setCoeFilterWeek(e.target.value)} style={selCss}><option value="all">All weeks</option>{weeks.map(w => <option key={w} value={w}>{w} · {weekToDateRange(w, true)}</option>)}</select>
+                    <select value={coeFilterRto} onChange={e => setCoeFilterRto(e.target.value)} style={selCss}><option value="all">All RTOs</option>{rtos.map(r => <option key={r} value={r}>{r}</option>)}</select>
+                    <select value={coeFilterType} onChange={e => setCoeFilterType(e.target.value)} style={selCss}><option value="all">All types</option>{types.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <Btn small onClick={exportCSV}>Export CSV</Btn>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Showing {filtered.length} of {coeRecords.length} records</div>
+                  {filtered.length === 0 ? <EmptyState text={coeRecords.length === 0 ? "No records yet." : "No records match the current filters."} /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr>{colHdr.map(h => <th key={h} style={thCss}>{h}</th>)}</tr></thead>
+                        <tbody>{filtered.map((r, i) => (<tr key={r.id || i} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.studentId}</td><td style={{ padding: "7px 12px", fontWeight: 600 }}>{r.rto}</td><td style={{ padding: "7px 12px" }}>{r.type}</td><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.week}</td><td style={{ padding: "7px 12px" }}>{r.courseName}</td><td style={{ padding: "7px 12px", fontFamily: F.mono, fontSize: 12 }}>{r.intakeDate}</td><td style={{ padding: "7px 12px" }}>{r.agent}</td><td style={{ padding: "7px 12px" }}>{r.marketer}</td><td style={{ padding: "7px 12px" }}>{r.createdBy}</td><td style={{ padding: "7px 12px" }}>{r.onshoreOffshore}</td><td style={{ padding: "7px 12px" }}>{r.pathway}</td></tr>))}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </>);
+              })()}
+            </Pane>
+          </>);
+        })()}
       </div>
     </div>
     </MobileContext.Provider>
