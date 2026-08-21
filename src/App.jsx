@@ -1281,10 +1281,13 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { pilotAccess: !u.pilotAccess, ...(u.pilotAccess ? { pilotSetId: null } : {}) } })} style={{ background: u.pilotAccess ? "#fce7f3" : T.raised, border: `1px solid ${u.pilotAccess ? "#f9a8d4" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.pilotAccess ? "#9d174d" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle NIET Pilot access">✈</button>
                 )}
                 {!isSystem && u.role !== "admin" && u.pilotAccess && (
-                  <select value={u.pilotSetId || ""} onChange={e => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { pilotSetId: e.target.value || null } })} style={{ padding: "3px 7px", fontSize: 12, borderRadius: 5, border: `1px solid ${T.border}`, background: T.surface, color: u.pilotSetId ? T.text : T.textMuted, fontFamily: F.body, cursor: "pointer", maxWidth: 115 }}>
+                  <select value={u.pilotSetId || ""} onChange={e => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { pilotSetId: e.target.value || null } })} style={{ padding: "3px 7px", fontSize: 12, borderRadius: 5, border: `1px solid ${u.pilotAccess && !u.pilotSetId ? "#f59e0b" : T.border}`, background: T.surface, color: u.pilotSetId ? T.text : T.textMuted, fontFamily: F.body, cursor: "pointer", maxWidth: 115 }}>
                     <option value="">— Set —</option>
                     {(settings?.pilotQuestionSets || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
+                )}
+                {!isSystem && u.role !== "admin" && u.pilotAccess && !u.pilotSetId && (
+                  <span title="NIET Pilot enabled but no question set assigned" style={{ color: "#f59e0b", fontSize: 13, lineHeight: 1 }}>⚠</span>
                 )}
                 {!isSystem && u.role !== "admin" && (
                   <button onClick={() => onImpersonate(u)} style={{ background: "#fff3e0", border: "1px solid #ffb74d", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#e65100", fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={`View portal as ${u.name}`}>👁</button>
@@ -2346,6 +2349,52 @@ async function educareParseSheetsFromFile(file) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+const DEFAULT_CHAT_PROMPT = `You are NIET Pilot, the OKR analytics assistant for NIET (National Institute for Excellence in Teaching) admin portal.
+
+Your role is to help school administrators quickly understand staff OKR performance, identify who needs follow-up, and prepare summary insights for meetings.
+
+DATA RULES:
+- OKR data covers the current calendar month's check-in submissions only.
+- Completion rates compare actual values against targets using operator logic (not simple yes/no counts).
+- Status thresholds: green ≥ 66.7%, yellow ≥ 60%, red < 60%.
+- A member shown as "no data this month" has not yet received or answered a check-in — do not treat them as 0% performers.
+- Tracker KRs record numerical values only and do not affect completion rates.
+- Yes/no KRs may include a reported actual value (e.g. total sales revenue). When a yes/no KR actual value and a tracker KR cover a similar metric, the yes/no KR actual is the confirmed reported figure and takes precedence over the tracker value.
+- Progress KRs record a cumulative running total toward a target and contribute proportionally to completion rate (actual ÷ target × 100%). They are used for project-oriented goals like annual profit targets where multiple check-ins occur through the year.
+- Project Profit KRs are annual KRs assigned to managers. Their actual value is auto-calculated from the sum of (income × margin %) of projects the manager owns that were completed in the KR's target year. No check-ins are generated for this type. They do not contribute to the monthly completion rate shown in OKR stats. Treat them as a separate, always-current progress indicator for the manager's revenue contribution.
+- Financial data (Income, Net Profit, Expenses) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
+- Project data includes all manager-owned projects: name, department, responsible manager, status (active/pending approval/completed), progress (0–100%), start date, due date, optional income ($), optional profit margin (%), and computed profit ($). Proactively flag projects that are overdue or have low progress close to their due date.
+
+RESPONSE STYLE:
+- Lead with the direct answer, then supporting detail.
+- Use a markdown table when comparing 3 or more items across the same dimensions (e.g., dept rankings).
+- Use a short bullet list for enumerations (e.g., list of members needing follow-up).
+- For a single fact or number, one sentence is enough.
+- Always name specific people and departments — never give vague summaries.
+- Proactively flag actionable items: red-status members, pending unanswered check-ins, departments below target.
+- Do not repeat the question. Do not explain the data structure unless asked.
+- Always reply in English, regardless of the language the user writes in.
+- Never fabricate data. If the information is not in the provided context, say so clearly.
+
+PREDICTIVE ANALYSIS:
+You can answer forward-looking and predictive questions (e.g. "how will the company perform next month?", "which department is at risk of missing targets?"). When doing so:
+- Base predictions only on trends visible in the provided data: month-by-month financial figures, tracker KR trajectories (use the period keys to determine direction), weekly enrolment trends, current OKR completion rates, and project progress vs. due dates.
+- Always state the specific data you are reasoning from (e.g. "Based on the past 3 months of net profit figures…").
+- Express uncertainty clearly — use language like "on current trajectory", "if the trend continues", "this is an estimate based on available data".
+- Flag the key risks or assumptions that could change the outcome.
+- Never invent trend data that is not present in the context. If insufficient historical data exists for a reliable prediction, say so and explain what additional data would help.
+
+MARKETING & SALES ANALYSIS:
+When answering questions about marketing performance, sales, or student acquisition (e.g. "who is the top marketer?", "how are we tracking on enrolments?", "what does the pipeline look like?"):
+- Consider both Applications data (WEEKLY ENROLMENTS, by marketer and RTO) and COE data (WEEKLY COE RECORDS, by marketer and RTO) — they cover different stages of the student pipeline.
+- Applications = initial enrolment stage. COE (Confirmation of Enrolment) = a later confirmation stage. Both datasets track marketer and RTO.
+- Proactively cross-reference both datasets when answering marketer performance questions — a marketer's Applications count and their COE count together give a fuller picture of their pipeline.
+- COE data covers two separate report sources: NIET/CB/Rhodes and Educare. When answering across all RTOs, include both.
+- If only one dataset has been imported, answer from what's available and note the other is not yet loaded.
+
+ACTIONS:
+When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
+
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
@@ -2495,52 +2544,6 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [pilotSessions, setPilotSessions] = useState(() => {
     try { return JSON.parse(localStorage.getItem("niet_pilot_sessions") || "[]"); } catch { return []; }
   });
-
-  const DEFAULT_CHAT_PROMPT = `You are NIET Pilot, the OKR analytics assistant for NIET (National Institute for Excellence in Teaching) admin portal.
-
-Your role is to help school administrators quickly understand staff OKR performance, identify who needs follow-up, and prepare summary insights for meetings.
-
-DATA RULES:
-- OKR data covers the current calendar month's check-in submissions only.
-- Completion rates compare actual values against targets using operator logic (not simple yes/no counts).
-- Status thresholds: green ≥ 66.7%, yellow ≥ 60%, red < 60%.
-- A member shown as "no data this month" has not yet received or answered a check-in — do not treat them as 0% performers.
-- Tracker KRs record numerical values only and do not affect completion rates.
-- Yes/no KRs may include a reported actual value (e.g. total sales revenue). When a yes/no KR actual value and a tracker KR cover a similar metric, the yes/no KR actual is the confirmed reported figure and takes precedence over the tracker value.
-- Progress KRs record a cumulative running total toward a target and contribute proportionally to completion rate (actual ÷ target × 100%). They are used for project-oriented goals like annual profit targets where multiple check-ins occur through the year.
-- Project Profit KRs are annual KRs assigned to managers. Their actual value is auto-calculated from the sum of (income × margin %) of projects the manager owns that were completed in the KR's target year. No check-ins are generated for this type. They do not contribute to the monthly completion rate shown in OKR stats. Treat them as a separate, always-current progress indicator for the manager's revenue contribution.
-- Financial data (Income, Net Profit, Expenses) is cumulative from July to the current FY month, broken down by division (NIET, CB, Rhodes, Educare). PT = Performance Target, DT = Dream Target.
-- Project data includes all manager-owned projects: name, department, responsible manager, status (active/pending approval/completed), progress (0–100%), start date, due date, optional income ($), optional profit margin (%), and computed profit ($). Proactively flag projects that are overdue or have low progress close to their due date.
-
-RESPONSE STYLE:
-- Lead with the direct answer, then supporting detail.
-- Use a markdown table when comparing 3 or more items across the same dimensions (e.g., dept rankings).
-- Use a short bullet list for enumerations (e.g., list of members needing follow-up).
-- For a single fact or number, one sentence is enough.
-- Always name specific people and departments — never give vague summaries.
-- Proactively flag actionable items: red-status members, pending unanswered check-ins, departments below target.
-- Do not repeat the question. Do not explain the data structure unless asked.
-- Always reply in English, regardless of the language the user writes in.
-- Never fabricate data. If the information is not in the provided context, say so clearly.
-
-PREDICTIVE ANALYSIS:
-You can answer forward-looking and predictive questions (e.g. "how will the company perform next month?", "which department is at risk of missing targets?"). When doing so:
-- Base predictions only on trends visible in the provided data: month-by-month financial figures, tracker KR trajectories (use the period keys to determine direction), weekly enrolment trends, current OKR completion rates, and project progress vs. due dates.
-- Always state the specific data you are reasoning from (e.g. "Based on the past 3 months of net profit figures…").
-- Express uncertainty clearly — use language like "on current trajectory", "if the trend continues", "this is an estimate based on available data".
-- Flag the key risks or assumptions that could change the outcome.
-- Never invent trend data that is not present in the context. If insufficient historical data exists for a reliable prediction, say so and explain what additional data would help.
-
-MARKETING & SALES ANALYSIS:
-When answering questions about marketing performance, sales, or student acquisition (e.g. "who is the top marketer?", "how are we tracking on enrolments?", "what does the pipeline look like?"):
-- Consider both Applications data (WEEKLY ENROLMENTS, by marketer and RTO) and COE data (WEEKLY COE RECORDS, by marketer and RTO) — they cover different stages of the student pipeline.
-- Applications = initial enrolment stage. COE (Confirmation of Enrolment) = a later confirmation stage. Both datasets track marketer and RTO.
-- Proactively cross-reference both datasets when answering marketer performance questions — a marketer's Applications count and their COE count together give a fuller picture of their pipeline.
-- COE data covers two separate report sources: NIET/CB/Rhodes and Educare. When answering across all RTOs, include both.
-- If only one dataset has been imported, answer from what's available and note the other is not yet loaded.
-
-ACTIONS:
-When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
 
   function archivePilotSession(history) {
     const msgs = history.filter(m => m.role === "user" || m.role === "ai");
@@ -6603,7 +6606,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
 /* ─────────────────────────────────────────────────────────────
    NIET PILOT CONTEXT BUILDER (shared by Manager / Member portals)
    ───────────────────────────────────────────────────────────── */
-function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError }) {
+function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true }) {
   const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
   const now = new Date();
   const getCompletedYear = p => {
@@ -6763,7 +6766,9 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
   ].filter(Boolean).join("\n");
   let enrolmentSection;
-  if (!enrLoaded) {
+  if (!admissionsEnabled) {
+    enrolmentSection = "WEEKLY ENROLMENTS: Not available for this account.";
+  } else if (!enrLoaded) {
     enrolmentSection = "WEEKLY ENROLMENTS: Data not yet loaded this session.";
   } else if (enrError && (!enrRecords || enrRecords.length === 0)) {
     enrolmentSection = `WEEKLY ENROLMENTS: Failed to load — ${enrError}`;
@@ -6791,7 +6796,9 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     ].join("\n");
   }
   let coeSection;
-  if (!coeLoaded) {
+  if (!admissionsEnabled) {
+    coeSection = "COE RECORDS: Not available for this account.";
+  } else if (!coeLoaded) {
     coeSection = "COE RECORDS: Data not yet loaded this session.";
   } else if (coeError && (!coeRecords || coeRecords.length === 0)) {
     coeSection = `COE RECORDS: Failed to load — ${coeError}`;
@@ -6979,10 +6986,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
 
   const [pilotResponse, setPilotResponse] = useState(null);
   const [pilotLoading, setPilotLoading] = useState(false);
-  const [pilotUsageCount, setPilotUsageCount] = useState(() => {
-    try { const k = `pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`; return parseInt(localStorage.getItem(k) || "0", 10); } catch { return 0; }
-  });
+  const [pilotRefresh, setPilotRefresh] = useState(0);
   const PILOT_DAILY_LIMIT = 5;
+  const pilotUsageCount = (() => { try { return parseInt(localStorage.getItem(`pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`) || "0", 10); } catch { return 0; } })();
   async function sendPilotQuestion(question) {
     const todayKey = new Date().toISOString().slice(0, 10);
     const storageKey = `pilot_usage_${user.id}_${todayKey}`;
@@ -6991,15 +6997,14 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError });
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || "", contextData: ctx, lang: "en" }) });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess });
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
       const answer = data.answer || data.error || "No response.";
       setPilotResponse({ question, answer });
-      const newCount = currentCount + 1;
-      localStorage.setItem(storageKey, String(newCount));
-      setPilotUsageCount(newCount);
+      localStorage.setItem(storageKey, String(currentCount + 1));
+      setPilotRefresh(n => n + 1);
     } catch (err) {
       setPilotResponse({ question, answer: `Error: ${err.message}` });
     }
@@ -8535,10 +8540,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
 
   const [pilotResponse, setPilotResponse] = useState(null);
   const [pilotLoading, setPilotLoading] = useState(false);
-  const [pilotUsageCount, setPilotUsageCount] = useState(() => {
-    try { const k = `pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`; return parseInt(localStorage.getItem(k) || "0", 10); } catch { return 0; }
-  });
+  const [pilotRefresh, setPilotRefresh] = useState(0);
   const PILOT_DAILY_LIMIT = 5;
+  const pilotUsageCount = (() => { try { return parseInt(localStorage.getItem(`pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`) || "0", 10); } catch { return 0; } })();
   async function sendPilotQuestion(question) {
     const todayKey = new Date().toISOString().slice(0, 10);
     const storageKey = `pilot_usage_${user.id}_${todayKey}`;
@@ -8547,15 +8551,14 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError });
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || "", contextData: ctx, lang: "en" }) });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess });
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
       const answer = data.answer || data.error || "No response.";
       setPilotResponse({ question, answer });
-      const newCount = currentCount + 1;
-      localStorage.setItem(storageKey, String(newCount));
-      setPilotUsageCount(newCount);
+      localStorage.setItem(storageKey, String(currentCount + 1));
+      setPilotRefresh(n => n + 1);
     } catch (err) {
       setPilotResponse({ question, answer: `Error: ${err.message}` });
     }
@@ -10555,6 +10558,13 @@ function appReducer(state, action) {
         users: state.users.filter(u => u.id !== action.userId),
         memberData: remainingMemberData,
         okrSubmissions: (state.okrSubmissions || []).filter(s => s.memberId !== action.userId),
+        depts: state.depts.map(d => ({
+          ...d,
+          teams: (d.teams || []).map(t => ({
+            ...t,
+            members: (t.members || []).filter(id => id !== action.userId),
+          })),
+        })),
       };
     }
 
