@@ -964,7 +964,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
    ───────────────────────────────────────────────────────────── */
 const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false, designatedApproverId: "" };
 
-function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) {
+function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, settings }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const [formErr, setFormErr] = useState("");
@@ -1276,6 +1276,15 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate }) 
                 )}
                 {!isSystem && u.role !== "admin" && (
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { projectAccess: !u.projectAccess } })} style={{ background: u.projectAccess ? T.brandDim : T.raised, border: `1px solid ${u.projectAccess ? T.brandBorder : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.projectAccess ? T.brand : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Project access">◫</button>
+                )}
+                {!isSystem && u.role !== "admin" && (
+                  <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { pilotAccess: !u.pilotAccess, ...(u.pilotAccess ? { pilotSetId: null } : {}) } })} style={{ background: u.pilotAccess ? "#fce7f3" : T.raised, border: `1px solid ${u.pilotAccess ? "#f9a8d4" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.pilotAccess ? "#9d174d" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle NIET Pilot access">✈</button>
+                )}
+                {!isSystem && u.role !== "admin" && u.pilotAccess && (
+                  <select value={u.pilotSetId || ""} onChange={e => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { pilotSetId: e.target.value || null } })} style={{ padding: "3px 7px", fontSize: 12, borderRadius: 5, border: `1px solid ${T.border}`, background: T.surface, color: u.pilotSetId ? T.text : T.textMuted, fontFamily: F.body, cursor: "pointer", maxWidth: 115 }}>
+                    <option value="">— Set —</option>
+                    {(settings?.pilotQuestionSets || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
                 )}
                 {!isSystem && u.role !== "admin" && (
                   <button onClick={() => onImpersonate(u)} style={{ background: "#fff3e0", border: "1px solid #ffb74d", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#e65100", fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={`View portal as ${u.name}`}>👁</button>
@@ -2476,6 +2485,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatPromptOpen, setChatPromptOpen] = useState(false);
+  const [qSetsOpen, setQSetsOpen] = useState(false);
+  const [pilotSetExpanded, setPilotSetExpanded] = useState(null);
+  const [pilotNewSetName, setPilotNewSetName] = useState("");
+  const [pilotNewQ, setPilotNewQ] = useState({});
   const chatEndRef = useRef(null);
   const chatHistoryRef = useRef([]);
   const pilotPrevPageRef = useRef(null);
@@ -3355,7 +3368,7 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
         subItems={deptSubItems} subItemsFor="okr-mgmt" activeSubItem={adminSelDept ? "__setup__" : "__all__"} onSelectSubItem={id => { setPage("okr-mgmt"); if (id === "__setup__") { setAdminSelDept(depts[0]?.id || null); } else { setAdminSelDept(null); } setSelTeam(null); setAddTarget(null); setExpandedMonthlyKr(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
-        {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} onImpersonate={onImpersonate} />}
+        {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} onImpersonate={onImpersonate} settings={settings} />}
 
         {page === "overview" && (<>
           <Header title="Company Overview" sub={(() => {
@@ -6378,7 +6391,8 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   {chatHistory.length > 0 && <button onClick={() => { archivePilotSession(chatHistory); localStorage.removeItem("niet_pilot_draft"); setChatHistory([]); }} style={{ background: "none", border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 12, color: T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>Clear chat</button>}
-                  <button onClick={() => setChatPromptOpen(o => !o)} style={{ background: chatPromptOpen ? T.brandDim : "none", border: `1px solid ${chatPromptOpen ? T.brandBorder : T.border}`, cursor: "pointer", fontSize: 12, color: chatPromptOpen ? T.brand : T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>⚙ System Prompt</button>
+                  <button onClick={() => { setChatPromptOpen(o => !o); setQSetsOpen(false); }} style={{ background: chatPromptOpen ? T.brandDim : "none", border: `1px solid ${chatPromptOpen ? T.brandBorder : T.border}`, cursor: "pointer", fontSize: 12, color: chatPromptOpen ? T.brand : T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>⚙ System Prompt</button>
+                  <button onClick={() => { setQSetsOpen(o => !o); setChatPromptOpen(false); }} style={{ background: qSetsOpen ? "#fce7f3" : "none", border: `1px solid ${qSetsOpen ? "#f9a8d4" : T.border}`, cursor: "pointer", fontSize: 12, color: qSetsOpen ? "#9d174d" : T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>✈ Question Sets</button>
                 </div>
               </div>
               {chatPromptOpen && (() => {
@@ -6392,6 +6406,70 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
                     <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end", alignItems: "center" }}>
                       <button onClick={() => { document.getElementById("chatSysPromptTA").value = DEFAULT_CHAT_PROMPT; }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: T.textDim, fontFamily: F.body, padding: 0 }}>Reset to default</button>
                       <Btn small primary onClick={() => { const val = document.getElementById("chatSysPromptTA").value.trim(); if (val) { dispatch({ type: "SET_SETTINGS", updates: { aiChatPrompt: val } }); setChatPromptOpen(false); } }}>Save</Btn>
+                    </div>
+                  </div>
+                );
+              })()}
+              {qSetsOpen && (() => {
+                const qSets = settings?.pilotQuestionSets || [];
+                const addSet = () => {
+                  const n = pilotNewSetName.trim();
+                  if (!n) return;
+                  const next = [...qSets, { id: Date.now().toString(), name: n, questions: [] }];
+                  dispatch({ type: "SET_SETTINGS", updates: { pilotQuestionSets: next } });
+                  setPilotNewSetName("");
+                };
+                const delSet = id => {
+                  dispatch({ type: "SET_SETTINGS", updates: { pilotQuestionSets: qSets.filter(s => s.id !== id) } });
+                  if (pilotSetExpanded === id) setPilotSetExpanded(null);
+                };
+                const addQ = setId => {
+                  const text = (pilotNewQ[setId] || "").trim();
+                  if (!text) return;
+                  const next = qSets.map(s => s.id === setId ? { ...s, questions: [...s.questions, text] } : s);
+                  dispatch({ type: "SET_SETTINGS", updates: { pilotQuestionSets: next } });
+                  setPilotNewQ(p => ({ ...p, [setId]: "" }));
+                };
+                const delQ = (setId, idx) => {
+                  const next = qSets.map(s => s.id === setId ? { ...s, questions: s.questions.filter((_, i) => i !== idx) } : s);
+                  dispatch({ type: "SET_SETTINGS", updates: { pilotQuestionSets: next } });
+                };
+                return (
+                  <div style={{ margin: isMobile ? "12px 16px 0" : "12px 32px 0", padding: "14px 18px", background: "#fdf2f8", border: "1px solid #f9a8d4", borderRadius: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#9d174d", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>Question Sets</div>
+                    {qSets.length === 0 && <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 12 }}>No question sets yet. Create one below.</div>}
+                    {qSets.map(s => (
+                      <div key={s.id} style={{ marginBottom: 10, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", cursor: "pointer" }} onClick={() => setPilotSetExpanded(p => p === s.id ? null : s.id)}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{s.name}</span>
+                          <span style={{ fontSize: 11, color: T.textMuted }}>{s.questions.length} question{s.questions.length !== 1 ? "s" : ""}</span>
+                          <span style={{ fontSize: 12, color: T.textMuted }}>{pilotSetExpanded === s.id ? "▲" : "▼"}</span>
+                          <button onClick={e => { e.stopPropagation(); delSet(s.id); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 4, padding: "2px 7px", cursor: "pointer", color: T.bad, fontSize: 11, fontFamily: F.body }}>✕</button>
+                        </div>
+                        {pilotSetExpanded === s.id && (
+                          <div style={{ borderTop: `1px solid ${T.border}`, padding: "10px 12px" }}>
+                            {s.questions.length === 0 && <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>No questions. Add one below.</div>}
+                            {s.questions.map((q, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                <span style={{ flex: 1, fontSize: 13, color: T.text, lineHeight: 1.4 }}>{q}</span>
+                                <button onClick={() => delQ(s.id, i)} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "1px 4px", fontFamily: F.body }}>✕</button>
+                              </div>
+                            ))}
+                            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                              <input value={pilotNewQ[s.id] || ""} onChange={e => setPilotNewQ(p => ({ ...p, [s.id]: e.target.value }))}
+                                onKeyDown={e => { if (e.key === "Enter") addQ(s.id); }}
+                                placeholder="New question…" style={{ flex: 1, padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, outline: "none" }} />
+                              <Btn small primary onClick={() => addQ(s.id)}>Add</Btn>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                      <input value={pilotNewSetName} onChange={e => setPilotNewSetName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") addSet(); }}
+                        placeholder="New set name…" style={{ flex: 1, padding: "6px 10px", fontSize: 13, fontFamily: F.body, background: T.surface, border: `1px solid #f9a8d4`, borderRadius: 6, color: T.text, outline: "none" }} />
+                      <Btn small onClick={addSet} style={{ background: "#fce7f3", border: "1px solid #f9a8d4", color: "#9d174d" }}>+ Set</Btn>
                     </div>
                   </div>
                 );
@@ -6520,6 +6598,228 @@ When the user asks to approve or reject OKR submissions (e.g. "approve all pendi
     </div>
     </MobileContext.Provider>
   );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   NIET PILOT CONTEXT BUILDER (shared by Manager / Member portals)
+   ───────────────────────────────────────────────────────────── */
+function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError }) {
+  const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
+  const now = new Date();
+  const getCompletedYear = p => {
+    if (p.completedYear) return p.completedYear;
+    const parts = (p.updatedDate || "").split("/");
+    return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
+  };
+  const today = now.toISOString().slice(0, 10);
+  const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
+  const monthlyTypes = ["daily", "weekly", "monthly"];
+  const monthSubs = okrSubmissions.filter(s => {
+    if (!monthlyTypes.includes(s.period) || !s.sentAt) return false;
+    const d = new Date(s.sentAt);
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const nowMs = Date.now();
+  const members = users.filter(u => u.role === "member" || u.role === "manager");
+  const memberStats = members.map(u => {
+    const kd = memberData[u.id] || { krs: [] };
+    const krs = kd.krs.filter(kr => monthlyTypes.includes(kr.period || "monthly"));
+    const dept = depts.find(d => d.id === u.deptId)?.name || "—";
+    const hasEligible = krs.filter(kr => kr.type !== "tracker").some(kr => {
+      const krSubs = monthSubs.filter(s => s.memberId === u.id && s.krId === kr.id);
+      if (!krSubs.length) return false;
+      if (krSubs.some(s => s.answer !== null)) return true;
+      const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
+      return latest && (nowMs - new Date(latest.sentAt).getTime()) >= 86400000;
+    });
+    const rate = hasEligible ? calcMemberRate(u.id, krs, monthSubs) : null;
+    const status = rate !== null ? getStatus(rate) : "no data";
+    const answered = monthSubs.filter(s => s.memberId === u.id && s.answer !== null).length;
+    const pending = monthSubs.filter(s => s.memberId === u.id && s.answer === null).length;
+    const trackerLines = kd.krs.filter(kr => kr.type === "tracker").map(kr => {
+      const krSubs = okrSubmissions.filter(s => s.memberId === u.id && s.krId === kr.id)
+        .sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || "")).slice(0, 3);
+      if (!krSubs.length) return null;
+      const entries = krSubs.map(s => `${s.actualValue ?? 0}${kr.unit ? " " + kr.unit : ""} (${s.dateRange || s.periodKey})`).join(", ");
+      return `    Tracker — ${kr.label}: ${entries}`;
+    }).filter(Boolean);
+    const krLines = kd.krs.filter(kr => kr.type !== "tracker" && kr.type !== "manager-fill" && kr.type !== "project_profit").map(kr => {
+      const latest = okrSubmissions.filter(s => s.memberId === u.id && s.krId === kr.id && s.answer !== null)
+        .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+      if (!latest || latest.actualValue == null) return null;
+      return `    KR — ${kr.label}: ${latest.answer === "yes" ? "✓ Yes" : "✗ No"} · actual ${latest.actualValue}${kr.unit ? " " + kr.unit : ""} (${latest.dateRange || latest.periodKey})`;
+    }).filter(Boolean);
+    const ppLines = kd.krs.filter(kr => kr.type === "project_profit").map(kr => {
+      const yearProjects = projects.filter(p => p.mgrId === u.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+      const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
+      const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
+      const missing = yearProjects.filter(p => p.income == null || p.margin == null).length;
+      const hasPartialRate = yearProjects.some(p => p.contributeRate != null && p.contributeRate < 100);
+      return `    Proj Profit KR — ${kr.label}: $${actual.toLocaleString()} of $${(kr.target || 0).toLocaleString()} (${pct}%)${missing > 0 ? ` [⚠ ${missing} project(s) missing income/margin]` : ""}${hasPartialRate ? " [⚡ partial rates applied]" : ""} · Year ${kr.krYear || "?"}`;
+    });
+    return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines, krLines, ppLines };
+  });
+  const deptStats = depts.map(d => {
+    const dm = memberStats.filter(m => members.find(u => u.id === m.id)?.deptId === d.id);
+    const eligible = dm.filter(m => m.hasEligible);
+    const rate = eligible.length ? eligible.reduce((s, m) => s + m.rate, 0) / eligible.length : null;
+    return { name: d.name, rate, status: rate !== null ? getStatus(rate) : "no data", total: dm.length, eligible: eligible.length };
+  }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+  const deptsWithData = deptStats.filter(d => d.rate !== null);
+  const compRate = deptsWithData.length ? deptsWithData.reduce((s, d) => s + d.rate, 0) / deptsWithData.length : null;
+  const deptSection = deptStats.map(d =>
+    `  ${d.name}: ${d.rate !== null ? d.rate.toFixed(1) + "% [" + d.status + "]" : "no data"} (${d.eligible}/${d.total} members with submissions)`
+  ).join("\n");
+  const memberSection = memberStats.map(m => {
+    let line = `  ${m.name} (${m.dept}, ${m.role}): ${m.rate !== null ? m.rate.toFixed(1) + "% [" + m.status + "]" : "no data this month"}`;
+    if (m.answered || m.pending) line += ` — ${m.answered} answered, ${m.pending} awaiting`;
+    else line += ` — no check-ins sent this month`;
+    if (m.trackerLines.length) line += "\n" + m.trackerLines.join("\n");
+    if (m.krLines.length) line += "\n" + m.krLines.join("\n");
+    if (m.ppLines && m.ppLines.length) line += "\n" + m.ppLines.join("\n");
+    return line;
+  }).join("\n");
+  const latestReport = [...monthlyReports].sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""))[0];
+  const reportSection = latestReport
+    ? [`LATEST PUBLISHED REPORT (${latestReport.month || latestReport.publishedDate}): company rate ${Number(latestReport.data?.companyRate).toFixed(1)}%`,
+       ...(latestReport.data?.deptRanks?.length ? ["  Dept breakdown: " + latestReport.data.deptRanks.map(d => `${d.name} ${Number(d.rate).toFixed(1)}%`).join(", ")] : [])
+      ].join("\n")
+    : "";
+  const FY_MONTHS = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+  const REV_DIVS = ["NIET","CB","Rhodes","Educare"];
+  const nowFYMonth = (() => { const m = now.getMonth(); return m >= 6 ? m - 6 : m + 6; })();
+  const fyLabel = `Jul–${FY_MONTHS[nowFYMonth]} FY${String(now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear()).slice(2)}`;
+  const fmtMoney = v => v >= 1_000_000 ? `$${(v/1_000_000).toFixed(2)}M` : v >= 1_000 ? `$${(v/1_000).toFixed(1)}K` : `$${Math.round(v)}`;
+  const mkDefault = () => ({ pt: 0, dt: 0, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
+  const finModules = [
+    { key: "revenue",   label: "Income",     hasTargets: true  },
+    { key: "expense",   label: "Expenses",   hasTargets: false },
+    { key: "netProfit", label: "Net Profit", hasTargets: true  },
+  ];
+  const _aiRevCfg = state.settings?.revenue ?? mkDefault();
+  const _aiExpCfg = state.settings?.expense ?? mkDefault();
+  const _aiNpDivs = Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (_aiRevCfg.divisions[d]?.[i] || 0) - (_aiExpCfg.divisions[d]?.[i] || 0))]));
+  const finSection = finModules.map(({ key, label, hasTargets }) => {
+    const cfg = state.settings?.[key] ?? mkDefault();
+    const divs = key === "netProfit" ? _aiNpDivs : cfg.divisions;
+    const monthly = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (divs[d]?.[i] || 0), 0));
+    const cumulative = monthly.map((_, i) => monthly.slice(0, i + 1).reduce((a, b) => a + b, 0));
+    const cum = cumulative[nowFYMonth] || 0;
+    const ptPct = hasTargets && cfg.pt > 0 ? (cum / cfg.pt * 100).toFixed(1) + "%" : null;
+    const dtPct = hasTargets && cfg.dt > 0 ? (cum / cfg.dt * 100).toFixed(1) + "%" : null;
+    const divLines = REV_DIVS.map(div => {
+      const divCum = (divs[div] || Array(12).fill(0)).slice(0, nowFYMonth + 1).reduce((a, b) => a + b, 0);
+      const pct = cum > 0 ? (divCum / cum * 100).toFixed(1) + "%" : "0%";
+      return `    ${div}: ${fmtMoney(divCum)} (${pct} of group)`;
+    });
+    const monthlyLine = FY_MONTHS.slice(0, nowFYMonth + 1).map((m, i) => `${m} ${fmtMoney(monthly[i])}`).join(", ");
+    let lines = [`  ${label}: cumulative ${fmtMoney(cum)} (${fyLabel})`];
+    if (hasTargets) {
+      if (cfg.pt > 0) lines.push(`    vs PT (${fmtMoney(cfg.pt)}): ${ptPct}`);
+      if (cfg.dt > 0) lines.push(`    vs DT (${fmtMoney(cfg.dt)}): ${dtPct}`);
+    }
+    if (cum > 0) {
+      lines.push(`    Division breakdown:\n${divLines.join("\n")}`);
+      lines.push(`    Monthly: ${monthlyLine}`);
+    } else {
+      lines.push(`    No data entered yet`);
+    }
+    return lines.join("\n");
+  }).join("\n");
+  const allPending = okrSubmissions.filter(s => s.answer !== null && s.approval === "pending");
+  let pendingSection;
+  if (allPending.length === 0) {
+    pendingSection = "PENDING SUBMISSIONS: None currently awaiting approval.";
+  } else {
+    const byDept = depts.map(d => {
+      const dp = allPending.filter(s => s.deptId === d.id);
+      if (!dp.length) return null;
+      const byMonth = {};
+      dp.forEach(s => { const mk = (s.sentAt || "").slice(0, 7) || "unknown"; byMonth[mk] = (byMonth[mk] || 0) + 1; });
+      const breakdown = Object.entries(byMonth).sort().map(([k, n]) => `${n} in ${k}`).join(", ");
+      return `  ${d.name}: ${dp.length} pending (${breakdown})`;
+    }).filter(Boolean);
+    pendingSection = `PENDING SUBMISSIONS (answered by member, awaiting admin approval):\n${byDept.join("\n")}\n  Total: ${allPending.length}`;
+  }
+  const activeProjects = projects.filter(p => p.status === "active");
+  const pendingApprovalProjects = projects.filter(p => p.status === "pending approval");
+  const completedProjects = projects.filter(p => p.status === "completed");
+  const fmtProject = p => {
+    const mgr = users.find(u => u.id === p.mgrId);
+    const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
+    const mgrName = mgr?.name || "—";
+    const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
+    let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
+    if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
+    if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)${p.contributeRate != null && p.contributeRate < 100 ? ` [Owner's KR share: ${p.contributeRate}%]` : ""}`;
+    const logEntries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
+    if (logEntries.length) line += `\n    Latest Log: ${logEntries[0].text.slice(0, 100)}${logEntries[0].text.length > 100 ? "…" : ""}`;
+    return line;
+  };
+  const projectSection = [
+    `PROJECTS: Total ${projects.length} (${activeProjects.length} active, ${pendingApprovalProjects.length} pending approval, ${completedProjects.length} completed)`,
+    activeProjects.length ? `Active (${activeProjects.length}):\n${activeProjects.map(fmtProject).join("\n")}` : "Active: none",
+    pendingApprovalProjects.length ? `Pending Approval (${pendingApprovalProjects.length}) — awaiting System Admin sign-off:\n${pendingApprovalProjects.map(fmtProject).join("\n")}` : "",
+    completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+  let enrolmentSection;
+  if (!enrLoaded) {
+    enrolmentSection = "WEEKLY ENROLMENTS: Data not yet loaded this session.";
+  } else if (enrError && (!enrRecords || enrRecords.length === 0)) {
+    enrolmentSection = `WEEKLY ENROLMENTS: Failed to load — ${enrError}`;
+  } else if (!enrRecords || enrRecords.length === 0) {
+    enrolmentSection = "WEEKLY ENROLMENTS: No enrolment data imported yet.";
+  } else {
+    const enrWeeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
+    const enrMarketers = [...new Set(enrRecords.map(r => r.marketerName))].sort();
+    const enrRtos = [...new Set(enrRecords.map(r => r.rto))].sort();
+    const weekLines = enrWeeks.map(w => {
+      const wRecs = enrRecords.filter(r => r.week === w);
+      const wTotal = wRecs.reduce((s, r) => s + r.count, 0);
+      const mLines = enrMarketers.map(m => {
+        const mRecs = wRecs.filter(r => r.marketerName === m);
+        if (!mRecs.length) return null;
+        const mTotal = mRecs.reduce((s, r) => s + r.count, 0);
+        const rtoParts = mRecs.map(r => `${r.rto}:${r.count}`).join(", ");
+        return `    ${m}: ${rtoParts} (total:${mTotal})`;
+      }).filter(Boolean);
+      return `  ${w} — ${wTotal} enrolments:\n${mLines.join("\n")}`;
+    });
+    enrolmentSection = [
+      `WEEKLY ENROLMENTS: ${enrWeeks.length} weeks | Marketers: ${enrMarketers.join(", ")} | RTOs: ${enrRtos.join(", ")}`,
+      weekLines.join("\n"),
+    ].join("\n");
+  }
+  let coeSection;
+  if (!coeLoaded) {
+    coeSection = "COE RECORDS: Data not yet loaded this session.";
+  } else if (coeError && (!coeRecords || coeRecords.length === 0)) {
+    coeSection = `COE RECORDS: Failed to load — ${coeError}`;
+  } else if (!coeRecords || coeRecords.length === 0) {
+    coeSection = "COE RECORDS: No COE data imported yet.";
+  } else {
+    const NIET_CB_COMBOS = [{ rto: "NIET", type: "CoE" }, { rto: "NIET", type: "Non-CoE" }, { rto: "CB", type: "CoE" }, { rto: "CB", type: "Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid" }];
+    const EDUCARE_COMBOS = [{ rto: "Educare BNE", type: "CoE" }, { rto: "Educare GC", type: "CoE" }, { rto: "Educare ONLINE", type: "Accepted & Paid" }, { rto: "Educare GC", type: "Non-CoE" }, { rto: "Educare BNE", type: "Non-CoE" }, { rto: "Educare Dom", type: "Accepted & Paid" }];
+    const coeWeeks = enrSortWeeksDesc([...new Set(coeRecords.map(r => r.week))]);
+    const coeByWeek = coeWeeks.map(w => {
+      const wRecs = coeRecords.filter(r => r.week === w);
+      const mkLines = (combos, prefix) => combos.map(c => { const n = wRecs.filter(r => r.rto === c.rto && r.type === c.type).length; return n > 0 ? `    [${prefix}] ${c.rto} ${c.type}: ${n}` : null; }).filter(Boolean);
+      const lines = [...mkLines(NIET_CB_COMBOS, "NIET/CB/Rhodes"), ...mkLines(EDUCARE_COMBOS, "Educare")];
+      return `  ${w} — ${wRecs.length} total:\n${lines.join("\n")}`;
+    });
+    coeSection = [`COE RECORDS: ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records (NIET/CB/Rhodes + Educare combined)`, coeByWeek.join("\n")].join("\n");
+  }
+  return [
+    `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
+    `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
+    `\nMEMBER DETAILS (current month):\n${memberSection}`,
+    reportSection ? `\n${reportSection}` : "",
+    `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
+    `\n${pendingSection}`,
+    `\n${projectSection}`,
+    `\n${enrolmentSection}`,
+    `\n${coeSection}`,
+  ].join("\n");
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -6677,6 +6977,35 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     }
   }, [coeLoaded, coeLoading, dept?.admissionsAccess]);
 
+  const [pilotResponse, setPilotResponse] = useState(null);
+  const [pilotLoading, setPilotLoading] = useState(false);
+  const [pilotUsageCount, setPilotUsageCount] = useState(() => {
+    try { const k = `pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`; return parseInt(localStorage.getItem(k) || "0", 10); } catch { return 0; }
+  });
+  const PILOT_DAILY_LIMIT = 5;
+  async function sendPilotQuestion(question) {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = `pilot_usage_${user.id}_${todayKey}`;
+    const currentCount = parseInt(localStorage.getItem(storageKey) || "0", 10);
+    if (currentCount >= PILOT_DAILY_LIMIT || pilotLoading) return;
+    setPilotLoading(true);
+    setPilotResponse({ question, answer: null });
+    try {
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError });
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || "", contextData: ctx, lang: "en" }) });
+      const text = await res.text();
+      let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
+      const answer = data.answer || data.error || "No response.";
+      setPilotResponse({ question, answer });
+      const newCount = currentCount + 1;
+      localStorage.setItem(storageKey, String(newCount));
+      setPilotUsageCount(newCount);
+    } catch (err) {
+      setPilotResponse({ question, answer: `Error: ${err.message}` });
+    }
+    setPilotLoading(false);
+  }
+
   const navItems = [
     { id: "dashboard",    icon: "⬡", label: "Team Dashboard"       },
     { id: "okr-overview", icon: "⬡", label: "OKR Overview"         },
@@ -6687,6 +7016,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "reports",      icon: "⬡", label: "OKR Reports"          },
     ...(user.financeAccess ? [{ id: "financial", icon: "⬡", label: "Financial Performance" }] : []),
     ...(dept?.admissionsAccess ? [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] : []),
+    ...(user.pilotAccess ? [{ id: "niet-pilot", icon: "⬡", label: "NIET Pilot" }] : []),
   ];
 
   return (
@@ -8014,6 +8344,63 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           </>);
         })()}
 
+        {page === "niet-pilot" && user.pilotAccess && (() => {
+          const pilotSet = state.settings?.pilotQuestionSets?.find(s => s.id === user.pilotSetId);
+          const questions = pilotSet?.questions || [];
+          const remaining = PILOT_DAILY_LIMIT - pilotUsageCount;
+          const NP_AVATAR = <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0071E3,#6B47DC)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0, letterSpacing: "0.02em" }}>NP</div>;
+          return (<>
+            <Header title="NIET Pilot" sub="Select a question to get an AI-powered answer" />
+            <Pane>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(135deg,#0071E3,#6B47DC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800 }}>NP</div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800 }}>NIET Pilot</div>
+                    <div style={{ fontSize: 12, color: T.textMuted }}>AI-powered OKR analytics</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: remaining > 0 ? T.textMuted : T.bad, background: remaining > 0 ? T.raised : T.badDim, border: `1px solid ${remaining > 0 ? T.border : T.badBorder}`, borderRadius: 8, padding: "4px 12px", fontWeight: 600 }}>
+                  {remaining > 0 ? `${remaining}/${PILOT_DAILY_LIMIT} uses left today` : "Daily limit reached"}
+                </div>
+              </div>
+              {!pilotSet && <div style={{ padding: "16px", background: T.raised, borderRadius: 8, fontSize: 13, color: T.textMuted, marginBottom: 20 }}>No question set assigned to your account. Please contact your administrator.</div>}
+              {pilotSet && questions.length === 0 && <div style={{ padding: "16px", background: T.raised, borderRadius: 8, fontSize: 13, color: T.textMuted, marginBottom: 20 }}>This question set has no questions yet.</div>}
+              {questions.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 24 }}>
+                  {questions.map((q, i) => (
+                    <button key={i} onClick={() => remaining > 0 && sendPilotQuestion(q)} disabled={remaining <= 0 || pilotLoading}
+                      style={{ background: T.surface, border: `1px solid ${remaining > 0 && !pilotLoading ? T.border : T.border}`, borderRadius: 12, padding: "13px 16px", textAlign: "left", cursor: remaining > 0 && !pilotLoading ? "pointer" : "not-allowed", fontFamily: F.body, fontSize: 13, color: remaining > 0 && !pilotLoading ? T.text : T.textMuted, lineHeight: 1.5, opacity: remaining <= 0 || pilotLoading ? 0.55 : 1 }}
+                      onMouseEnter={e => { if (remaining > 0 && !pilotLoading) { e.currentTarget.style.borderColor = T.brandBorder; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.brandDim}`; } }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "none"; }}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {pilotLoading && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "16px 0" }}>
+                  {NP_AVATAR}
+                  <div style={{ padding: "14px 18px", borderRadius: "5px 20px 20px 20px", background: T.surface, border: `1px solid ${T.border}`, display: "flex", gap: 5, alignItems: "center" }}>
+                    {[0,1,2].map(n => <div key={n} style={{ width: 7, height: 7, borderRadius: "50%", background: T.brand, opacity: 0.35 + n * 0.3 }} />)}
+                  </div>
+                </div>
+              )}
+              {!pilotLoading && pilotResponse && (
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", background: T.raised, borderBottom: `1px solid ${T.border}`, fontSize: 13, fontWeight: 600, color: T.textSoft }}>Q: {pilotResponse.question}</div>
+                  <div style={{ display: "flex", gap: 10, padding: "14px 16px", alignItems: "flex-start" }}>
+                    {NP_AVATAR}
+                    <div style={{ fontSize: 14, lineHeight: 1.65, color: T.text, flex: 1, minWidth: 0 }}>
+                      {pilotResponse.answer ? <MdMsg text={pilotResponse.answer} /> : <span style={{ color: T.textMuted }}>Loading…</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Pane>
+          </>);
+        })()}
+
         {syncPrompt && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div style={{ background: T.surface, borderRadius: 16, padding: "28px 32px", width: "100%", maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
@@ -8146,6 +8533,35 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     }
   }, [coeLoaded, coeLoading, myDept?.admissionsAccess]);
 
+  const [pilotResponse, setPilotResponse] = useState(null);
+  const [pilotLoading, setPilotLoading] = useState(false);
+  const [pilotUsageCount, setPilotUsageCount] = useState(() => {
+    try { const k = `pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`; return parseInt(localStorage.getItem(k) || "0", 10); } catch { return 0; }
+  });
+  const PILOT_DAILY_LIMIT = 5;
+  async function sendPilotQuestion(question) {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = `pilot_usage_${user.id}_${todayKey}`;
+    const currentCount = parseInt(localStorage.getItem(storageKey) || "0", 10);
+    if (currentCount >= PILOT_DAILY_LIMIT || pilotLoading) return;
+    setPilotLoading(true);
+    setPilotResponse({ question, answer: null });
+    try {
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError });
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || "", contextData: ctx, lang: "en" }) });
+      const text = await res.text();
+      let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
+      const answer = data.answer || data.error || "No response.";
+      setPilotResponse({ question, answer });
+      const newCount = currentCount + 1;
+      localStorage.setItem(storageKey, String(newCount));
+      setPilotUsageCount(newCount);
+    } catch (err) {
+      setPilotResponse({ question, answer: `Error: ${err.message}` });
+    }
+    setPilotLoading(false);
+  }
+
   const navItems = [
     { id: "mykpis",       icon: "⬡", label: "My OKRs"          },
     { id: "checkin",      icon: "⬡", label: "OKR Check-In"     },
@@ -8155,6 +8571,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     ...(designatedApproveeIds.length > 0 ? [{ id: "approvals", icon: "⬡", label: "Approvals" }] : []),
     ...(user.projectAccess ? [{ id: "projects", icon: "⬡", label: "Projects" }] : []),
     ...(myDept?.admissionsAccess ? [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] : []),
+    ...(user.pilotAccess ? [{ id: "niet-pilot", icon: "⬡", label: "NIET Pilot" }] : []),
   ];
 
   return (
@@ -9595,6 +10012,63 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   )}
                 </>);
               })()}
+            </Pane>
+          </>);
+        })()}
+
+        {page === "niet-pilot" && user.pilotAccess && (() => {
+          const pilotSet = state.settings?.pilotQuestionSets?.find(s => s.id === user.pilotSetId);
+          const questions = pilotSet?.questions || [];
+          const remaining = PILOT_DAILY_LIMIT - pilotUsageCount;
+          const NP_AVATAR = <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0071E3,#6B47DC)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0, letterSpacing: "0.02em" }}>NP</div>;
+          return (<>
+            <Header title="NIET Pilot" sub="Select a question to get an AI-powered answer" />
+            <Pane>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(135deg,#0071E3,#6B47DC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800 }}>NP</div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800 }}>NIET Pilot</div>
+                    <div style={{ fontSize: 12, color: T.textMuted }}>AI-powered OKR analytics</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: remaining > 0 ? T.textMuted : T.bad, background: remaining > 0 ? T.raised : T.badDim, border: `1px solid ${remaining > 0 ? T.border : T.badBorder}`, borderRadius: 8, padding: "4px 12px", fontWeight: 600 }}>
+                  {remaining > 0 ? `${remaining}/${PILOT_DAILY_LIMIT} uses left today` : "Daily limit reached"}
+                </div>
+              </div>
+              {!pilotSet && <div style={{ padding: "16px", background: T.raised, borderRadius: 8, fontSize: 13, color: T.textMuted, marginBottom: 20 }}>No question set assigned to your account. Please contact your administrator.</div>}
+              {pilotSet && questions.length === 0 && <div style={{ padding: "16px", background: T.raised, borderRadius: 8, fontSize: 13, color: T.textMuted, marginBottom: 20 }}>This question set has no questions yet.</div>}
+              {questions.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 24 }}>
+                  {questions.map((q, i) => (
+                    <button key={i} onClick={() => remaining > 0 && sendPilotQuestion(q)} disabled={remaining <= 0 || pilotLoading}
+                      style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", textAlign: "left", cursor: remaining > 0 && !pilotLoading ? "pointer" : "not-allowed", fontFamily: F.body, fontSize: 13, color: remaining > 0 && !pilotLoading ? T.text : T.textMuted, lineHeight: 1.5, opacity: remaining <= 0 || pilotLoading ? 0.55 : 1 }}
+                      onMouseEnter={e => { if (remaining > 0 && !pilotLoading) { e.currentTarget.style.borderColor = T.brandBorder; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.brandDim}`; } }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "none"; }}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {pilotLoading && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "16px 0" }}>
+                  {NP_AVATAR}
+                  <div style={{ padding: "14px 18px", borderRadius: "5px 20px 20px 20px", background: T.surface, border: `1px solid ${T.border}`, display: "flex", gap: 5, alignItems: "center" }}>
+                    {[0,1,2].map(n => <div key={n} style={{ width: 7, height: 7, borderRadius: "50%", background: T.brand, opacity: 0.35 + n * 0.3 }} />)}
+                  </div>
+                </div>
+              )}
+              {!pilotLoading && pilotResponse && (
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", background: T.raised, borderBottom: `1px solid ${T.border}`, fontSize: 13, fontWeight: 600, color: T.textSoft }}>Q: {pilotResponse.question}</div>
+                  <div style={{ display: "flex", gap: 10, padding: "14px 16px", alignItems: "flex-start" }}>
+                    {NP_AVATAR}
+                    <div style={{ fontSize: 14, lineHeight: 1.65, color: T.text, flex: 1, minWidth: 0 }}>
+                      {pilotResponse.answer ? <MdMsg text={pilotResponse.answer} /> : <span style={{ color: T.textMuted }}>Loading…</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
             </Pane>
           </>);
         })()}
