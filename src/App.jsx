@@ -710,6 +710,14 @@ function CountBadge({ count, color }) {
 
 function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems, subItemsFor, activeSubItem, onSelectSubItem }) {
   const { isMobile, drawerOpen, setDrawerOpen } = useContext(MobileContext);
+  const [openGroups, setOpenGroups] = useState(() => {
+    const open = new Set();
+    items.forEach(item => {
+      if (item.type === "group" && item.children?.some(c => c.id === active)) open.add(item.id);
+    });
+    return open;
+  });
+  const toggleGroup = id => setOpenGroups(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   return (
     <>
       {isMobile && drawerOpen && (
@@ -738,45 +746,86 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
         </div>
       </div>
       <div style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
-        {items.map(item => (
-          <div key={item.id}>
-            <button onClick={() => { onSelect(item.id); if (isMobile) setDrawerOpen(false); }} style={{
-              background: active === item.id ? "rgba(0,113,227,0.12)" : "transparent",
-              borderTop: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
-              borderRight: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
-              borderBottom: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
-              borderLeft: active === item.id ? `3px solid ${T.brand}` : "1px solid transparent",
-              borderRadius: 9, padding: "9px 12px", cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 9,
-              color: active === item.id ? T.brand : T.textMuted,
-              fontSize: 14, fontWeight: active === item.id ? 600 : 400, textAlign: "left", width: "100%",
-              transition: "all 0.12s", fontFamily: F.body, letterSpacing: "-0.01em",
-            }}>
-              <span style={{ fontSize: 15, width: 18, textAlign: "center", flexShrink: 0, opacity: active === item.id ? 1 : 0.6 }}>{item.icon}</span>
-              <span style={{ flex: 1 }}>{item.label}</span>
-              {item.id === subItemsFor && subItems && <span style={{ fontSize: 10, opacity: 0.6 }}>{active === item.id ? "▾" : "▸"}</span>}
-              {pendingCounts?.[item.id] > 0 && <CountBadge count={pendingCounts[item.id]} />}
-            </button>
-            {active === item.id && item.id === subItemsFor && subItems && (
-              <div style={{ paddingLeft: 10, marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
-                {subItems.map(sub => (
-                  <button key={sub.id} onClick={() => { onSelectSubItem(sub.id); if (isMobile) setDrawerOpen(false); }} style={{
-                    background: activeSubItem === sub.id ? T.brandDim : "transparent",
-                    border: activeSubItem === sub.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
-                    borderRadius: 7, padding: "7px 10px", cursor: "pointer",
-                    display: "flex", alignItems: "center", gap: 7,
-                    color: activeSubItem === sub.id ? T.brand : T.textMuted,
-                    fontSize: 13, fontWeight: activeSubItem === sub.id ? 600 : 400, textAlign: "left", width: "100%",
-                    fontFamily: F.body, letterSpacing: "-0.01em",
-                  }}>
-                    <span style={{ fontSize: 12, width: 16, textAlign: "center", flexShrink: 0, opacity: 0.5 }}>{sub.icon || "·"}</span>
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.label}</span>
-                  </button>
-                ))}
+        {items.map(item => {
+          if (item.type === "group") {
+            const isChildActive = item.children?.some(c => c.id === active);
+            const isOpen = openGroups.has(item.id);
+            return (
+              <div key={item.id}>
+                <button onClick={() => toggleGroup(item.id)} style={{
+                  background: isChildActive ? "rgba(0,113,227,0.08)" : "transparent",
+                  border: "1px solid transparent",
+                  borderRadius: 9, padding: "9px 12px", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 9,
+                  color: isChildActive ? T.brand : T.textMuted,
+                  fontSize: 14, fontWeight: isChildActive ? 600 : 400, textAlign: "left", width: "100%",
+                  transition: "all 0.12s", fontFamily: F.body, letterSpacing: "-0.01em",
+                }}>
+                  <span style={{ fontSize: 15, width: 18, textAlign: "center", flexShrink: 0, opacity: isChildActive ? 1 : 0.6 }}>{item.icon}</span>
+                  <span style={{ flex: 1 }}>{item.label}</span>
+                  <span style={{ fontSize: 10, opacity: 0.6 }}>{isOpen ? "▾" : "▸"}</span>
+                </button>
+                {isOpen && (
+                  <div style={{ paddingLeft: 10, marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                    {(item.children || []).map(child => (
+                      <button key={child.id} onClick={() => { onSelect(child.id); if (isMobile) setDrawerOpen(false); }} style={{
+                        background: active === child.id ? T.brandDim : "transparent",
+                        border: active === child.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+                        borderRadius: 7, padding: "7px 10px", cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: 7,
+                        color: active === child.id ? T.brand : T.textMuted,
+                        fontSize: 13, fontWeight: active === child.id ? 600 : 400, textAlign: "left", width: "100%",
+                        fontFamily: F.body, letterSpacing: "-0.01em",
+                      }}>
+                        <span style={{ fontSize: 12, width: 16, textAlign: "center", flexShrink: 0, opacity: 0.5 }}>{child.icon || "·"}</span>
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{child.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ))}
+            );
+          }
+          return (
+            <div key={item.id}>
+              <button onClick={() => { onSelect(item.id); if (isMobile) setDrawerOpen(false); }} style={{
+                background: active === item.id ? "rgba(0,113,227,0.12)" : "transparent",
+                borderTop: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+                borderRight: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+                borderBottom: active === item.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+                borderLeft: active === item.id ? `3px solid ${T.brand}` : "1px solid transparent",
+                borderRadius: 9, padding: "9px 12px", cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 9,
+                color: active === item.id ? T.brand : T.textMuted,
+                fontSize: 14, fontWeight: active === item.id ? 600 : 400, textAlign: "left", width: "100%",
+                transition: "all 0.12s", fontFamily: F.body, letterSpacing: "-0.01em",
+              }}>
+                <span style={{ fontSize: 15, width: 18, textAlign: "center", flexShrink: 0, opacity: active === item.id ? 1 : 0.6 }}>{item.icon}</span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+                {item.id === subItemsFor && subItems && <span style={{ fontSize: 10, opacity: 0.6 }}>{active === item.id ? "▾" : "▸"}</span>}
+                {pendingCounts?.[item.id] > 0 && <CountBadge count={pendingCounts[item.id]} />}
+              </button>
+              {active === item.id && item.id === subItemsFor && subItems && (
+                <div style={{ paddingLeft: 10, marginTop: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                  {subItems.map(sub => (
+                    <button key={sub.id} onClick={() => { onSelectSubItem(sub.id); if (isMobile) setDrawerOpen(false); }} style={{
+                      background: activeSubItem === sub.id ? T.brandDim : "transparent",
+                      border: activeSubItem === sub.id ? `1px solid ${T.brandBorder}` : "1px solid transparent",
+                      borderRadius: 7, padding: "7px 10px", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 7,
+                      color: activeSubItem === sub.id ? T.brand : T.textMuted,
+                      fontSize: 13, fontWeight: activeSubItem === sub.id ? 600 : 400, textAlign: "left", width: "100%",
+                      fontFamily: F.body, letterSpacing: "-0.01em",
+                    }}>
+                      <span style={{ fontSize: 12, width: 16, textAlign: "center", flexShrink: 0, opacity: 0.5 }}>{sub.icon || "·"}</span>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       <div style={{ padding: "10px 8px 14px", borderTop: `1px solid ${T.border}` }}>
         <button onClick={onLogout} style={{ background: "none", border: "none", borderRadius: 9, padding: "9px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 9, color: T.textMuted, fontSize: 14, width: "100%", fontFamily: F.body, letterSpacing: "-0.01em" }}>
@@ -7020,7 +7069,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "members",      icon: "⬡", label: "Edit Member KPIs"     },
     { id: "reports",      icon: "⬡", label: "OKR Reports"          },
     ...(user.financeAccess ? [{ id: "financial", icon: "⬡", label: "Financial Performance" }] : []),
-    ...(dept?.admissionsAccess ? [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] : []),
+    ...(dept?.admissionsAccess ? [{ id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] }] : []),
     ...(user.pilotAccess ? [{ id: "niet-pilot", icon: "⬡", label: "NIET Pilot" }] : []),
   ];
 
@@ -8573,7 +8622,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "reports",      icon: "⬡", label: "OKR Reports"      },
     ...(designatedApproveeIds.length > 0 ? [{ id: "approvals", icon: "⬡", label: "Approvals" }] : []),
     ...(user.projectAccess ? [{ id: "projects", icon: "⬡", label: "Projects" }] : []),
-    ...(myDept?.admissionsAccess ? [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] : []),
+    ...(myDept?.admissionsAccess ? [{ id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] }] : []),
     ...(user.pilotAccess ? [{ id: "niet-pilot", icon: "⬡", label: "NIET Pilot" }] : []),
   ];
 
