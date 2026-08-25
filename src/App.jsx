@@ -2903,12 +2903,20 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       coeSection = [`COE RECORDS: ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records (NIET/CB/Rhodes + Educare combined)`, coeByWeek.join("\n")].join("\n");
     }
 
+    const plRawSection = plRecords.length === 0
+      ? "P&L MONTHLY RECORDS: None uploaded yet."
+      : `P&L MONTHLY RECORDS (${plRecords.length} record(s) — source of Financial Performance data):\n` +
+        [...plRecords].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto))
+          .map(r => `  ${r.month} | ${r.rto}: Trading Income ${fmtMoney(r.tradingIncome)}, Other Income ${fmtMoney(r.otherIncome)}, Total Income ${fmtMoney((r.tradingIncome||0)+(r.otherIncome||0))}, Expenses ${fmtMoney(r.totalExpenses)}, Net Profit ${fmtMoney(r.netProfit)}`)
+          .join("\n");
+
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
       `\nMEMBER DETAILS (current month):\n${memberSection}`,
       reportSection ? `\n${reportSection}` : "",
       `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
+      `\n${plRawSection}`,
       `\n${pendingSection}`,
       `\n${projectSection}`,
       `\n${enrolmentSection}`,
@@ -7223,12 +7231,20 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     });
     coeSection = [`COE RECORDS: ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records (NIET/CB/Rhodes + Educare combined)`, coeByWeek.join("\n")].join("\n");
   }
+  const plRawSection = plRecords.length === 0
+    ? "P&L MONTHLY RECORDS: None uploaded yet."
+    : `P&L MONTHLY RECORDS (${plRecords.length} record(s) — source of Financial Performance data):\n` +
+      [...plRecords].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto))
+        .map(r => `  ${r.month} | ${r.rto}: Trading Income ${fmtMoney(r.tradingIncome)}, Other Income ${fmtMoney(r.otherIncome)}, Total Income ${fmtMoney((r.tradingIncome||0)+(r.otherIncome||0))}, Expenses ${fmtMoney(r.totalExpenses)}, Net Profit ${fmtMoney(r.netProfit)}`)
+        .join("\n");
+
   return [
     `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
     `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
     `\nMEMBER DETAILS (current month):\n${memberSection}`,
     reportSection ? `\n${reportSection}` : "",
     `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
+    `\n${plRawSection}`,
     `\n${pendingSection}`,
     `\n${projectSection}`,
     `\n${enrolmentSection}`,
