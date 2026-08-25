@@ -6920,23 +6920,25 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
 async function plParseFile(file) {
   const { default: readXlsxFile } = await import("read-excel-file/browser");
   const rows = await readXlsxFile(file);
-  // Detect company name (scan first 5 rows)
+  // Detect company name and month — scan all cells in first 15 rows
   let rto = null;
   let month = null;
-  for (let i = 0; i < Math.min(5, rows.length); i++) {
-    const cell = String(rows[i]?.[0] || "").toLowerCase();
-    if (!rto) {
-      if (cell.includes("australia academy") || cell.includes("aai")) rto = "NIET";
-      else if (cell.includes("charlton") || cell.includes("charlton brown")) rto = "CB";
-      else if (cell.includes("educare")) rto = "Educare";
-      else if (cell.includes("rhodes")) rto = "Rhodes";
-    }
-    if (!month) {
-      const m = cell.match(/for the month ended\s+\d+\s+(\w+)\s+(\d{4})/);
-      if (m) {
-        const MONTHS = { january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12 };
-        const mn = MONTHS[m[1].toLowerCase()];
-        if (mn) month = `${m[2]}-${String(mn).padStart(2,"0")}`;
+  const MONTHS_MAP = { january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12 };
+  for (let i = 0; i < Math.min(15, rows.length); i++) {
+    const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
+    for (const cell of cells) {
+      if (!rto) {
+        if (cell.includes("australia academy") || cell.includes(" aai") || cell.startsWith("aai")) rto = "NIET";
+        else if (cell.includes("charlton")) rto = "CB";
+        else if (cell.includes("educare")) rto = "Educare";
+        else if (cell.includes("rhodes")) rto = "Rhodes";
+      }
+      if (!month) {
+        const m = cell.match(/for the month ended\s+\d*\s*(\w+)\s+(\d{4})/);
+        if (m) {
+          const mn = MONTHS_MAP[m[1].toLowerCase()];
+          if (mn) month = `${m[2]}-${String(mn).padStart(2,"0")}`;
+        }
       }
     }
   }
