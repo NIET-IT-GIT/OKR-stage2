@@ -13,6 +13,15 @@ export default async function handler(req, res) {
 
   const { to, name, period, periodKey, dateRange, krs, sections, template = {}, overdueSubs = [] } = req.body || {};
 
+  // Restrict recipients to known org domains — prevents open relay abuse
+  const ALLOWED_DOMAINS = ["niet.edu.au", "charltonbrown.edu.au", "educare.edu.au", "rhodes.edu.au"];
+  const toAddresses = Array.isArray(to) ? to : [to];
+  const invalidRecipient = toAddresses.some(addr => {
+    const domain = (typeof addr === "string" ? addr : "").split("@")[1]?.toLowerCase();
+    return !domain || !ALLOWED_DOMAINS.includes(domain);
+  });
+  if (invalidRecipient) { res.status(403).json({ error: "Recipient domain not allowed" }); return; }
+
   // Normalize to sections array — backward compat: old flat krs[] becomes a single section
   const emailSections = sections?.length ? sections : (krs?.length ? [{ period, periodKey, dateRange, krs }] : null);
   if (!to || !emailSections?.length) { res.status(400).json({ error: "Missing required fields" }); return; }
