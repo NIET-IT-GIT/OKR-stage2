@@ -3050,7 +3050,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     { id: "submissions",      icon: "⬡", label: "OKR Submissions"   },
     { id: "reports",          icon: "⬡", label: "OKR Reports"       },
     { id: "projects",         icon: "⬡", label: "Projects"          },
-    { id: "pl-reports",       icon: "⬡", label: "P&L Reports"        },
+    { id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "financial", icon: "⬡", label: "Financial Performance" }] },
     { id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] },
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
     { id: "users",            icon: "⬡", label: "User Management"   },
@@ -6123,6 +6123,15 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           </>);
         })()}
 
+        {page === "financial" && (<>
+          <Header title="Financial Performance" sub={`Income, Net Profit and Expenses tracking — FY${(() => { const m = new Date().getMonth() + 1; const y = new Date().getFullYear(); return m >= 7 ? y + 1 : y; })()}`} />
+          <Pane>
+            <FinErrorBoundary>
+              <FinancialPerformancePage state={state} dispatch={dispatch} plRecords={plRecords} />
+            </FinErrorBoundary>
+          </Pane>
+        </>)}
+
         {page === "leaderboard" && (<>
           <Header title="Company Leaderboard" sub={`All staff ranked by OKR completion · ${currentFYQuarter()}`} />
           <Pane>
@@ -7279,6 +7288,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [mgrPlRecords, setMgrPlRecords] = useState([]);
   const [mgrPlLoaded, setMgrPlLoaded] = useState(false);
   const [mgrPlLoading, setMgrPlLoading] = useState(false);
+  const [mgrPlTab, setMgrPlTab] = useState("overview");
   useEffect(() => {
     if (!mgrPlLoaded && !mgrPlLoading) {
       setMgrPlLoading(true);
@@ -7427,7 +7437,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "projects",     icon: "⬡", label: "Projects"             },
     { id: "members",      icon: "⬡", label: "Edit Member KPIs"     },
     { id: "reports",      icon: "⬡", label: "OKR Reports"          },
-    ...(user.financeAccess ? [{ id: "financial", icon: "⬡", label: "Financial Performance" }] : []),
+    ...(user.financeAccess ? [{ id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "pl-reports", icon: "⬡", label: "P&L Reports" }] }] : []),
     ...(dept?.admissionsAccess ? [{ id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] }] : []),
     ...(user.pilotAccess ? [{ id: "niet-pilot", icon: "⬡", label: "NIET Pilot" }] : []),
   ];
@@ -8412,6 +8422,119 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             </FinErrorBoundary>
           </Pane>
         </>)}
+
+        {page === "pl-reports" && user.financeAccess && (() => {
+          const RTO_LABELS = ["NIET", "CB", "Educare", "Rhodes"];
+          const FMT_MONEY = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+          const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+          const tdCss = { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
+          const sorted = [...mgrPlRecords].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto));
+          const byMonth = {};
+          for (const r of mgrPlRecords) { if (!byMonth[r.month]) byMonth[r.month] = {}; byMonth[r.month][r.rto] = r; }
+          const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+          return (<>
+            <Header title="P&L Reports" sub="Monthly Profit & Loss by RTO — imported from Xero exports" />
+            <Pane>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
+                {[["overview","Overview"],["data","Line Items"]].map(([v, label]) => (
+                  <Btn key={v} small primary={mgrPlTab === v} onClick={() => setMgrPlTab(v)}>{label}</Btn>
+                ))}
+              </div>
+              {!mgrPlLoaded && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading P&L data…</div>}
+              {mgrPlLoaded && mgrPlRecords.length === 0 && <div style={{ padding: "32px 0", textAlign: "center", color: T.textMuted, fontSize: 14 }}>No P&L data available yet.</div>}
+              {mgrPlLoaded && mgrPlTab === "overview" && months.map(m => {
+                const rtos = byMonth[m];
+                const totals = { tradingIncome: 0, otherIncome: 0, totalExpenses: 0, netProfit: 0 };
+                RTO_LABELS.forEach(r => { if (rtos[r]) { totals.tradingIncome += rtos[r].tradingIncome; totals.otherIncome += rtos[r].otherIncome; totals.totalExpenses += rtos[r].totalExpenses; totals.netProfit += rtos[r].netProfit; } });
+                const visRtos = RTO_LABELS.filter(r => rtos[r]);
+                if (!visRtos.length) return null;
+                const totalIncome = visRtos.reduce((s, r) => s + rtos[r].tradingIncome + rtos[r].otherIncome, 0);
+                const totalExp = visRtos.reduce((s, r) => s + rtos[r].totalExpenses, 0);
+                const netP = visRtos.reduce((s, r) => s + rtos[r].netProfit, 0);
+                return (
+                  <div key={m} style={{ marginBottom: 28 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>{m}</div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+                      <Metric label="Total Income" value={FMT_MONEY(totalIncome)} status="green" />
+                      <Metric label="Total Expenses" value={FMT_MONEY(totalExp)} />
+                      <Metric label="Net Profit" value={FMT_MONEY(netP)} status={netP >= 0 ? "green" : "red"} />
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <thead><tr>
+                          <th style={thCss}>RTO</th>
+                          <th style={{ ...thCss, textAlign: "right" }}>Trading Income</th>
+                          <th style={{ ...thCss, textAlign: "right" }}>Other Income</th>
+                          <th style={{ ...thCss, textAlign: "right" }}>Expenses</th>
+                          <th style={{ ...thCss, textAlign: "right" }}>Net Profit</th>
+                        </tr></thead>
+                        <tbody>
+                          {visRtos.map(r => {
+                            const rec = rtos[r];
+                            return (
+                              <tr key={r}>
+                                <td style={{ ...tdCss, fontWeight: 600 }}>{r}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: T.ok }}>{FMT_MONEY(rec.tradingIncome)}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono }}>{FMT_MONEY(rec.otherIncome)}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: T.bad }}>{FMT_MONEY(rec.totalExpenses)}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
+                              </tr>
+                            );
+                          })}
+                          {visRtos.length > 1 && (
+                            <tr style={{ background: T.raised }}>
+                              <td style={{ ...tdCss, fontWeight: 800, borderBottom: "none" }}>Total</td>
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.ok, borderBottom: "none" }}>{FMT_MONEY(totals.tradingIncome)}</td>
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, borderBottom: "none" }}>{FMT_MONEY(totals.otherIncome)}</td>
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.bad, borderBottom: "none" }}>{FMT_MONEY(totals.totalExpenses)}</td>
+                              <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: totals.netProfit >= 0 ? T.ok : T.bad, borderBottom: "none" }}>{FMT_MONEY(totals.netProfit)}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+              {mgrPlLoaded && mgrPlTab === "data" && (() => {
+                if (!sorted.length) return <div style={{ padding: "32px 0", textAlign: "center", color: T.textMuted, fontSize: 14 }}>No records.</div>;
+                return sorted.map(rec => (
+                  <div key={rec.id} style={{ marginBottom: 28 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>{rec.rto} · {rec.month}</div>
+                    {[["trading_income","Trading Income"],["other_income","Other Income"],["expenses","Operating Expenses"]].map(([cat, catLabel]) => {
+                      const items = rec.lineItems.filter(i => i.category === cat);
+                      if (!items.length) return null;
+                      return (
+                        <div key={cat} style={{ marginBottom: 16 }}>
+                          <SectionLabel>{catLabel}</SectionLabel>
+                          <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                              <tbody>
+                                {items.map((item, idx) => (
+                                  <tr key={idx}>
+                                    <td style={{ ...tdCss, color: T.textMuted, fontFamily: F.mono, fontSize: 12 }}>{item.account}</td>
+                                    <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontSize: 12, color: cat === "expenses" ? T.bad : T.ok }}>{FMT_MONEY(item.amount)}</td>
+                                  </tr>
+                                ))}
+                                <tr style={{ background: T.raised }}>
+                                  <td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Subtotal</td>
+                                  <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: cat === "expenses" ? T.bad : T.ok, borderBottom: "none" }}>{FMT_MONEY(items.reduce((s, i) => s + i.amount, 0))}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
+                      <Metric label="Net Profit" value={FMT_MONEY(rec.netProfit)} status={rec.netProfit >= 0 ? "green" : "red"} />
+                    </div>
+                  </div>
+                ));
+              })()}
+            </Pane>
+          </>);
+        })()}
 
         {page === "reports" && (<>
           <Header title="OKR Reports" sub="Published company-wide reports — visible to all teams" />
