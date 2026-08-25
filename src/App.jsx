@@ -5876,12 +5876,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         {page === "pl-reports" && (() => {
           const RTO_LABELS = ["NIET", "CB", "Educare", "Rhodes"];
           const FMT_MONEY = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+          const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+          const tdCss = { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13 };
+          const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
           const filtered = plFilterRto === "all" ? plRecords : plRecords.filter(r => r.rto === plFilterRto);
-          // Sort by month desc then rto
           const sorted = [...filtered].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto));
-          // Group by month for overview
           const byMonth = {};
-          for (const r of sorted) { if (!byMonth[r.month]) byMonth[r.month] = {}; byMonth[r.month][r.rto] = r; }
+          for (const r of plRecords) { if (!byMonth[r.month]) byMonth[r.month] = {}; byMonth[r.month][r.rto] = r; }
           const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
 
           const handlePlFile = async e => {
@@ -5917,175 +5918,183 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
 
           return (<>
             <Header title="P&L Reports" sub="Monthly Profit & Loss by RTO — imported from Xero exports" />
-            {/* Upload strip */}
             <Pane>
-              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                <label style={{ cursor: "pointer", display: "inline-block", padding: "6px 14px", borderRadius: 6, background: T.raised, border: `1px solid ${T.border}`, color: T.text, fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>
-                  Upload Excel (.xlsx)
-                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handlePlFile} />
-                </label>
-                {plParsed && (
-                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ color: T.textMuted, fontSize: 13 }}>
-                      Detected: <strong style={{ color: T.text }}>{plParsed.rto}</strong> · <strong style={{ color: T.text }}>{plParsed.month}</strong> · {plParsed.lineItems.length} line items
-                    </span>
-                    <Btn onClick={handlePlImport} disabled={plImporting} style={{ background: T.ok, color: "#fff" }}>
-                      {plImporting ? "Importing…" : "Confirm Import"}
-                    </Btn>
-                    <Btn onClick={() => setPlParsed(null)}>Cancel</Btn>
-                  </div>
-                )}
-                {plError && <span style={{ color: T.bad, fontSize: 13 }}>{plError}</span>}
+              {plError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5 }}>{plError}</div>}
+              {/* Tabs row */}
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
+                {[["overview","Overview"],["data","Line Items"],["imports","Imports"]].map(([v, label]) => (
+                  <Btn key={v} small primary={plTab === v} onClick={() => setPlTab(v)}>{label}</Btn>
+                ))}
+                <div style={{ flex: 1 }} />
+                <select value={plFilterRto} onChange={e => setPlFilterRto(e.target.value)} style={selCss}>
+                  <option value="all">All RTOs</option>
+                  {RTO_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
               </div>
-            </Pane>
-            {/* Tabs + filter */}
-            <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "14px 0 6px", flexWrap: "wrap" }}>
-              {["overview","data","imports"].map(t => (
-                <Btn key={t} onClick={() => setPlTab(t)}
-                  style={{ background: plTab === t ? T.brand : T.raised, color: plTab === t ? "#fff" : T.text, textTransform: "capitalize" }}>
-                  {t === "overview" ? "Overview" : t === "data" ? "Line Items" : "Import History"}
-                </Btn>
-              ))}
-              <select value={plFilterRto} onChange={e => setPlFilterRto(e.target.value)}
-                style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.raised, color: T.text, fontSize: 13 }}>
-                <option value="all">All RTOs</option>
-                {RTO_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            {/* Loading */}
-            {!plLoaded && <EmptyState icon="⏳" title="Loading P&L data…" />}
-            {plLoaded && plRecords.length === 0 && plTab !== "imports" && (
-              <EmptyState icon="📊" title="No P&L records yet" sub="Upload a Xero P&L Excel export above to get started." />
-            )}
-            {/* OVERVIEW TAB */}
-            {plLoaded && plTab === "overview" && months.length > 0 && (() => {
-              return months.map(m => {
-                const rtos = byMonth[m];
-                const totals = { tradingIncome: 0, otherIncome: 0, totalExpenses: 0, netProfit: 0 };
-                RTO_LABELS.forEach(r => { if (rtos[r]) { totals.tradingIncome += rtos[r].tradingIncome; totals.otherIncome += rtos[r].otherIncome; totals.totalExpenses += rtos[r].totalExpenses; totals.netProfit += rtos[r].netProfit; }});
-                const visibleRtos = plFilterRto === "all" ? RTO_LABELS.filter(r => rtos[r]) : RTO_LABELS.filter(r => r === plFilterRto && rtos[r]);
-                if (!visibleRtos.length) return null;
-                return (
-                  <Pane key={m}>
-                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>{m}</div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F.mono }}>
-                        <thead>
-                          <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                            <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.textMuted, fontWeight: 500 }}>RTO</th>
-                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Trading Income</th>
-                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Other Income</th>
-                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Total Expenses</th>
-                            <th style={{ textAlign: "right", padding: "4px 0 4px 8px", color: T.textMuted, fontWeight: 500 }}>Net Profit</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {visibleRtos.map(r => {
-                            const rec = rtos[r];
-                            return (
-                              <tr key={r} style={{ borderBottom: `1px solid ${T.border}` }}>
-                                <td style={{ padding: "6px 10px 6px 0", fontWeight: 600 }}>{r}</td>
-                                <td style={{ textAlign: "right", padding: "6px 8px", color: T.ok }}>{FMT_MONEY(rec.tradingIncome)}</td>
-                                <td style={{ textAlign: "right", padding: "6px 8px" }}>{FMT_MONEY(rec.otherIncome)}</td>
-                                <td style={{ textAlign: "right", padding: "6px 8px", color: T.bad }}>{FMT_MONEY(rec.totalExpenses)}</td>
-                                <td style={{ textAlign: "right", padding: "6px 0 6px 8px", fontWeight: 700, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
-                              </tr>
-                            );
-                          })}
-                          {plFilterRto === "all" && visibleRtos.length > 1 && (
-                            <tr style={{ borderTop: `2px solid ${T.border}`, background: T.raised }}>
-                              <td style={{ padding: "6px 10px 6px 0", fontWeight: 700 }}>Total</td>
-                              <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700, color: T.ok }}>{FMT_MONEY(totals.tradingIncome)}</td>
-                              <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700 }}>{FMT_MONEY(totals.otherIncome)}</td>
-                              <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700, color: T.bad }}>{FMT_MONEY(totals.totalExpenses)}</td>
-                              <td style={{ textAlign: "right", padding: "6px 0 6px 8px", fontWeight: 700, color: totals.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(totals.netProfit)}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </Pane>
-                );
-              });
-            })()}
-            {/* DATA (LINE ITEMS) TAB */}
-            {plLoaded && plTab === "data" && (() => {
-              if (sorted.length === 0) return <EmptyState icon="📋" title="No records match filter" />;
-              return sorted.map(rec => (
-                <Pane key={rec.id}>
-                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{rec.rto} · {rec.month}</div>
-                  {["trading_income","other_income","expenses"].map(cat => {
-                    const items = rec.lineItems.filter(i => i.category === cat);
-                    if (!items.length) return null;
-                    const catLabel = cat === "trading_income" ? "Trading Income" : cat === "other_income" ? "Other Income" : "Operating Expenses";
-                    return (
-                      <div key={cat} style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>{catLabel}</div>
-                        <div style={{ overflowX: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: F.mono }}>
-                            <tbody>
-                              {items.map((item, idx) => (
-                                <tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}>
-                                  <td style={{ padding: "3px 8px 3px 0", color: T.textMuted }}>{item.account}</td>
-                                  <td style={{ textAlign: "right", padding: "3px 0 3px 8px", color: cat === "expenses" ? T.bad : T.ok }}>{FMT_MONEY(item.amount)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+
+              {plLoading && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading P&L data…</div>}
+
+              {/* OVERVIEW TAB */}
+              {!plLoading && plTab === "overview" && (() => {
+                if (months.length === 0) return <div style={{ padding: "32px 0", textAlign: "center", color: T.textMuted, fontSize: 14 }}>No P&L records yet. Go to Imports to upload a file.</div>;
+                const visMonths = plFilterRto === "all" ? months : months.filter(m => byMonth[m][plFilterRto]);
+                return visMonths.map(m => {
+                  const rtos = byMonth[m];
+                  const totals = { tradingIncome: 0, otherIncome: 0, totalExpenses: 0, netProfit: 0 };
+                  RTO_LABELS.forEach(r => { if (rtos[r]) { totals.tradingIncome += rtos[r].tradingIncome; totals.otherIncome += rtos[r].otherIncome; totals.totalExpenses += rtos[r].totalExpenses; totals.netProfit += rtos[r].netProfit; }});
+                  const visRtos = plFilterRto === "all" ? RTO_LABELS.filter(r => rtos[r]) : [plFilterRto].filter(r => rtos[r]);
+                  if (!visRtos.length) return null;
+                  const metricRecs = visRtos.map(r => rtos[r]);
+                  const totalIncome = metricRecs.reduce((s, r) => s + r.tradingIncome + r.otherIncome, 0);
+                  const totalExp = metricRecs.reduce((s, r) => s + r.totalExpenses, 0);
+                  const netP = metricRecs.reduce((s, r) => s + r.netProfit, 0);
+                  return (
+                    <div key={m} style={{ marginBottom: 28 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>{m}</div>
+                      {plFilterRto === "all" && (
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+                          <Metric label="Total Income" value={FMT_MONEY(totalIncome)} status="green" />
+                          <Metric label="Total Expenses" value={FMT_MONEY(totalExp)} />
+                          <Metric label="Net Profit" value={FMT_MONEY(netP)} status={netP >= 0 ? "green" : "red"} />
                         </div>
+                      )}
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                          <thead><tr>
+                            <th style={thCss}>RTO</th>
+                            <th style={{ ...thCss, textAlign: "right" }}>Trading Income</th>
+                            <th style={{ ...thCss, textAlign: "right" }}>Other Income</th>
+                            <th style={{ ...thCss, textAlign: "right" }}>Expenses</th>
+                            <th style={{ ...thCss, textAlign: "right" }}>Net Profit</th>
+                          </tr></thead>
+                          <tbody>
+                            {visRtos.map(r => {
+                              const rec = rtos[r];
+                              return (
+                                <tr key={r}>
+                                  <td style={{ ...tdCss, fontWeight: 600 }}>{r}</td>
+                                  <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: T.ok }}>{FMT_MONEY(rec.tradingIncome)}</td>
+                                  <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono }}>{FMT_MONEY(rec.otherIncome)}</td>
+                                  <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, color: T.bad }}>{FMT_MONEY(rec.totalExpenses)}</td>
+                                  <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
+                                </tr>
+                              );
+                            })}
+                            {plFilterRto === "all" && visRtos.length > 1 && (
+                              <tr style={{ background: T.raised }}>
+                                <td style={{ ...tdCss, fontWeight: 800, borderBottom: "none" }}>Total</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.ok, borderBottom: "none" }}>{FMT_MONEY(totals.tradingIncome)}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, borderBottom: "none" }}>{FMT_MONEY(totals.otherIncome)}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: T.bad, borderBottom: "none" }}>{FMT_MONEY(totals.totalExpenses)}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: totals.netProfit >= 0 ? T.ok : T.bad, borderBottom: "none" }}>{FMT_MONEY(totals.netProfit)}</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
-                    );
-                  })}
-                  <div style={{ display: "flex", gap: 20, marginTop: 8, fontWeight: 700, fontSize: 13, fontFamily: F.mono, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
-                    <span>Net Profit: <span style={{ color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</span></span>
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* LINE ITEMS TAB */}
+              {!plLoading && plTab === "data" && (() => {
+                if (sorted.length === 0) return <div style={{ padding: "32px 0", textAlign: "center", color: T.textMuted, fontSize: 14 }}>No records match the current filter.</div>;
+                return sorted.map(rec => (
+                  <div key={rec.id} style={{ marginBottom: 28 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>{rec.rto} · {rec.month}</div>
+                    {[["trading_income","Trading Income"],["other_income","Other Income"],["expenses","Operating Expenses"]].map(([cat, catLabel]) => {
+                      const items = rec.lineItems.filter(i => i.category === cat);
+                      if (!items.length) return null;
+                      return (
+                        <div key={cat} style={{ marginBottom: 16 }}>
+                          <SectionLabel>{catLabel}</SectionLabel>
+                          <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                              <tbody>
+                                {items.map((item, idx) => (
+                                  <tr key={idx}>
+                                    <td style={{ ...tdCss, color: T.textMuted, fontFamily: F.mono, fontSize: 12 }}>{item.account}</td>
+                                    <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontSize: 12, color: cat === "expenses" ? T.bad : T.ok }}>{FMT_MONEY(item.amount)}</td>
+                                  </tr>
+                                ))}
+                                <tr style={{ background: T.raised }}>
+                                  <td style={{ ...tdCss, fontWeight: 700, borderBottom: "none" }}>Subtotal</td>
+                                  <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: cat === "expenses" ? T.bad : T.ok, borderBottom: "none" }}>{FMT_MONEY(items.reduce((s, i) => s + i.amount, 0))}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
+                      <Metric label="Net Profit" value={FMT_MONEY(rec.netProfit)} status={rec.netProfit >= 0 ? "green" : "red"} />
+                    </div>
                   </div>
-                </Pane>
-              ));
-            })()}
-            {/* IMPORTS TAB */}
-            {plLoaded && plTab === "imports" && (() => {
-              const allSorted = [...plRecords].sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
-              if (!allSorted.length) return <EmptyState icon="📥" title="No imports yet" />;
-              return (
-                <Pane>
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                      <thead>
-                        <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                          <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.textMuted, fontWeight: 500 }}>Month</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>RTO</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>File</th>
-                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Net Profit</th>
-                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Uploaded</th>
-                          <th style={{ padding: "4px 0 4px 8px" }}></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {allSorted.map(rec => (
-                          <tr key={rec.id} style={{ borderBottom: `1px solid ${T.border}` }}>
-                            <td style={{ padding: "6px 10px 6px 0" }}>{rec.month}</td>
-                            <td style={{ padding: "6px 8px" }}>{rec.rto}</td>
-                            <td style={{ padding: "6px 8px", color: T.textMuted, fontSize: 12 }}>{rec.fileName || "—"}</td>
-                            <td style={{ textAlign: "right", padding: "6px 8px", fontFamily: F.mono, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
-                            <td style={{ textAlign: "right", padding: "6px 8px", color: T.textMuted, fontSize: 12 }}>{rec.uploadedAt ? rec.uploadedAt.slice(0,16).replace("T"," ") : "—"}</td>
-                            <td style={{ padding: "6px 0 6px 8px" }}>
-                              <Btn style={{ fontSize: 11, padding: "2px 8px", background: T.bad, color: "#fff" }}
-                                onClick={async () => {
-                                  if (!window.confirm(`Delete ${rec.rto} ${rec.month}?`)) return;
-                                  try {
-                                    await supabase.from("app_data").delete().eq("collection","pl_records").eq("id", rec.id);
-                                    setPlRecords(prev => prev.filter(r => r.id !== rec.id));
-                                  } catch (e) { setPlError(`Delete failed: ${e.message}`); }
-                                }}>Delete</Btn>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                ));
+              })()}
+
+              {/* IMPORTS TAB */}
+              {!plLoading && plTab === "imports" && (() => {
+                const allSorted = [...plRecords].sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+                return (<>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, background: T.brandDim, border: `1px solid ${T.brandBorder}`, color: T.brand, fontSize: 13, fontWeight: 600 }}>
+                      Upload Xero Excel (.xlsx)
+                      <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handlePlFile} />
+                    </label>
                   </div>
-                </Pane>
-              );
-            })()}
+                  {plParsed && (
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 14px", background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, marginBottom: 16 }}>
+                      <span style={{ fontSize: 13, color: T.text }}>
+                        Detected: <strong>{plParsed.rto}</strong> · <strong>{plParsed.month}</strong> · {plParsed.lineItems.length} line items
+                      </span>
+                      <Btn small primary onClick={handlePlImport} disabled={plImporting}>
+                        {plImporting ? "Importing…" : "Confirm Import"}
+                      </Btn>
+                      <Btn small onClick={() => setPlParsed(null)}>Cancel</Btn>
+                    </div>
+                  )}
+                  {allSorted.length === 0
+                    ? <div style={{ padding: "32px 0", textAlign: "center", color: T.textMuted, fontSize: 14 }}>No imports yet.</div>
+                    : (
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+                          <thead><tr>
+                            <th style={thCss}>Month</th>
+                            <th style={thCss}>RTO</th>
+                            <th style={thCss}>File</th>
+                            <th style={{ ...thCss, textAlign: "right" }}>Net Profit</th>
+                            <th style={{ ...thCss, textAlign: "right" }}>Uploaded</th>
+                            <th style={thCss}></th>
+                          </tr></thead>
+                          <tbody>
+                            {allSorted.map(rec => (
+                              <tr key={rec.id}>
+                                <td style={{ ...tdCss, fontWeight: 600 }}>{rec.month}</td>
+                                <td style={tdCss}>{rec.rto}</td>
+                                <td style={{ ...tdCss, color: T.textMuted, fontSize: 12 }}>{rec.fileName || "—"}</td>
+                                <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
+                                <td style={{ ...tdCss, textAlign: "right", color: T.textMuted, fontSize: 12 }}>{rec.uploadedAt ? rec.uploadedAt.slice(0,16).replace("T"," ") : "—"}</td>
+                                <td style={tdCss}>
+                                  <Btn small danger onClick={async () => {
+                                    if (!window.confirm(`Delete ${rec.rto} ${rec.month}?`)) return;
+                                    try {
+                                      await supabase.from("app_data").delete().eq("collection","pl_records").eq("id", rec.id);
+                                      setPlRecords(prev => prev.filter(r => r.id !== rec.id));
+                                    } catch (e) { setPlError(`Delete failed: ${e.message}`); }
+                                  }}>Delete</Btn>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                </>);
+              })()}
+            </Pane>
           </>);
         })()}
 
