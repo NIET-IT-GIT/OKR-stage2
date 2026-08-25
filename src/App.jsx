@@ -2473,6 +2473,11 @@ When answering questions about marketing performance, sales, or student acquisit
 - COE data covers two separate report sources: NIET/CB/Rhodes and Educare. When answering across all RTOs, include both.
 - If only one dataset has been imported, answer from what's available and note the other is not yet loaded.
 
+RANKING ACCURACY:
+The context includes pre-sorted sections prefixed with "TOP ..." (e.g. TOP INCOME LINE ITEMS, TOP PROJECTS BY INCOME, TOP MEMBERS BY OKR COMPLETION RATE, TOP DIVISIONS BY NET PROFIT). These are computed server-side and are authoritative — always use them as-is when answering ranking questions. Do not re-sort them.
+When a pre-sorted section is not available and you must rank from raw data, use the raw integer values in brackets [N] to determine order — never sort by the formatted abbreviations ($X.XK, $X.XM) as those can be misleading.
+Before presenting any ranked list, verify the order is strictly descending by the values shown.
+
 ACTIONS:
 When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
 
@@ -2911,7 +2916,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             const liLines = [["trading_income","Trading Income"],["other_income","Other Income"],["expenses","Expenses"]].flatMap(([cat, catLabel]) => {
               const items = (r.lineItems || []).filter(i => i.category === cat);
               if (!items.length) return [];
-              return [`    ${catLabel}:`, ...items.map(i => `      ${i.account}: ${fmtMoney(i.amount)}`)];
+              return [`    ${catLabel}:`, ...items.map(i => `      ${i.account}: ${fmtMoney(i.amount)} [${Math.round(i.amount)}]`)];
             });
             return [
               `  ${r.month} | ${r.rto}: Trading Income ${fmtMoney(r.tradingIncome)}, Other Income ${fmtMoney(r.otherIncome)}, Total Income ${fmtMoney((r.tradingIncome||0)+(r.otherIncome||0))}, Expenses ${fmtMoney(r.totalExpenses)}, Net Profit ${fmtMoney(r.netProfit)}`,
@@ -2920,6 +2925,38 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           })
           .join("\n");
 
+    const plTopLineItems = (() => {
+      if (!plRecords.length) return "TOP INCOME LINE ITEMS: No P&L data uploaded yet.";
+      const latestMonth = [...plRecords].sort((a, b) => b.month.localeCompare(a.month))[0]?.month;
+      const allItems = plRecords.filter(r => r.month === latestMonth).flatMap(r =>
+        (r.lineItems || []).filter(i => i.category === "trading_income" || i.category === "other_income").map(i => ({ account: i.account, amount: i.amount, rto: r.rto }))
+      ).sort((a, b) => b.amount - a.amount).slice(0, 15);
+      return `TOP INCOME LINE ITEMS — ${latestMonth} (all RTOs combined, sorted by amount desc):\n` +
+        allItems.map((i, idx) => `  ${idx + 1}. ${i.account} (${i.rto}): ${fmtMoney(i.amount)} [${Math.round(i.amount)}]`).join("\n");
+    })();
+    const topProjects = (() => {
+      const withIncome = projects.filter(p => p.income != null && p.income > 0).sort((a, b) => b.income - a.income).slice(0, 10);
+      if (!withIncome.length) return "TOP PROJECTS BY INCOME: No project income data available.";
+      return `TOP PROJECTS BY INCOME (sorted desc):\n` + withIncome.map((p, idx) => {
+        const mgr = users.find(u => u.id === p.mgrId);
+        const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
+        const profit = p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : null;
+        return `  ${idx + 1}. "${p.name}" | ${dept} | Mgr: ${mgr?.name || "—"} | Income: ${fmtMoney(p.income)} [${Math.round(p.income)}]${profit != null ? ` | Profit: ${fmtMoney(profit)} [${profit}] (${p.margin}%)` : ""} | Status: ${p.status}`;
+      }).join("\n");
+    })();
+    const topMembers = (() => {
+      const withData = memberStats.filter(m => m.rate !== null).sort((a, b) => b.rate - a.rate).slice(0, 10);
+      if (!withData.length) return "TOP MEMBERS BY OKR COMPLETION: No data this month.";
+      return `TOP MEMBERS BY OKR COMPLETION RATE — current month (sorted desc):\n` +
+        withData.map((m, idx) => `  ${idx + 1}. ${m.name} (${m.dept}, ${m.role}): ${m.rate.toFixed(1)}% [${Math.round(m.rate)}] [${m.status}]`).join("\n");
+    })();
+    const topDivisions = (() => {
+      const divNp = REV_DIVS.map(div => ({ div, cum: (_aiNpDivs[div] || []).slice(0, nowFYMonth + 1).reduce((a, b) => a + b, 0) })).sort((a, b) => b.cum - a.cum);
+      if (divNp.every(d => d.cum === 0)) return "TOP DIVISIONS BY NET PROFIT: No P&L data uploaded yet.";
+      return `TOP DIVISIONS BY NET PROFIT — ${fyLabel} (sorted desc):\n` +
+        divNp.map((d, idx) => `  ${idx + 1}. ${d.div}: ${fmtMoney(d.cum)} [${Math.round(d.cum)}]`).join("\n");
+    })();
+
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
@@ -2927,6 +2964,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       reportSection ? `\n${reportSection}` : "",
       `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
       `\n${plRawSection}`,
+      `\n${plTopLineItems}`,
+      `\n${topProjects}`,
+      `\n${topMembers}`,
+      `\n${topDivisions}`,
       `\n${pendingSection}`,
       `\n${projectSection}`,
       `\n${enrolmentSection}`,
@@ -7243,10 +7284,51 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
   }
   const plRawSection = plRecords.length === 0
     ? "P&L MONTHLY RECORDS: None uploaded yet."
-    : `P&L MONTHLY RECORDS (${plRecords.length} record(s) — source of Financial Performance data):\n` +
+    : `P&L MONTHLY RECORDS (${plRecords.length} record(s)):\n` +
       [...plRecords].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto))
-        .map(r => `  ${r.month} | ${r.rto}: Trading Income ${fmtMoney(r.tradingIncome)}, Other Income ${fmtMoney(r.otherIncome)}, Total Income ${fmtMoney((r.tradingIncome||0)+(r.otherIncome||0))}, Expenses ${fmtMoney(r.totalExpenses)}, Net Profit ${fmtMoney(r.netProfit)}`)
+        .map(r => {
+          const liLines = [["trading_income","Trading Income"],["other_income","Other Income"],["expenses","Expenses"]].flatMap(([cat, catLabel]) => {
+            const items = (r.lineItems || []).filter(i => i.category === cat);
+            if (!items.length) return [];
+            return [`    ${catLabel}:`, ...items.map(i => `      ${i.account}: ${fmtMoney(i.amount)} [${Math.round(i.amount)}]`)];
+          });
+          return [
+            `  ${r.month} | ${r.rto}: Trading Income ${fmtMoney(r.tradingIncome)}, Other Income ${fmtMoney(r.otherIncome)}, Total Income ${fmtMoney((r.tradingIncome||0)+(r.otherIncome||0))}, Expenses ${fmtMoney(r.totalExpenses)}, Net Profit ${fmtMoney(r.netProfit)}`,
+            ...liLines,
+          ].join("\n");
+        })
         .join("\n");
+  const plTopLineItems = (() => {
+    if (!plRecords.length) return "TOP INCOME LINE ITEMS: No P&L data uploaded yet.";
+    const latestMonth = [...plRecords].sort((a, b) => b.month.localeCompare(a.month))[0]?.month;
+    const allItems = plRecords.filter(r => r.month === latestMonth).flatMap(r =>
+      (r.lineItems || []).filter(i => i.category === "trading_income" || i.category === "other_income").map(i => ({ account: i.account, amount: i.amount, rto: r.rto }))
+    ).sort((a, b) => b.amount - a.amount).slice(0, 15);
+    return `TOP INCOME LINE ITEMS — ${latestMonth} (all RTOs combined, sorted by amount desc):\n` +
+      allItems.map((i, idx) => `  ${idx + 1}. ${i.account} (${i.rto}): ${fmtMoney(i.amount)} [${Math.round(i.amount)}]`).join("\n");
+  })();
+  const topProjects = (() => {
+    const withIncome = projects.filter(p => p.income != null && p.income > 0).sort((a, b) => b.income - a.income).slice(0, 10);
+    if (!withIncome.length) return "TOP PROJECTS BY INCOME: No project income data available.";
+    return `TOP PROJECTS BY INCOME (sorted desc):\n` + withIncome.map((p, idx) => {
+      const mgr = users.find(u => u.id === p.mgrId);
+      const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
+      const profit = p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : null;
+      return `  ${idx + 1}. "${p.name}" | ${dept} | Mgr: ${mgr?.name || "—"} | Income: ${fmtMoney(p.income)} [${Math.round(p.income)}]${profit != null ? ` | Profit: ${fmtMoney(profit)} [${profit}] (${p.margin}%)` : ""} | Status: ${p.status}`;
+    }).join("\n");
+  })();
+  const topMembers = (() => {
+    const withData = memberStats.filter(m => m.rate !== null).sort((a, b) => b.rate - a.rate).slice(0, 10);
+    if (!withData.length) return "TOP MEMBERS BY OKR COMPLETION: No data this month.";
+    return `TOP MEMBERS BY OKR COMPLETION RATE — current month (sorted desc):\n` +
+      withData.map((m, idx) => `  ${idx + 1}. ${m.name} (${m.dept}, ${m.role}): ${m.rate.toFixed(1)}% [${Math.round(m.rate)}] [${m.status}]`).join("\n");
+  })();
+  const topDivisions = (() => {
+    const divNp = REV_DIVS.map(div => ({ div, cum: (_aiNpDivs[div] || []).slice(0, nowFYMonth + 1).reduce((a, b) => a + b, 0) })).sort((a, b) => b.cum - a.cum);
+    if (divNp.every(d => d.cum === 0)) return "TOP DIVISIONS BY NET PROFIT: No P&L data uploaded yet.";
+    return `TOP DIVISIONS BY NET PROFIT — ${fyLabel} (sorted desc):\n` +
+      divNp.map((d, idx) => `  ${idx + 1}. ${d.div}: ${fmtMoney(d.cum)} [${Math.round(d.cum)}]`).join("\n");
+  })();
 
   return [
     `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
@@ -7255,6 +7337,10 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     reportSection ? `\n${reportSection}` : "",
     `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
     `\n${plRawSection}`,
+    `\n${plTopLineItems}`,
+    `\n${topProjects}`,
+    `\n${topMembers}`,
+    `\n${topDivisions}`,
     `\n${pendingSection}`,
     `\n${projectSection}`,
     `\n${enrolmentSection}`,
