@@ -482,6 +482,23 @@ async function dbGetCoeData() {
   return result;
 }
 
+async function dbGetPlData() {
+  const result = { pl_records: [] };
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
+      .in("collection", ["pl_records"])
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return result;
+}
+
 async function dbBulkInsert(collection, items) {
   const CHUNK = 200;
   for (let i = 0; i < items.length; i += CHUNK) {
@@ -2534,6 +2551,26 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       }).catch(e => { setCoeError(e.message); setCoeLoading(false); setCoeLoaded(true); });
     }
   }, [coeLoaded, coeLoading]);
+  // P&L Reports state
+  const [plTab, setPlTab] = useState("overview");
+  const [plRecords, setPlRecords] = useState([]);
+  const [plLoaded, setPlLoaded] = useState(false);
+  const [plLoading, setPlLoading] = useState(false);
+  const [plError, setPlError] = useState(null);
+  const [plParsed, setPlParsed] = useState(null);
+  const [plImporting, setPlImporting] = useState(false);
+  const [plFilterRto, setPlFilterRto] = useState("all");
+  useEffect(() => {
+    if (!plLoaded && !plLoading) {
+      setPlLoading(true);
+      dbGetPlData().then(r => {
+        setPlRecords(r.pl_records);
+        setPlError(null);
+        setPlLoaded(true);
+        setPlLoading(false);
+      }).catch(e => { setPlError(e.message); setPlLoading(false); setPlLoaded(true); });
+    }
+  }, [plLoaded, plLoading]);
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const dragColRef = useRef(null);
@@ -2988,6 +3025,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     { id: "submissions",      icon: "⬡", label: "OKR Submissions"   },
     { id: "reports",          icon: "⬡", label: "OKR Reports"       },
     { id: "projects",         icon: "⬡", label: "Projects"          },
+    { id: "pl-reports",       icon: "⬡", label: "P&L Reports"        },
     { id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] },
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
     { id: "users",            icon: "⬡", label: "User Management"   },
@@ -5835,6 +5873,222 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           </>);
         })()}
 
+        {page === "pl-reports" && (() => {
+          const RTO_LABELS = ["NIET", "CB", "Educare", "Rhodes"];
+          const FMT_MONEY = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+          const filtered = plFilterRto === "all" ? plRecords : plRecords.filter(r => r.rto === plFilterRto);
+          // Sort by month desc then rto
+          const sorted = [...filtered].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto));
+          // Group by month for overview
+          const byMonth = {};
+          for (const r of sorted) { if (!byMonth[r.month]) byMonth[r.month] = {}; byMonth[r.month][r.rto] = r; }
+          const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+
+          const handlePlFile = async e => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            e.target.value = "";
+            setPlParsed(null);
+            setPlError(null);
+            try {
+              const parsed = await plParseFile(file);
+              if (parsed.error) { setPlError(parsed.error); return; }
+              setPlParsed(parsed);
+            } catch (err) { setPlError(`Parse failed: ${err.message}`); }
+          };
+
+          const handlePlImport = async () => {
+            if (!plParsed) return;
+            setPlImporting(true);
+            setPlError(null);
+            try {
+              const id = `pl_${plParsed.month}_${plParsed.rto}`;
+              await supabase.from("app_data").delete().eq("collection", "pl_records").eq("id", id);
+              const rec = { id, month: plParsed.month, rto: plParsed.rto, lineItems: plParsed.lineItems,
+                tradingIncome: plParsed.tradingIncome, otherIncome: plParsed.otherIncome,
+                totalExpenses: plParsed.totalExpenses, netProfit: plParsed.netProfit,
+                fileName: plParsed.fileName, uploadedAt: new Date().toISOString() };
+              await dbBulkInsert("pl_records", [rec]);
+              setPlRecords(prev => { const rest = prev.filter(r => r.id !== id); return [...rest, rec]; });
+              setPlParsed(null);
+            } catch (err) { setPlError(`Import failed: ${err.message}`); }
+            setPlImporting(false);
+          };
+
+          return (<>
+            <Header title="P&L Reports" sub="Monthly Profit & Loss by RTO — imported from Xero exports" />
+            {/* Upload strip */}
+            <Pane>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <label style={{ cursor: "pointer", display: "inline-block", padding: "6px 14px", borderRadius: 6, background: T.card, border: `1px solid ${T.border}`, color: T.text, fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>
+                  Upload Excel (.xlsx)
+                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handlePlFile} />
+                </label>
+                {plParsed && (
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ color: T.text2, fontSize: 13 }}>
+                      Detected: <strong style={{ color: T.text }}>{plParsed.rto}</strong> · <strong style={{ color: T.text }}>{plParsed.month}</strong> · {plParsed.lineItems.length} line items
+                    </span>
+                    <Btn onClick={handlePlImport} disabled={plImporting} style={{ background: T.ok, color: "#fff" }}>
+                      {plImporting ? "Importing…" : "Confirm Import"}
+                    </Btn>
+                    <Btn onClick={() => setPlParsed(null)}>Cancel</Btn>
+                  </div>
+                )}
+                {plError && <span style={{ color: T.bad, fontSize: 13 }}>{plError}</span>}
+              </div>
+            </Pane>
+            {/* Tabs + filter */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "14px 0 6px", flexWrap: "wrap" }}>
+              {["overview","data","imports"].map(t => (
+                <Btn key={t} onClick={() => setPlTab(t)}
+                  style={{ background: plTab === t ? T.accent : T.card, color: plTab === t ? "#fff" : T.text, textTransform: "capitalize" }}>
+                  {t === "overview" ? "Overview" : t === "data" ? "Line Items" : "Import History"}
+                </Btn>
+              ))}
+              <select value={plFilterRto} onChange={e => setPlFilterRto(e.target.value)}
+                style={{ marginLeft: "auto", padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.card, color: T.text, fontSize: 13 }}>
+                <option value="all">All RTOs</option>
+                {RTO_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            {/* Loading */}
+            {!plLoaded && <EmptyState icon="⏳" title="Loading P&L data…" />}
+            {plLoaded && plRecords.length === 0 && plTab !== "imports" && (
+              <EmptyState icon="📊" title="No P&L records yet" sub="Upload a Xero P&L Excel export above to get started." />
+            )}
+            {/* OVERVIEW TAB */}
+            {plLoaded && plTab === "overview" && months.length > 0 && (() => {
+              return months.map(m => {
+                const rtos = byMonth[m];
+                const totals = { tradingIncome: 0, otherIncome: 0, totalExpenses: 0, netProfit: 0 };
+                RTO_LABELS.forEach(r => { if (rtos[r]) { totals.tradingIncome += rtos[r].tradingIncome; totals.otherIncome += rtos[r].otherIncome; totals.totalExpenses += rtos[r].totalExpenses; totals.netProfit += rtos[r].netProfit; }});
+                const visibleRtos = plFilterRto === "all" ? RTO_LABELS.filter(r => rtos[r]) : RTO_LABELS.filter(r => r === plFilterRto && rtos[r]);
+                if (!visibleRtos.length) return null;
+                return (
+                  <Pane key={m}>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>{m}</div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F.mono }}>
+                        <thead>
+                          <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                            <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.text2, fontWeight: 500 }}>RTO</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Trading Income</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Other Income</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Total Expenses</th>
+                            <th style={{ textAlign: "right", padding: "4px 0 4px 8px", color: T.text2, fontWeight: 500 }}>Net Profit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleRtos.map(r => {
+                            const rec = rtos[r];
+                            return (
+                              <tr key={r} style={{ borderBottom: `1px solid ${T.border}` }}>
+                                <td style={{ padding: "6px 10px 6px 0", fontWeight: 600 }}>{r}</td>
+                                <td style={{ textAlign: "right", padding: "6px 8px", color: T.ok }}>{FMT_MONEY(rec.tradingIncome)}</td>
+                                <td style={{ textAlign: "right", padding: "6px 8px" }}>{FMT_MONEY(rec.otherIncome)}</td>
+                                <td style={{ textAlign: "right", padding: "6px 8px", color: T.bad }}>{FMT_MONEY(rec.totalExpenses)}</td>
+                                <td style={{ textAlign: "right", padding: "6px 0 6px 8px", fontWeight: 700, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
+                              </tr>
+                            );
+                          })}
+                          {plFilterRto === "all" && visibleRtos.length > 1 && (
+                            <tr style={{ borderTop: `2px solid ${T.border}`, background: T.hover }}>
+                              <td style={{ padding: "6px 10px 6px 0", fontWeight: 700 }}>Total</td>
+                              <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700, color: T.ok }}>{FMT_MONEY(totals.tradingIncome)}</td>
+                              <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700 }}>{FMT_MONEY(totals.otherIncome)}</td>
+                              <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700, color: T.bad }}>{FMT_MONEY(totals.totalExpenses)}</td>
+                              <td style={{ textAlign: "right", padding: "6px 0 6px 8px", fontWeight: 700, color: totals.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(totals.netProfit)}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Pane>
+                );
+              });
+            })()}
+            {/* DATA (LINE ITEMS) TAB */}
+            {plLoaded && plTab === "data" && (() => {
+              if (sorted.length === 0) return <EmptyState icon="📋" title="No records match filter" />;
+              return sorted.map(rec => (
+                <Pane key={rec.id}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{rec.rto} · {rec.month}</div>
+                  {["trading_income","other_income","expenses"].map(cat => {
+                    const items = rec.lineItems.filter(i => i.category === cat);
+                    if (!items.length) return null;
+                    const catLabel = cat === "trading_income" ? "Trading Income" : cat === "other_income" ? "Other Income" : "Operating Expenses";
+                    return (
+                      <div key={cat} style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: T.text2, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>{catLabel}</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: F.mono }}>
+                            <tbody>
+                              {items.map((item, idx) => (
+                                <tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}>
+                                  <td style={{ padding: "3px 8px 3px 0", color: T.text2 }}>{item.account}</td>
+                                  <td style={{ textAlign: "right", padding: "3px 0 3px 8px", color: cat === "expenses" ? T.bad : T.ok }}>{FMT_MONEY(item.amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div style={{ display: "flex", gap: 20, marginTop: 8, fontWeight: 700, fontSize: 13, fontFamily: F.mono, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
+                    <span>Net Profit: <span style={{ color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</span></span>
+                  </div>
+                </Pane>
+              ));
+            })()}
+            {/* IMPORTS TAB */}
+            {plLoaded && plTab === "imports" && (() => {
+              const allSorted = [...plRecords].sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+              if (!allSorted.length) return <EmptyState icon="📥" title="No imports yet" />;
+              return (
+                <Pane>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                          <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.text2, fontWeight: 500 }}>Month</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>RTO</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>File</th>
+                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Net Profit</th>
+                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Uploaded</th>
+                          <th style={{ padding: "4px 0 4px 8px" }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allSorted.map(rec => (
+                          <tr key={rec.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                            <td style={{ padding: "6px 10px 6px 0" }}>{rec.month}</td>
+                            <td style={{ padding: "6px 8px" }}>{rec.rto}</td>
+                            <td style={{ padding: "6px 8px", color: T.text2, fontSize: 12 }}>{rec.fileName || "—"}</td>
+                            <td style={{ textAlign: "right", padding: "6px 8px", fontFamily: F.mono, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
+                            <td style={{ textAlign: "right", padding: "6px 8px", color: T.text2, fontSize: 12 }}>{rec.uploadedAt ? rec.uploadedAt.slice(0,16).replace("T"," ") : "—"}</td>
+                            <td style={{ padding: "6px 0 6px 8px" }}>
+                              <Btn style={{ fontSize: 11, padding: "2px 8px", background: T.bad, color: "#fff" }}
+                                onClick={async () => {
+                                  if (!window.confirm(`Delete ${rec.rto} ${rec.month}?`)) return;
+                                  try {
+                                    await supabase.from("app_data").delete().eq("collection","pl_records").eq("id", rec.id);
+                                    setPlRecords(prev => prev.filter(r => r.id !== rec.id));
+                                  } catch (e) { setPlError(`Delete failed: ${e.message}`); }
+                                }}>Delete</Btn>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Pane>
+              );
+            })()}
+          </>);
+        })()}
+
         {page === "leaderboard" && (<>
           <Header title="Company Leaderboard" sub={`All staff ranked by OKR completion · ${currentFYQuarter()}`} />
           <Pane>
@@ -6654,6 +6908,55 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
 /* ─────────────────────────────────────────────────────────────
    NIET PILOT CONTEXT BUILDER (shared by Manager / Member portals)
    ───────────────────────────────────────────────────────────── */
+async function plParseFile(file) {
+  const { default: readXlsxFile } = await import("read-excel-file/browser");
+  const rows = await readXlsxFile(file);
+  // Detect company name (scan first 5 rows)
+  let rto = null;
+  let month = null;
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const cell = String(rows[i]?.[0] || "").toLowerCase();
+    if (!rto) {
+      if (cell.includes("australia academy") || cell.includes("aai")) rto = "NIET";
+      else if (cell.includes("charlton") || cell.includes("charlton brown")) rto = "CB";
+      else if (cell.includes("educare")) rto = "Educare";
+      else if (cell.includes("rhodes")) rto = "Rhodes";
+    }
+    if (!month) {
+      const m = cell.match(/for the month ended\s+\d+\s+(\w+)\s+(\d{4})/);
+      if (m) {
+        const MONTHS = { january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12 };
+        const mn = MONTHS[m[1].toLowerCase()];
+        if (mn) month = `${m[2]}-${String(mn).padStart(2,"0")}`;
+      }
+    }
+  }
+  // Parse line items by section header
+  let section = null;
+  const lineItems = [];
+  for (const row of rows) {
+    const label = String(row[0] || "").trim();
+    const rawVal = row[1];
+    if (label === "Trading Income") { section = "trading_income"; continue; }
+    if (label === "Other Income") { section = "other_income"; continue; }
+    if (label === "Operating Expenses") { section = "expenses"; continue; }
+    if (!section) continue;
+    // Account rows: start with digit-dash-digit pattern, e.g. "4-1103 - ..."
+    if (/^\d+-\d+/.test(label) && typeof rawVal === "number" && rawVal !== 0) {
+      lineItems.push({ account: label, amount: rawVal, category: section });
+    }
+  }
+  const tradingIncome = lineItems.filter(i => i.category === "trading_income").reduce((s, i) => s + i.amount, 0);
+  const otherIncome   = lineItems.filter(i => i.category === "other_income").reduce((s, i) => s + i.amount, 0);
+  const totalExpenses = lineItems.filter(i => i.category === "expenses").reduce((s, i) => s + i.amount, 0);
+  const netProfit     = tradingIncome + otherIncome - totalExpenses;
+  return {
+    rto, month, lineItems, tradingIncome, otherIncome, totalExpenses, netProfit,
+    fileName: file.name, fileSize: file.size,
+    error: !rto ? "Could not detect RTO from company name" : (!month ? "Could not detect month from file" : null),
+  };
+}
+
 function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true }) {
   const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
   const now = new Date();
