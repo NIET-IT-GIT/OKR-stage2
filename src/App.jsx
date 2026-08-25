@@ -6919,7 +6919,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
    ───────────────────────────────────────────────────────────── */
 async function plParseFile(file) {
   const { default: readXlsxFile } = await import("read-excel-file/browser");
-  const rows = await readXlsxFile(file);
+  const rawResult = await readXlsxFile(file);
+  // read-excel-file returns either Row[] or [{ name, data: Row[] }] depending on options
+  const rows = (Array.isArray(rawResult[0]) ? rawResult : rawResult[0]?.data) || [];
   // Detect company name and month — scan all cells in first 15 rows
   let rto = null;
   let month = null;
