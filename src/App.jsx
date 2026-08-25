@@ -2905,9 +2905,19 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
 
     const plRawSection = plRecords.length === 0
       ? "P&L MONTHLY RECORDS: None uploaded yet."
-      : `P&L MONTHLY RECORDS (${plRecords.length} record(s) — source of Financial Performance data):\n` +
+      : `P&L MONTHLY RECORDS (${plRecords.length} record(s)):\n` +
         [...plRecords].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto))
-          .map(r => `  ${r.month} | ${r.rto}: Trading Income ${fmtMoney(r.tradingIncome)}, Other Income ${fmtMoney(r.otherIncome)}, Total Income ${fmtMoney((r.tradingIncome||0)+(r.otherIncome||0))}, Expenses ${fmtMoney(r.totalExpenses)}, Net Profit ${fmtMoney(r.netProfit)}`)
+          .map(r => {
+            const liLines = [["trading_income","Trading Income"],["other_income","Other Income"],["expenses","Expenses"]].flatMap(([cat, catLabel]) => {
+              const items = (r.lineItems || []).filter(i => i.category === cat);
+              if (!items.length) return [];
+              return [`    ${catLabel}:`, ...items.map(i => `      ${i.account}: ${fmtMoney(i.amount)}`)];
+            });
+            return [
+              `  ${r.month} | ${r.rto}: Trading Income ${fmtMoney(r.tradingIncome)}, Other Income ${fmtMoney(r.otherIncome)}, Total Income ${fmtMoney((r.tradingIncome||0)+(r.otherIncome||0))}, Expenses ${fmtMoney(r.totalExpenses)}, Net Profit ${fmtMoney(r.netProfit)}`,
+              ...liLines,
+            ].join("\n");
+          })
           .join("\n");
 
     return [
