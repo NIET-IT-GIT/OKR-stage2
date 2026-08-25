@@ -1696,7 +1696,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
 /* ─────────────────────────────────────────────────────────────
    FINANCIAL PERFORMANCE PAGE  (shared by Admin + Manager portals)
    ───────────────────────────────────────────────────────────── */
-function FinancialPerformancePage({ state, dispatch }) {
+function FinancialPerformancePage({ state, dispatch, plRecords = [] }) {
   const [finTab, setFinTab] = useState("revenue");
   const [revMonth, setRevMonth] = useState(() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; });
   const [revEditMode, setRevEditMode] = useState(false);
@@ -1712,12 +1712,26 @@ function FinancialPerformancePage({ state, dispatch }) {
   const fmtMoney = v => v >= 1_000_000 ? `$${(v/1_000_000).toFixed(2)}M` : v >= 1_000 ? `$${(v/1_000).toFixed(1)}K` : `$${Math.round(v).toLocaleString()}`;
   const nowFYMonth = (() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; })();
   const mkDefault = (pt, dt) => ({ pt, dt, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
+  const thisFY = (() => { const m = new Date().getMonth() + 1; const y = new Date().getFullYear(); return m >= 7 ? y + 1 : y; })();
 
-  const derivedNpDivisions = (() => {
-    const r = state.settings?.revenue ?? mkDefault(0, 0);
-    const e = state.settings?.expense ?? mkDefault(0, 0);
-    return Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (r.divisions[d]?.[i] || 0) - (e.divisions[d]?.[i] || 0))]));
-  })();
+  // Build per-division monthly arrays from pl_records
+  const plDivisions = type => {
+    const fyStart = thisFY - 1;
+    return Object.fromEntries(REV_DIVS.map(div => [div, Array(12).fill(0).map((_, i) => {
+      const calYear = i <= 5 ? fyStart : thisFY;
+      const calMonth = i <= 5 ? i + 7 : i - 5;
+      const monthKey = `${calYear}-${String(calMonth).padStart(2, "0")}`;
+      const rec = plRecords.find(r => r.rto === div && r.month === monthKey);
+      if (!rec) return 0;
+      return type === "revenue" ? (rec.tradingIncome || 0) + (rec.otherIncome || 0) : (rec.totalExpenses || 0);
+    })]));
+  };
+  const plRevDivisions = plDivisions("revenue");
+  const plExpDivisions = plDivisions("expense");
+
+  const derivedNpDivisions = Object.fromEntries(
+    REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (plRevDivisions[d]?.[i] || 0) - (plExpDivisions[d]?.[i] || 0))])
+  );
 
   const renderModule = (cfgKey, title, gradId, editMode, setEditMode, moduleDraft, setModuleDraft, defaultPt, defaultDt, noTargets, accentColor, derivedDivisions = null) => {
     const cfg = state.settings?.[cfgKey] ?? mkDefault(defaultPt, defaultDt);
@@ -1747,16 +1761,18 @@ function FinancialPerformancePage({ state, dispatch }) {
     return (
       <div key={cfgKey} style={{ marginBottom: 20, paddingTop: 18, borderTop: `4px solid ${accentColor}` }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: accentColor }}>{title} · Jul – {FY_MONTHS[revMonth]} FY2027</div>
-          <Btn small onClick={() => {
-            if (editMode) {
-              if (moduleDraft) dispatch({ type: "SET_SETTINGS", updates: { [cfgKey]: moduleDraft } });
-              setEditMode(false); setModuleDraft(null);
-            } else {
-              setModuleDraft(JSON.parse(JSON.stringify(cfg)));
-              setEditMode(true);
-            }
-          }}>{editMode ? "✓ Save" : derivedDivisions ? "✎ Set Targets" : "✎ Edit Data"}</Btn>
+          <div style={{ fontSize: 15, fontWeight: 700, color: accentColor }}>{title} · Jul – {FY_MONTHS[revMonth]} FY{thisFY}</div>
+          {!(noTargets && derivedDivisions) && (
+            <Btn small onClick={() => {
+              if (editMode) {
+                if (moduleDraft) dispatch({ type: "SET_SETTINGS", updates: { [cfgKey]: moduleDraft } });
+                setEditMode(false); setModuleDraft(null);
+              } else {
+                setModuleDraft(JSON.parse(JSON.stringify(cfg)));
+                setEditMode(true);
+              }
+            }}>{editMode ? "✓ Save" : "✎ Set Targets"}</Btn>
+          )}
         </div>
 
         {editMode && (
@@ -1777,7 +1793,7 @@ function FinancialPerformancePage({ state, dispatch }) {
             </div>
             )}
             {derivedDivisions
-              ? <div style={{ padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand, lineHeight: 1.5 }}>Monthly values are auto-calculated as Income − Expenses. Only the annual targets above need to be set manually.</div>
+              ? <div style={{ padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand, lineHeight: 1.5 }}>{cfgKey === "netProfit" ? "Monthly values are auto-calculated as Income − Expenses. Only the annual targets above need to be set manually." : "Monthly values are sourced from P&L Excel uploads. Go to P&L Reports to upload or update data."}</div>
               : (<>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Monthly {title} by Division ($)</div>
                   <div style={{ overflowX: "auto" }}>
@@ -1827,13 +1843,13 @@ function FinancialPerformancePage({ state, dispatch }) {
             <Card style={{ padding: "16px 20px" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{title} — {FY_MONTHS[revMonth]} Only</div>
               <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(thisMonthTotal)}</div>
-              <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Single month · {FY_MONTHS[revMonth]} FY2027</div>
+              <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Single month · {FY_MONTHS[revMonth]} FY{thisFY}</div>
             </Card>
           )}
           <Card style={{ padding: "16px 20px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Cumulative {title}</div>
             <div style={{ fontSize: 26, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(selCum)}</div>
-            <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Jul – {FY_MONTHS[revMonth]} FY2027</div>
+            <div style={{ fontSize: 11, color: T.textDim, marginTop: 4 }}>Jul – {FY_MONTHS[revMonth]} FY{thisFY}</div>
           </Card>
           {!noTargets && [["vs Performance Target (PT)", ptPct, cfg.pt, "#F59E0B"], ["vs Dream Target (DT)", dtPct, cfg.dt, "#10B981"]].map(([lbl, pct, target, lineColor]) => {
             const st = pct >= 1 ? "green" : pct >= 0.7 ? "yellow" : "red";
@@ -1929,7 +1945,7 @@ function FinancialPerformancePage({ state, dispatch }) {
               })}
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 16, fontStyle: "italic" }}>No data entered yet — click "✎ Edit Data" to add monthly figures.</div>
+            <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 16, fontStyle: "italic" }}>No P&L data yet — upload Excel files from the P&L Reports page to populate this section.</div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
             {REV_DIVS.map((div, i) => {
@@ -1961,8 +1977,7 @@ function FinancialPerformancePage({ state, dispatch }) {
       {/* ── Summary row: all three at a glance ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
         {FIN_MODULES.map(({ key, label, accent, tab: t }) => {
-          const scfg = state.settings?.[key] ?? mkDefault(0, 0);
-          const sdivs = key === "netProfit" ? derivedNpDivisions : scfg.divisions;
+          const sdivs = key === "netProfit" ? derivedNpDivisions : key === "revenue" ? plRevDivisions : plExpDivisions;
           const smg = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (sdivs[d]?.[i] || 0), 0));
           const scum = smg.map((_, i) => smg.slice(0, i + 1).reduce((a, b) => a + b, 0));
           const sval = scum[revMonth] || 0;
@@ -1971,7 +1986,7 @@ function FinancialPerformancePage({ state, dispatch }) {
             <div key={key} onClick={() => setFinTab(t)} style={{ background: T.surface, border: `1.5px solid ${isActive ? accent : T.border}`, borderTop: `4px solid ${accent}`, borderRadius: 10, padding: "16px 18px", cursor: "pointer", boxShadow: isActive ? `0 0 0 3px ${accent}22` : T.shadowSm, userSelect: "none" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: accent, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>{label}</div>
               <div style={{ fontSize: 22, fontWeight: 900, fontFamily: F.mono, color: T.text, lineHeight: 1.1 }}>{fmtMoney(sval)}</div>
-              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Jul – {FY_MONTHS[revMonth]} cumulative</div>
+              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Jul – {FY_MONTHS[revMonth]} FY{thisFY} cumulative</div>
               {isActive && <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: accent }}>↓ Details below</div>}
             </div>
           );
@@ -2006,9 +2021,9 @@ function FinancialPerformancePage({ state, dispatch }) {
       </div>
 
       {/* ── Detail panel for selected module ── */}
-      {finTab === "revenue"   && renderModule("revenue",   "Income",     "revAreaGrad", revEditMode, setRevEditMode, revDraft, setRevDraft, 5000000, 7000000, false, "#0071e3")}
+      {finTab === "revenue"   && renderModule("revenue",   "Income",     "revAreaGrad", revEditMode, setRevEditMode, revDraft, setRevDraft, 5000000, 7000000, false, "#0071e3", plRevDivisions)}
       {finTab === "netProfit" && renderModule("netProfit", "Net Profit", "npAreaGrad",  npEditMode,  setNpEditMode,  npDraft,  setNpDraft,  2000000, 3000000, false, "#10B981", derivedNpDivisions)}
-      {finTab === "expense"   && renderModule("expense",   "Expenses",   "expAreaGrad", expEditMode, setExpEditMode, expDraft, setExpDraft,  0,       0,       true,  "#f59e0b")}
+      {finTab === "expense"   && renderModule("expense",   "Expenses",   "expAreaGrad", expEditMode, setExpEditMode, expDraft, setExpDraft,  0,       0,       true,  "#f59e0b", plExpDivisions)}
     </div>
   );
 }
@@ -2756,12 +2771,22 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       { key: "expense",   label: "Expenses",   hasTargets: false },
       { key: "netProfit", label: "Net Profit", hasTargets: true  },
     ];
-    const _aiRevCfg = state.settings?.revenue ?? mkDefault();
-    const _aiExpCfg = state.settings?.expense ?? mkDefault();
-    const _aiNpDivs = Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (_aiRevCfg.divisions[d]?.[i] || 0) - (_aiExpCfg.divisions[d]?.[i] || 0))]));
+    // Build pl-derived divisions (same logic as FinancialPerformancePage)
+    const _aiThisFY = now.getMonth() + 1 >= 7 ? now.getFullYear() + 1 : now.getFullYear();
+    const _aiPlDivs = type => Object.fromEntries(REV_DIVS.map(div => [div, Array(12).fill(0).map((_, i) => {
+      const calYear = i <= 5 ? _aiThisFY - 1 : _aiThisFY;
+      const calMonth = i <= 5 ? i + 7 : i - 5;
+      const monthKey = `${calYear}-${String(calMonth).padStart(2, "0")}`;
+      const rec = plRecords.find(r => r.rto === div && r.month === monthKey);
+      if (!rec) return 0;
+      return type === "revenue" ? (rec.tradingIncome || 0) + (rec.otherIncome || 0) : (rec.totalExpenses || 0);
+    })]));
+    const _aiRevDivs = _aiPlDivs("revenue");
+    const _aiExpDivs = _aiPlDivs("expense");
+    const _aiNpDivs = Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (_aiRevDivs[d]?.[i] || 0) - (_aiExpDivs[d]?.[i] || 0))]));
     const finSection = finModules.map(({ key, label, hasTargets }) => {
       const cfg = state.settings?.[key] ?? mkDefault();
-      const divs = key === "netProfit" ? _aiNpDivs : cfg.divisions;
+      const divs = key === "netProfit" ? _aiNpDivs : key === "revenue" ? _aiRevDivs : _aiExpDivs;
       const monthly = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (divs[d]?.[i] || 0), 0));
       const cumulative = monthly.map((_, i) => monthly.slice(0, i + 1).reduce((a, b) => a + b, 0));
       const cum = cumulative[nowFYMonth] || 0;
@@ -2782,7 +2807,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         lines.push(`    Division breakdown:\n${divLines.join("\n")}`);
         lines.push(`    Monthly: ${monthlyLine}`);
       } else {
-        lines.push(`    No data entered yet`);
+        lines.push(`    No P&L data uploaded yet`);
       }
       return lines.join("\n");
     }).join("\n");
@@ -3541,7 +3566,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             </div>
             </>)}
 
-            {overviewView === "financial" && <FinancialPerformancePage state={state} dispatch={dispatch} />}
+            {overviewView === "financial" && <FinancialPerformancePage state={state} dispatch={dispatch} plRecords={plRecords} />}
 
           </Pane>
         </>)}
@@ -6970,7 +6995,7 @@ async function plParseFile(file) {
   };
 }
 
-function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true }) {
+function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [] }) {
   const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
   const now = new Date();
   const getCompletedYear = p => {
@@ -7063,12 +7088,21 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     { key: "expense",   label: "Expenses",   hasTargets: false },
     { key: "netProfit", label: "Net Profit", hasTargets: true  },
   ];
-  const _aiRevCfg = state.settings?.revenue ?? mkDefault();
-  const _aiExpCfg = state.settings?.expense ?? mkDefault();
-  const _aiNpDivs = Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (_aiRevCfg.divisions[d]?.[i] || 0) - (_aiExpCfg.divisions[d]?.[i] || 0))]));
+  const _aiThisFY = now.getMonth() + 1 >= 7 ? now.getFullYear() + 1 : now.getFullYear();
+  const _aiPlDivs = type => Object.fromEntries(REV_DIVS.map(div => [div, Array(12).fill(0).map((_, i) => {
+    const calYear = i <= 5 ? _aiThisFY - 1 : _aiThisFY;
+    const calMonth = i <= 5 ? i + 7 : i - 5;
+    const monthKey = `${calYear}-${String(calMonth).padStart(2, "0")}`;
+    const rec = plRecords.find(r => r.rto === div && r.month === monthKey);
+    if (!rec) return 0;
+    return type === "revenue" ? (rec.tradingIncome || 0) + (rec.otherIncome || 0) : (rec.totalExpenses || 0);
+  })]));
+  const _aiRevDivs = _aiPlDivs("revenue");
+  const _aiExpDivs = _aiPlDivs("expense");
+  const _aiNpDivs = Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0).map((_, i) => (_aiRevDivs[d]?.[i] || 0) - (_aiExpDivs[d]?.[i] || 0))]));
   const finSection = finModules.map(({ key, label, hasTargets }) => {
     const cfg = state.settings?.[key] ?? mkDefault();
-    const divs = key === "netProfit" ? _aiNpDivs : cfg.divisions;
+    const divs = key === "netProfit" ? _aiNpDivs : key === "revenue" ? _aiRevDivs : _aiExpDivs;
     const monthly = FY_MONTHS.map((_, i) => REV_DIVS.reduce((s, d) => s + (divs[d]?.[i] || 0), 0));
     const cumulative = monthly.map((_, i) => monthly.slice(0, i + 1).reduce((a, b) => a + b, 0));
     const cum = cumulative[nowFYMonth] || 0;
@@ -7089,7 +7123,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
       lines.push(`    Division breakdown:\n${divLines.join("\n")}`);
       lines.push(`    Monthly: ${monthlyLine}`);
     } else {
-      lines.push(`    No data entered yet`);
+      lines.push(`    No P&L data uploaded yet`);
     }
     return lines.join("\n");
   }).join("\n");
@@ -7242,6 +7276,16 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [logPopup, setLogPopup] = useState(null);
   useEffect(() => { if (!logPopup) return; const h = e => { if (e.key === "Escape") setLogPopup(null); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [logPopup]);
   const handleSync = useCallback(async () => { setSyncing(true); await onReload(); setSyncing(false); }, [onReload]);
+  const [mgrPlRecords, setMgrPlRecords] = useState([]);
+  const [mgrPlLoaded, setMgrPlLoaded] = useState(false);
+  const [mgrPlLoading, setMgrPlLoading] = useState(false);
+  useEffect(() => {
+    if (!mgrPlLoaded && !mgrPlLoading) {
+      setMgrPlLoading(true);
+      dbGetPlData().then(r => { setMgrPlRecords(r.pl_records); setMgrPlLoaded(true); setMgrPlLoading(false); })
+        .catch(() => { setMgrPlLoaded(true); setMgrPlLoading(false); });
+    }
+  }, [mgrPlLoaded, mgrPlLoading]);
 
   const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
@@ -7361,7 +7405,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords });
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
@@ -8361,10 +8405,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
         })()}
 
         {page === "financial" && user.financeAccess && (<>
-          <Header title="Financial Performance" sub="Income, Net Profit and Expenses tracking — FY2027" />
+          <Header title="Financial Performance" sub={`Income, Net Profit and Expenses tracking — FY${(() => { const m = new Date().getMonth() + 1; const y = new Date().getFullYear(); return m >= 7 ? y + 1 : y; })()}`} />
           <Pane>
             <FinErrorBoundary>
-              <FinancialPerformancePage state={state} dispatch={dispatch} />
+              <FinancialPerformancePage state={state} dispatch={dispatch} plRecords={mgrPlRecords} />
             </FinErrorBoundary>
           </Pane>
         </>)}
@@ -8915,7 +8959,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [] });
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
