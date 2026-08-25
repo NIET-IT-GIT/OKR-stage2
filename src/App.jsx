@@ -5920,13 +5920,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             {/* Upload strip */}
             <Pane>
               <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                <label style={{ cursor: "pointer", display: "inline-block", padding: "6px 14px", borderRadius: 6, background: T.card, border: `1px solid ${T.border}`, color: T.text, fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>
+                <label style={{ cursor: "pointer", display: "inline-block", padding: "6px 14px", borderRadius: 6, background: T.raised, border: `1px solid ${T.border}`, color: T.text, fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>
                   Upload Excel (.xlsx)
                   <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handlePlFile} />
                 </label>
                 {plParsed && (
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ color: T.text2, fontSize: 13 }}>
+                    <span style={{ color: T.textMuted, fontSize: 13 }}>
                       Detected: <strong style={{ color: T.text }}>{plParsed.rto}</strong> · <strong style={{ color: T.text }}>{plParsed.month}</strong> · {plParsed.lineItems.length} line items
                     </span>
                     <Btn onClick={handlePlImport} disabled={plImporting} style={{ background: T.ok, color: "#fff" }}>
@@ -5942,12 +5942,12 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "14px 0 6px", flexWrap: "wrap" }}>
               {["overview","data","imports"].map(t => (
                 <Btn key={t} onClick={() => setPlTab(t)}
-                  style={{ background: plTab === t ? T.accent : T.card, color: plTab === t ? "#fff" : T.text, textTransform: "capitalize" }}>
+                  style={{ background: plTab === t ? T.brand : T.raised, color: plTab === t ? "#fff" : T.text, textTransform: "capitalize" }}>
                   {t === "overview" ? "Overview" : t === "data" ? "Line Items" : "Import History"}
                 </Btn>
               ))}
               <select value={plFilterRto} onChange={e => setPlFilterRto(e.target.value)}
-                style={{ marginLeft: "auto", padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.card, color: T.text, fontSize: 13 }}>
+                style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.raised, color: T.text, fontSize: 13 }}>
                 <option value="all">All RTOs</option>
                 {RTO_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
@@ -5972,11 +5972,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F.mono }}>
                         <thead>
                           <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                            <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.text2, fontWeight: 500 }}>RTO</th>
-                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Trading Income</th>
-                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Other Income</th>
-                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Total Expenses</th>
-                            <th style={{ textAlign: "right", padding: "4px 0 4px 8px", color: T.text2, fontWeight: 500 }}>Net Profit</th>
+                            <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.textMuted, fontWeight: 500 }}>RTO</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Trading Income</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Other Income</th>
+                            <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Total Expenses</th>
+                            <th style={{ textAlign: "right", padding: "4px 0 4px 8px", color: T.textMuted, fontWeight: 500 }}>Net Profit</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5993,7 +5993,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                             );
                           })}
                           {plFilterRto === "all" && visibleRtos.length > 1 && (
-                            <tr style={{ borderTop: `2px solid ${T.border}`, background: T.hover }}>
+                            <tr style={{ borderTop: `2px solid ${T.border}`, background: T.raised }}>
                               <td style={{ padding: "6px 10px 6px 0", fontWeight: 700 }}>Total</td>
                               <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700, color: T.ok }}>{FMT_MONEY(totals.tradingIncome)}</td>
                               <td style={{ textAlign: "right", padding: "6px 8px", fontWeight: 700 }}>{FMT_MONEY(totals.otherIncome)}</td>
@@ -6020,13 +6020,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     const catLabel = cat === "trading_income" ? "Trading Income" : cat === "other_income" ? "Other Income" : "Operating Expenses";
                     return (
                       <div key={cat} style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: T.text2, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>{catLabel}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>{catLabel}</div>
                         <div style={{ overflowX: "auto" }}>
                           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: F.mono }}>
                             <tbody>
                               {items.map((item, idx) => (
                                 <tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}>
-                                  <td style={{ padding: "3px 8px 3px 0", color: T.text2 }}>{item.account}</td>
+                                  <td style={{ padding: "3px 8px 3px 0", color: T.textMuted }}>{item.account}</td>
                                   <td style={{ textAlign: "right", padding: "3px 0 3px 8px", color: cat === "expenses" ? T.bad : T.ok }}>{FMT_MONEY(item.amount)}</td>
                                 </tr>
                               ))}
@@ -6052,11 +6052,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                          <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.text2, fontWeight: 500 }}>Month</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>RTO</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>File</th>
-                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Net Profit</th>
-                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.text2, fontWeight: 500 }}>Uploaded</th>
+                          <th style={{ textAlign: "left", padding: "4px 10px 4px 0", color: T.textMuted, fontWeight: 500 }}>Month</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>RTO</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>File</th>
+                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Net Profit</th>
+                          <th style={{ textAlign: "right", padding: "4px 8px", color: T.textMuted, fontWeight: 500 }}>Uploaded</th>
                           <th style={{ padding: "4px 0 4px 8px" }}></th>
                         </tr>
                       </thead>
@@ -6065,9 +6065,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                           <tr key={rec.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                             <td style={{ padding: "6px 10px 6px 0" }}>{rec.month}</td>
                             <td style={{ padding: "6px 8px" }}>{rec.rto}</td>
-                            <td style={{ padding: "6px 8px", color: T.text2, fontSize: 12 }}>{rec.fileName || "—"}</td>
+                            <td style={{ padding: "6px 8px", color: T.textMuted, fontSize: 12 }}>{rec.fileName || "—"}</td>
                             <td style={{ textAlign: "right", padding: "6px 8px", fontFamily: F.mono, color: rec.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(rec.netProfit)}</td>
-                            <td style={{ textAlign: "right", padding: "6px 8px", color: T.text2, fontSize: 12 }}>{rec.uploadedAt ? rec.uploadedAt.slice(0,16).replace("T"," ") : "—"}</td>
+                            <td style={{ textAlign: "right", padding: "6px 8px", color: T.textMuted, fontSize: 12 }}>{rec.uploadedAt ? rec.uploadedAt.slice(0,16).replace("T"," ") : "—"}</td>
                             <td style={{ padding: "6px 0 6px 8px" }}>
                               <Btn style={{ fontSize: 11, padding: "2px 8px", background: T.bad, color: "#fff" }}
                                 onClick={async () => {
