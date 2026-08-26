@@ -2523,6 +2523,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [projReminderModal, setProjReminderModal] = useState(false);
   const [projReminderSending, setProjReminderSending] = useState(false);
   const [projReminderResult, setProjReminderResult] = useState(null);
+  const [projReminderPreviewId, setProjReminderPreviewId] = useState(null);
   const [logDrafts, setLogDrafts] = useState({});
   const [subFilter, setSubFilter] = useState("all");
   const [enrTab, setEnrTab] = useState("overview");
@@ -4992,6 +4993,63 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               }).sort((a, b) => (a.mgr?.name || "").localeCompare(b.mgr?.name || ""));
               const sendable = mgrList.filter(m => m.canSend);
               const skipped = mgrList.filter(m => !m.canSend);
+
+              // Mirror the server-side email template for client-side preview
+              const buildPreviewHtml = (name, projs) => {
+                const now = new Date();
+                const fmtDate = d => {
+                  if (!d || d === "TBD") return "TBD";
+                  const dt = new Date(d);
+                  return isNaN(dt) ? d : dt.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
+                };
+                const isOD = p => { if (!p.due || p.due === "TBD") return false; const dt = new Date(p.due); return !isNaN(dt) && dt < now; };
+                const overdueCount = projs.filter(isOD).length;
+                const rows = projs.map(p => {
+                  const od = isOD(p);
+                  const pc = p.progress >= 70 ? "#28CD41" : p.progress >= 35 ? "#FF9500" : "#FF3B30";
+                  return `<tr style="background:${od ? "#fff7ed" : "#fff"}">
+                    <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-size:14px;font-weight:600;color:#1d1d1f">
+                      ${p.name}${od ? ' <span style="font-size:11px;font-weight:700;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:1px 6px;margin-left:6px">OVERDUE</span>' : ""}
+                    </td>
+                    <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;text-align:center">
+                      <span style="font-size:13px;font-weight:700;color:${pc};font-family:monospace">${p.progress}%</span>
+                      <div style="margin-top:4px;height:4px;background:#e5e7eb;border-radius:2px;width:80px;display:inline-block;vertical-align:middle;margin-left:8px">
+                        <div style="height:4px;width:${p.progress}%;background:${pc};border-radius:2px"></div>
+                      </div>
+                    </td>
+                    <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-size:13px;color:${od ? "#b45309" : "#6e6e73"};text-align:center;white-space:nowrap">${fmtDate(p.due)}</td>
+                    <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#6e6e73;text-align:center">${p.updatedDate || '<em style="color:#a1a1aa">Never</em>'}</td>
+                  </tr>`;
+                }).join("");
+                return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+                <body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+                  <div style="max-width:600px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
+                    <div style="background:linear-gradient(135deg,#0071E3,#6b47dc);padding:28px 32px">
+                      <div style="color:#fff;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.8;margin-bottom:6px">NIET Group OKRs System</div>
+                      <div style="color:#fff;font-size:22px;font-weight:700">Project Status Update Required</div>
+                    </div>
+                    <div style="padding:28px 32px">
+                      <p style="margin:0 0 16px;font-size:15px;color:#1d1d1f">Hi ${name},</p>
+                      <p style="margin:0 0 20px;font-size:14px;color:#6e6e73;line-height:1.6">
+                        Please log in to the portal and update the status of your project${projs.length !== 1 ? "s" : ""} listed below.
+                        ${overdueCount > 0 ? `<strong style="color:#b45309">${overdueCount} project${overdueCount !== 1 ? "s are" : " is"} overdue.</strong>` : ""}
+                      </p>
+                      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+                        <thead><tr style="background:#f5f5f7">
+                          <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Project</th>
+                          <th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Progress</th>
+                          <th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Due Date</th>
+                          <th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6e6e73;letter-spacing:0.06em;text-transform:uppercase">Last Updated</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                      </table>
+                      <a href="https://okr.nietgroup.com.au/manager/projects" style="display:inline-block;padding:12px 28px;background:#0071e3;color:#fff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600">Update My Projects →</a>
+                      <p style="margin:20px 0 0;font-size:12px;color:#a1a1aa">You are receiving this because you have active projects in the NIET Group OKRs system.<br/>Please do not reply to this email.</p>
+                    </div>
+                  </div>
+                </body></html>`;
+              };
+
               const handleSend = async () => {
                 setProjReminderSending(true);
                 let sent = 0, errors = 0;
@@ -5003,12 +5061,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       body: JSON.stringify({
                         to: email,
                         name: mgr?.name || "Manager",
-                        projects: projs.map(p => ({
-                          name: p.name,
-                          progress: p.progress,
-                          due: p.due || "TBD",
-                          updatedDate: p.updatedDate || null,
-                        })),
+                        projects: projs.map(p => ({ name: p.name, progress: p.progress, due: p.due || "TBD", updatedDate: p.updatedDate || null })),
                       }),
                     });
                     const data = await res.json();
@@ -5017,46 +5070,76 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 }));
                 setProjReminderSending(false);
                 setProjReminderModal(false);
+                setProjReminderPreviewId(null);
                 setProjReminderResult({ sent, errors: errors || null });
               };
+
+              const previewEntry = projReminderPreviewId ? sendable.find(m => (m.mgr?.id || m.email) === projReminderPreviewId) : null;
+
               return (
                 <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
-                  onClick={e => { if (e.target === e.currentTarget && !projReminderSending) setProjReminderModal(false); }}>
-                  <div style={{ background: T.surface, borderRadius: 16, padding: 28, maxWidth: 520, width: "100%", boxShadow: "0 12px 48px rgba(0,0,0,0.2)" }}>
-                    <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 6 }}>Send Update Reminders</div>
-                    <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 20 }}>
-                      The following managers will receive an email listing their active projects and asking them to update progress.
+                  onClick={e => { if (e.target === e.currentTarget && !projReminderSending) { setProjReminderModal(false); setProjReminderPreviewId(null); } }}>
+                  <div style={{ background: T.surface, borderRadius: 16, padding: 28, maxWidth: previewEntry ? 860 : 520, width: "100%", boxShadow: "0 12px 48px rgba(0,0,0,0.2)", display: "flex", gap: 24, maxHeight: "90vh", overflow: "hidden" }}>
+                    {/* Left panel — manager list */}
+                    <div style={{ flex: "0 0 460px", display: "flex", flexDirection: "column", minWidth: 0 }}>
+                      <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 6 }}>Send Update Reminders</div>
+                      <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 20 }}>
+                        The following managers will receive an email listing their active projects and asking them to update progress.
+                      </div>
+                      <div style={{ overflowY: "auto", flex: 1 }}>
+                        {sendable.length === 0 && (
+                          <div style={{ padding: "16px 0", textAlign: "center", color: T.textMuted, fontSize: 13 }}>No managers with valid email addresses to notify.</div>
+                        )}
+                        {sendable.map(({ mgr, email, projs }) => {
+                          const now = new Date();
+                          const overdueCount = projs.filter(p => p.due && p.due !== "TBD" && new Date(p.due) < now).length;
+                          const rowKey = mgr?.id || email;
+                          const isPreviewing = projReminderPreviewId === rowKey;
+                          return (
+                            <div key={rowKey} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 600 }}>{mgr?.name || "Unknown"}</div>
+                                <div style={{ fontSize: 12, color: T.textMuted }}>{email}</div>
+                              </div>
+                              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: T.brand }}>{projs.length} active project{projs.length !== 1 ? "s" : ""}</div>
+                                {overdueCount > 0 && <div style={{ fontSize: 11, color: T.bad, fontWeight: 600 }}>{overdueCount} overdue</div>}
+                              </div>
+                              <button
+                                onClick={() => setProjReminderPreviewId(isPreviewing ? null : rowKey)}
+                                style={{ flexShrink: 0, background: isPreviewing ? T.brandDim : "none", border: `1px solid ${isPreviewing ? T.brandBorder : T.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: isPreviewing ? T.brand : T.textMuted, fontFamily: F.body, fontWeight: isPreviewing ? 700 : 400 }}>
+                                {isPreviewing ? "▶ Previewing" : "Preview"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {skipped.length > 0 && (
+                          <div style={{ marginTop: 12, padding: "10px 14px", background: T.raised, borderRadius: 8, fontSize: 12, color: T.textMuted }}>
+                            <strong>Will be skipped</strong> (no valid email): {skipped.map(m => m.mgr?.name || "Unknown").join(", ")}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexShrink: 0 }}>
+                        <Btn small onClick={() => { setProjReminderModal(false); setProjReminderPreviewId(null); }} disabled={projReminderSending}>Cancel</Btn>
+                        <Btn small primary onClick={handleSend} disabled={projReminderSending || sendable.length === 0}>
+                          {projReminderSending ? "Sending…" : `Send to ${sendable.length} Manager${sendable.length !== 1 ? "s" : ""}`}
+                        </Btn>
+                      </div>
                     </div>
-                    {sendable.length === 0 && (
-                      <div style={{ padding: "16px 0", textAlign: "center", color: T.textMuted, fontSize: 13 }}>No managers with valid email addresses to notify.</div>
-                    )}
-                    {sendable.map(({ mgr, email, projs }) => {
-                      const now = new Date();
-                      const overdueCount = projs.filter(p => p.due && p.due !== "TBD" && new Date(p.due) < now).length;
-                      return (
-                        <div key={mgr?.id || email} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 14, fontWeight: 600 }}>{mgr?.name || "Unknown"}</div>
-                            <div style={{ fontSize: 12, color: T.textMuted }}>{email}</div>
-                          </div>
-                          <div style={{ textAlign: "right", flexShrink: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: T.brand }}>{projs.length} active project{projs.length !== 1 ? "s" : ""}</div>
-                            {overdueCount > 0 && <div style={{ fontSize: 11, color: T.bad, fontWeight: 600 }}>{overdueCount} overdue</div>}
-                          </div>
+                    {/* Right panel — email preview */}
+                    {previewEntry && (
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
+                          Email Preview — {previewEntry.mgr?.name || previewEntry.email}
                         </div>
-                      );
-                    })}
-                    {skipped.length > 0 && (
-                      <div style={{ marginTop: 12, padding: "10px 14px", background: T.raised, borderRadius: 8, fontSize: 12, color: T.textMuted }}>
-                        <strong>Will be skipped</strong> (no valid email): {skipped.map(m => m.mgr?.name || "Unknown").join(", ")}
+                        <iframe
+                          srcDoc={buildPreviewHtml(previewEntry.mgr?.name || "Manager", previewEntry.projs.map(p => ({ name: p.name, progress: p.progress, due: p.due || "TBD", updatedDate: p.updatedDate || null })))}
+                          style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 10, background: "#f5f5f7", width: "100%" }}
+                          title="Email Preview"
+                          sandbox="allow-same-origin"
+                        />
                       </div>
                     )}
-                    <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end" }}>
-                      <Btn small onClick={() => setProjReminderModal(false)} disabled={projReminderSending}>Cancel</Btn>
-                      <Btn small primary onClick={handleSend} disabled={projReminderSending || sendable.length === 0}>
-                        {projReminderSending ? "Sending…" : `Send to ${sendable.length} Manager${sendable.length !== 1 ? "s" : ""}`}
-                      </Btn>
-                    </div>
                   </div>
                 </div>
               );
