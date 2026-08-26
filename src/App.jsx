@@ -794,7 +794,7 @@ function Side({ items, active, onSelect, user, onLogout, pendingCounts, subItems
                         fontSize: 13, fontWeight: active === child.id ? 600 : 400, textAlign: "left", width: "100%",
                         fontFamily: F.body, letterSpacing: "-0.01em",
                       }}>
-                        <span style={{ fontSize: 12, width: 16, textAlign: "center", flexShrink: 0, opacity: 0.5 }}>{child.icon || "·"}</span>
+                        <span style={{ fontSize: 12, width: 16, textAlign: "center", flexShrink: 0, opacity: 0.5 }}>{"›"}</span>
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{child.label}</span>
                       </button>
                     ))}
