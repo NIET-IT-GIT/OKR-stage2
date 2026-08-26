@@ -3901,7 +3901,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       setAddTarget(`edit-${kr.id}`);
                       setNewKr({ label: kr.label, target: isMonthlyKr ? "" : String(kr.target ?? ""), dreamTarget: String(kr.annualTarget || ""), unit: kr.unit || "", dataSource: kr.dataSource || "", operator: kr.operator || ">=", period: kr.period || "monthly", useMonthlyTargets: isMonthlyKr && krType === "", krType, krYear: String(kr.krYear || ""), monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, kr.monthlyTargets?.[m.key] ?? 0])), disallowZero: !!kr.disallowZero });
                     }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", cursor: "pointer", color: T.brand, fontSize: 13 }}>✏</button>
-                    <button onClick={() => dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "2px 9px", cursor: "pointer", color: T.bad, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>×</button>
+                    <button onClick={() => { if (window.confirm(`Remove key result "${kr.label}"? This cannot be undone.`)) dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id }); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "2px 9px", cursor: "pointer", color: T.bad, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>×</button>
                   </div>
                 </div>
               );
@@ -4103,7 +4103,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       <div key={col.id} style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 3 }}>
                         <input value={col.name} onChange={e => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.map(c => c.id === col.id ? { ...c, name: e.target.value } : c) })}
                           style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase", padding: 0, cursor: "text" }} />
-                        <button onClick={() => dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.filter(c => c.id !== col.id) })} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, lineHeight: 1 }}>✕</button>
+                        <button onClick={() => { if (window.confirm(`Remove column "${col.name}"? This cannot be undone.`)) dispatch({ type: "SET_DEPT_CUSTOM_COLS", deptId: dept.id, customCols: customCols.filter(c => c.id !== col.id) }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.textDim, fontSize: 9, padding: 0, lineHeight: 1 }}>✕</button>
                         {rszHandle(e => startResizeCustom(col.id, dept.id, e))}
                       </div>
                     ))}
@@ -4138,7 +4138,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                         {customCols.map(col => <Input key={col.id} value={(kr.extras || {})[col.id] || ""} onChange={e => onTeamChange(kr.id, "extras", { ...(kr.extras || {}), [col.id]: e.target.value })} placeholder="—" style={{ padding: "5px 8px", fontSize: 13 }} />)}
                         <div style={{ display: "flex", gap: 4 }}>
                           {isMonthly && <button onClick={() => setExpandedMonthlyKr(p => p === kr.id ? null : kr.id)} title="Monthly breakdown — all 12 months" style={{ background: expandedMonthlyKr === kr.id ? T.brand : T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 7px", cursor: "pointer", color: expandedMonthlyKr === kr.id ? "#fff" : T.brand, fontSize: 12, fontWeight: 700 }}>📅</button>}
-                          <button onClick={() => { dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id }); if (teamId) triggerSyncPrompt(deptId, teamId); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
+                          <button onClick={() => { if (window.confirm(`Remove key result "${kr.label}"? This cannot be undone.`)) { dispatch({ type: "REMOVE_KR", deptId, teamId, krId: kr.id }); if (teamId) triggerSyncPrompt(deptId, teamId); } }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700 }}>✕</button>
                         </div>
                       </div>
                       {isMonthly && expandedMonthlyKr === kr.id && (
@@ -4367,7 +4367,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                         <select value={kr.period || "monthly"} onChange={e => dispatch({ type: "UPDATE_MEMBER_KR", memberId: member.id, krId: kr.id, field: "period", value: e.target.value })} style={{ padding: "3px 4px", fontSize: 12, borderRadius: 4, border: `1px solid ${T.border}`, background: T.card, color: T.text, cursor: "pointer" }}>
                                           <option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Bi-Annual</option><option value="annual">Annual</option>
                                         </select>
-                                        <button onClick={() => dispatch({ type: "REMOVE_MEMBER_KR", memberId: member.id, krId: kr.id })} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 4, padding: "2px 6px", cursor: "pointer", color: T.bad, fontSize: 11 }}>✕</button>
+                                        <button onClick={() => { if (window.confirm(`Remove "${kr.label}" from ${member.name}? This cannot be undone.`)) dispatch({ type: "REMOVE_MEMBER_KR", memberId: member.id, krId: kr.id }); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 4, padding: "2px 6px", cursor: "pointer", color: T.bad, fontSize: 11 }}>✕</button>
                                       </div>
                                       {isMonthly && !isTracker && (
                                         <div style={{ padding: "4px 10px 10px 16px", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}` }}>
@@ -4633,7 +4633,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                       {s.approvedBy && s.approvedBy !== "auto" && <span style={{ fontSize: 11, color: T.textMuted }}>by {users?.find(u => u.id === s.approvedBy)?.name || "Admin"}</span>}
                                       <Btn small onClick={() => { setEditingApproved({ id: s.id, actual: s.actualValue != null ? String(s.actualValue) : "", answer: s.answer }); setEditingSub(null); setRejectOkr(null); }}>✎</Btn>
                                     </div>}
-                                <button onClick={() => dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id })} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
+                                <button onClick={() => { if (window.confirm("Delete this OKR submission? This cannot be undone.")) dispatch({ type: "REMOVE_OKR_SUBMISSION", id: s.id }); }} title="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 14, lineHeight: 1, padding: "2px 4px" }}>✕</button>
                               </div>
                             </div>
                             {rejectOkr?.id === s.id && (
