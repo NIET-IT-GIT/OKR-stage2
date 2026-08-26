@@ -2520,6 +2520,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [editProjId, setEditProjId] = useState(null);
   const [editProjForm, setEditProjForm] = useState({ name: "", status: "active", startDate: "", due: "", income: "", margin: "", contributeRate: "" });
   const [progressEdits, setProgressEdits] = useState({});
+  const [projReminderModal, setProjReminderModal] = useState(false);
+  const [projReminderSending, setProjReminderSending] = useState(false);
+  const [projReminderResult, setProjReminderResult] = useState(null);
   const [logDrafts, setLogDrafts] = useState({});
   const [subFilter, setSubFilter] = useState("all");
   const [enrTab, setEnrTab] = useState("overview");
@@ -4950,15 +4953,114 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               {(() => { const ti = projects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income || 0), 0); return ti > 0 ? <Metric label="Completed Income" value={`$${ti.toLocaleString()}`} status="green" /> : null; })()}
               {(() => { const tp = projects.filter(p => p.status === "completed").reduce((a, p) => a + (p.income != null && p.margin != null ? Math.round(p.income * p.margin / 100) : 0), 0); return tp > 0 ? <Metric label="Completed Profit" value={`$${tp.toLocaleString()}`} status="green" /> : null; })()}
             </div>
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
               <Input
                 value={projSearch}
                 onChange={e => setProjSearch(e.target.value)}
                 placeholder="Search by user name..."
                 style={{ width: 260, padding: "7px 12px", fontSize: 14 }}
               />
-              {projSearch && <button onClick={() => setProjSearch("")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 13 }}>✕ Clear</button>}
+              {projSearch && <button onClick={() => setProjSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 13 }}>✕ Clear</button>}
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                {projReminderResult && (
+                  <span style={{ fontSize: 12, color: projReminderResult.errors ? T.bad : T.ok, fontWeight: 600 }}>
+                    {projReminderResult.errors
+                      ? `${projReminderResult.sent} sent, ${projReminderResult.errors} failed`
+                      : `✓ ${projReminderResult.sent} reminder${projReminderResult.sent !== 1 ? "s" : ""} sent`}
+                  </span>
+                )}
+                <Btn small onClick={() => { setProjReminderResult(null); setProjReminderModal(true); }}
+                  disabled={projects.filter(p => p.status === "active").length === 0}>
+                  Send Update Reminders
+                </Btn>
+              </div>
             </div>
+            {projReminderModal && (() => {
+              const ALLOWED_DOMAINS = ["niet.edu.au", "charltonbrown.edu.au", "educare.edu.au", "rhodes.edu.au"];
+              const activeProjects = projects.filter(p => p.status === "active");
+              const byMgr = {};
+              for (const p of activeProjects) {
+                if (!byMgr[p.mgrId]) byMgr[p.mgrId] = [];
+                byMgr[p.mgrId].push(p);
+              }
+              const mgrList = Object.entries(byMgr).map(([mgrId, projs]) => {
+                const mgr = users.find(u => u.id === mgrId);
+                const email = mgr?.email || "";
+                const domain = email.split("@")[1]?.toLowerCase();
+                const canSend = !!domain && ALLOWED_DOMAINS.includes(domain);
+                return { mgr, email, projs, canSend };
+              }).sort((a, b) => (a.mgr?.name || "").localeCompare(b.mgr?.name || ""));
+              const sendable = mgrList.filter(m => m.canSend);
+              const skipped = mgrList.filter(m => !m.canSend);
+              const handleSend = async () => {
+                setProjReminderSending(true);
+                let sent = 0, errors = 0;
+                await Promise.all(sendable.map(async ({ mgr, email, projs }) => {
+                  try {
+                    const res = await fetch("/api/project-reminder", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        to: email,
+                        name: mgr?.name || "Manager",
+                        projects: projs.map(p => ({
+                          name: p.name,
+                          progress: p.progress,
+                          due: p.due || "TBD",
+                          updatedDate: p.updatedDate || null,
+                        })),
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data.ok) sent++; else errors++;
+                  } catch { errors++; }
+                }));
+                setProjReminderSending(false);
+                setProjReminderModal(false);
+                setProjReminderResult({ sent, errors: errors || null });
+              };
+              return (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+                  onClick={e => { if (e.target === e.currentTarget && !projReminderSending) setProjReminderModal(false); }}>
+                  <div style={{ background: T.surface, borderRadius: 16, padding: 28, maxWidth: 520, width: "100%", boxShadow: "0 12px 48px rgba(0,0,0,0.2)" }}>
+                    <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 6 }}>Send Update Reminders</div>
+                    <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 20 }}>
+                      The following managers will receive an email listing their active projects and asking them to update progress.
+                    </div>
+                    {sendable.length === 0 && (
+                      <div style={{ padding: "16px 0", textAlign: "center", color: T.textMuted, fontSize: 13 }}>No managers with valid email addresses to notify.</div>
+                    )}
+                    {sendable.map(({ mgr, email, projs }) => {
+                      const now = new Date();
+                      const overdueCount = projs.filter(p => p.due && p.due !== "TBD" && new Date(p.due) < now).length;
+                      return (
+                        <div key={mgr?.id || email} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600 }}>{mgr?.name || "Unknown"}</div>
+                            <div style={{ fontSize: 12, color: T.textMuted }}>{email}</div>
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: T.brand }}>{projs.length} active project{projs.length !== 1 ? "s" : ""}</div>
+                            {overdueCount > 0 && <div style={{ fontSize: 11, color: T.bad, fontWeight: 600 }}>{overdueCount} overdue</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {skipped.length > 0 && (
+                      <div style={{ marginTop: 12, padding: "10px 14px", background: T.raised, borderRadius: 8, fontSize: 12, color: T.textMuted }}>
+                        <strong>Will be skipped</strong> (no valid email): {skipped.map(m => m.mgr?.name || "Unknown").join(", ")}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end" }}>
+                      <Btn small onClick={() => setProjReminderModal(false)} disabled={projReminderSending}>Cancel</Btn>
+                      <Btn small primary onClick={handleSend} disabled={projReminderSending || sendable.length === 0}>
+                        {projReminderSending ? "Sending…" : `Send to ${sendable.length} Manager${sendable.length !== 1 ? "s" : ""}`}
+                      </Btn>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             {projects.length === 0 && <EmptyState text="No projects yet." />}
             {projects.length > 0 && (() => {
               const ownerDept = p => users.find(u => u.id === p.mgrId)?.deptId || null;
