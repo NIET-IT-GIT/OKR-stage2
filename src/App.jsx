@@ -7500,17 +7500,13 @@ async function cashParseFiles(files) {
     return String(raw || "").trim() || "Unknown";
   };
 
-  // Extract YYYY-MM from a date cell (Date object, serial number, or string like "7/1/2026" / "3,4,5/07/2026")
   const extractMonth = cell => {
-    if (cell instanceof Date && !isNaN(cell)) {
+    if (cell instanceof Date && !isNaN(cell))
       return `${cell.getFullYear()}-${String(cell.getMonth() + 1).padStart(2, "0")}`;
-    }
     if (typeof cell === "string" && cell.trim()) {
       const s = cell.trim();
-      // "d,d,d/MM/YYYY" or "d/MM/YYYY" — match last /month/year
       const m1 = s.match(/\/(\d{1,2})\/(\d{4})$/);
       if (m1) return `${m1[2]}-${m1[1].padStart(2, "0")}`;
-      // "M/D/YYYY" at start
       const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
       if (m2) return `${m2[3]}-${m2[1].padStart(2, "0")}`;
     }
@@ -7528,16 +7524,36 @@ async function cashParseFiles(files) {
   const allRecords = [], warnings = [];
 
   for (const file of files) {
+    // Get sheet names in one call, then read all sheets in one call
+    let sheetEntries = null;
+    try {
+      const sheetList = await readXlsxFile(file, { getSheets: true });
+      if (Array.isArray(sheetList) && sheetList.length) {
+        const names = sheetList.map(s => (typeof s === "object" ? s.name : String(s)));
+        const allData = await readXlsxFile(file, { sheets: names });
+        if (Array.isArray(allData)) sheetEntries = allData; // [{name, data: Row[][]}]
+      }
+    } catch {}
+
+    // Fallback: read by index, stop on error or 2 consecutive empty sheets
+    if (!sheetEntries) {
+      sheetEntries = [];
+      let emptyRun = 0;
+      for (let i = 1; i <= 15; i++) {
+        try {
+          const raw = await readXlsxFile(file, { sheet: i });
+          const data = (raw && !Array.isArray(raw[0]) && raw[0]?.data) ? raw[0].data : (raw || []);
+          if (!data.length) { if (++emptyRun >= 2) break; continue; }
+          emptyRun = 0;
+          sheetEntries.push({ name: String(i), data });
+        } catch { break; }
+      }
+    }
+
     let fileRto = null;
     const seenMonths = new Set();
 
-    // Read sheets by index until the library throws (no more sheets)
-    for (let sheetIdx = 1; sheetIdx <= 25; sheetIdx++) {
-      let rows;
-      try { rows = await readXlsxFile(file, { sheet: sheetIdx }); }
-      catch { break; }
-      // Normalize: library may return Row[][] or [{name, data: Row[][]}] depending on version/options
-      if (rows && !Array.isArray(rows[0]) && rows[0]?.data) rows = rows[0].data;
+    for (const { name: sheetName, data: rows } of sheetEntries) {
       if (!rows || rows.length < 3) continue;
 
       // Find header row: must contain "Date" AND "total received"
@@ -7548,9 +7564,9 @@ async function cashParseFiles(files) {
           headerRowIdx = i; headerRow = rows[i]; break;
         }
       }
-      if (!headerRow) continue; // Not a monthly data sheet — skip
+      if (!headerRow) continue; // Not a monthly data sheet
 
-      // Detect RTO name once per file from the title row above header
+      // Detect RTO name once per file from title row above header
       if (!fileRto && headerRowIdx > 0) {
         for (let i = headerRowIdx - 1; i >= 0; i--) {
           const found = (rows[i] || []).find(c => c && String(c).trim().length > 0);
@@ -7558,7 +7574,7 @@ async function cashParseFiles(files) {
         }
       }
 
-      // Extract month from first date value in the data rows
+      // Extract month from first date cell in data rows
       const dateColIdx = headerRow.findIndex(c => String(c || "").toLowerCase().trim() === "date");
       let month = null;
       for (let i = headerRowIdx + 1; i < rows.length; i++) {
@@ -7567,11 +7583,10 @@ async function cashParseFiles(files) {
         const extracted = extractMonth(cell);
         if (extracted) { month = extracted; break; }
       }
-      if (!month) { warnings.push(`${file.name} sheet ${sheetIdx}: Could not extract month from date column`); continue; }
-      if (seenMonths.has(month)) continue; // Duplicate sheet for same month — skip
+      if (!month) { warnings.push(`${file.name} "${sheetName}": Could not extract month`); continue; }
+      if (seenMonths.has(month)) continue;
       seenMonths.add(month);
 
-      // Map column indices by header name
       const colIdx = {};
       FIELD_MAP.forEach(({ field, keywords }) => {
         const idx = headerRow.findIndex(cell => keywords.some(k => String(cell || "").toLowerCase().includes(k)));
@@ -7585,7 +7600,7 @@ async function cashParseFiles(files) {
         const checkCols = dateColIdx >= 0 ? [dateColIdx] : [0, 1];
         if (checkCols.some(ci => String(row[ci] || "").toLowerCase().trim() === "total")) { totalRow = row; break; }
       }
-      if (!totalRow) { warnings.push(`${file.name} sheet ${sheetIdx} (${month}): Could not find Total row`); continue; }
+      if (!totalRow) { warnings.push(`${file.name} "${sheetName}" (${month}): Could not find Total row`); continue; }
 
       const getNum = field => {
         const idx = colIdx[field];
