@@ -6433,29 +6433,15 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           const rtos = [...new Set(cashRecords.map(r => r.rto))].sort();
           const selectedRto = cashDetailRto || rtos[0] || "";
 
-          const handleCashFiles = async e => {
+          const handleCashFiles = e => {
             const files = [...(e.target.files || [])];
             if (!files.length) return;
             e.target.value = "";
-            setCashError("Reading sheet names…");
+            setCashError(null);
             setCashParsed(null);
-            setCashFileSelections([]);
-            await new Promise(r => setTimeout(r, 30));
-            try {
-              const { default: readXlsxFile } = await import("read-excel-file/browser");
-              const selections = [];
-              for (const file of files) {
-                let sheets = [];
-                try {
-                  const res = await readXlsxFile(file, { getSheets: true });
-                  if (Array.isArray(res) && res.length && !Array.isArray(res[0]) && typeof res[0]?.name === "string")
-                    sheets = res.map(s => s.name);
-                } catch {}
-                selections.push({ file, sheets, selected: sheets[0] || "" });
-              }
-              setCashFileSelections(selections);
-              setCashError(null);
-            } catch (err) { setCashError(`Failed to read files: ${err.message}`); }
+            const now = new Date();
+            const guess = `${String(now.getMonth() + 1).padStart(2, "0")}-${now.getFullYear()}`;
+            setCashFileSelections(files.map(file => ({ file, selected: guess })));
           };
 
           const handleCashParse = async () => {
@@ -6579,26 +6565,20 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 </div>
 
                 {cashFileSelections.length > 0 && !cashParsed && (<>
-                  <div style={{ marginBottom: 10, fontSize: 13, color: T.textDim }}>Select the month sheet to read from each file:</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                  <div style={{ marginBottom: 8, fontSize: 13, color: T.textDim }}>Enter the sheet tab name for each file (e.g. <span style={{ fontFamily: F.mono }}>07-2026</span> or <span style={{ fontFamily: F.mono }}>07-26</span>):</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
                     {cashFileSelections.map((sel, idx) => (
                       <div key={idx} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
                         <span style={{ flex: 1, fontSize: 13, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.file.name}</span>
-                        {sel.sheets.length > 0 ? (
-                          <select value={sel.selected} onChange={e => { const u = [...cashFileSelections]; u[idx] = { ...sel, selected: e.target.value }; setCashFileSelections(u); }}
-                            style={{ padding: "5px 8px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body }}>
-                            {sel.sheets.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        ) : (
-                          <input value={sel.selected} onChange={e => { const u = [...cashFileSelections]; u[idx] = { ...sel, selected: e.target.value }; setCashFileSelections(u); }}
-                            placeholder="Sheet tab name (e.g. 07-2026)"
-                            style={{ padding: "5px 8px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body, width: 160 }} />
-                        )}
+                        <input value={sel.selected}
+                          onChange={e => { const u = [...cashFileSelections]; u[idx] = { ...sel, selected: e.target.value }; setCashFileSelections(u); }}
+                          placeholder="e.g. 07-2026"
+                          style={{ padding: "5px 8px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.mono, width: 120 }} />
                       </div>
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-                    <Btn primary onClick={handleCashParse}>Parse Selected Sheets</Btn>
+                    <Btn primary onClick={handleCashParse} disabled={cashFileSelections.some(s => !s.selected.trim())}>Parse Selected Sheets</Btn>
                     <Btn onClick={() => { setCashFileSelections([]); setCashError(null); }}>Cancel</Btn>
                   </div>
                 </>)}
