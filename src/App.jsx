@@ -6436,14 +6436,16 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             const files = [...(e.target.files || [])];
             if (!files.length) return;
             e.target.value = "";
-            setCashError(null);
+            setCashError(`Parsing ${files.length} file(s)…`);
             setCashParsed(null);
+            await new Promise(r => setTimeout(r, 30)); // yield so "Parsing…" renders before blocking work
             try {
               const result = await cashParseFiles(files);
               if (!result.records.length) {
                 setCashError("No valid month data found." + (result.warnings.length ? "\n" + result.warnings.join("\n") : ""));
                 return;
               }
+              setCashError(null);
               setCashParsed(result);
             } catch (err) { setCashError(`Parse failed: ${err.message}`); }
           };
@@ -7524,25 +7526,27 @@ async function cashParseFiles(files) {
   const allRecords = [], warnings = [];
 
   for (const file of files) {
-    // Get sheet names in one call, then read all sheets in one call
+    // Try getSheets: only trust result if it returns plain objects with string .name (not row arrays)
     let sheetEntries = null;
     try {
       const sheetList = await readXlsxFile(file, { getSheets: true });
-      if (Array.isArray(sheetList) && sheetList.length) {
-        const names = sheetList.map(s => (typeof s === "object" ? s.name : String(s)));
+      if (Array.isArray(sheetList) && sheetList.length &&
+          !Array.isArray(sheetList[0]) && typeof sheetList[0]?.name === "string") {
+        const names = sheetList.map(s => s.name);
         const allData = await readXlsxFile(file, { sheets: names });
-        if (Array.isArray(allData)) sheetEntries = allData; // [{name, data: Row[][]}]
+        if (Array.isArray(allData) && allData[0]?.data) sheetEntries = allData;
       }
     } catch {}
 
-    // Fallback: read by index, stop on error or 2 consecutive empty sheets
+    // Fallback: read sheets by index; yield between iterations to keep UI responsive
     if (!sheetEntries) {
       sheetEntries = [];
       let emptyRun = 0;
-      for (let i = 1; i <= 15; i++) {
+      for (let i = 1; i <= 13; i++) {
+        await new Promise(r => setTimeout(r, 0));
         try {
           const raw = await readXlsxFile(file, { sheet: i });
-          const data = (raw && !Array.isArray(raw[0]) && raw[0]?.data) ? raw[0].data : (raw || []);
+          const data = (raw && !Array.isArray(raw[0]) && raw[0]?.data) ? raw[0].data : (Array.isArray(raw) ? raw : []);
           if (!data.length) { if (++emptyRun >= 2) break; continue; }
           emptyRun = 0;
           sheetEntries.push({ name: String(i), data });
