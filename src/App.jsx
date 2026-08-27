@@ -7554,27 +7554,32 @@ async function cashParseFiles(files) {
       }
     }
 
-    let fileRto = null;
+    // Seed RTO from filename; title row (if found) will override with more specific value
+    const rtoFromFilename = normalizeRto(file.name.replace(/\.(xlsx?)$/i, ""));
+    let fileRto = rtoFromFilename !== "Unknown" ? rtoFromFilename : null;
     const seenMonths = new Set();
 
     for (const { name: sheetName, data: rows } of sheetEntries) {
       if (!rows || rows.length < 3) continue;
 
-      // Find header row: must contain "Date" AND "total received"
+      // Find header row: must contain "Date" + at least one financial/student keyword
       let headerRowIdx = -1, headerRow = null;
       for (let i = 0; i < Math.min(6, rows.length); i++) {
         const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
-        if (cells.some(c => c.trim() === "date") && cells.some(c => c.includes("total received"))) {
-          headerRowIdx = i; headerRow = rows[i]; break;
-        }
+        const hasDate = cells.some(c => c.trim() === "date");
+        const hasFinancial = cells.some(c =>
+          c.includes("received") || c.includes("student") || c.includes("ongoing") ||
+          c.includes("new") || c.includes("total") || c.includes("cash") || c.includes("fee")
+        );
+        if (hasDate && hasFinancial) { headerRowIdx = i; headerRow = rows[i]; break; }
       }
       if (!headerRow) continue; // Not a monthly data sheet
 
-      // Detect RTO name once per file from title row above header
-      if (!fileRto && headerRowIdx > 0) {
+      // Override RTO from title row above header (more reliable than filename)
+      if (headerRowIdx > 0) {
         for (let i = headerRowIdx - 1; i >= 0; i--) {
           const found = (rows[i] || []).find(c => c && String(c).trim().length > 0);
-          if (found) { fileRto = normalizeRto(found); break; }
+          if (found) { const candidate = normalizeRto(found); if (candidate !== "Unknown") { fileRto = candidate; break; } }
         }
       }
 
@@ -7587,7 +7592,7 @@ async function cashParseFiles(files) {
         const extracted = extractMonth(cell);
         if (extracted) { month = extracted; break; }
       }
-      if (!month) { warnings.push(`${file.name} "${sheetName}": Could not extract month`); continue; }
+      if (!month) { warnings.push(`${file.name} "${sheetName}": Could not extract month from Date column`); continue; }
       if (seenMonths.has(month)) continue;
       seenMonths.add(month);
 
@@ -7604,7 +7609,7 @@ async function cashParseFiles(files) {
         const checkCols = dateColIdx >= 0 ? [dateColIdx] : [0, 1];
         if (checkCols.some(ci => String(row[ci] || "").toLowerCase().trim() === "total")) { totalRow = row; break; }
       }
-      if (!totalRow) { warnings.push(`${file.name} "${sheetName}" (${month}): Could not find Total row`); continue; }
+      if (!totalRow) { warnings.push(`${file.name} "${sheetName}" (${month}): No "Total" row found — check date column`); continue; }
 
       const getNum = field => {
         const idx = colIdx[field];
