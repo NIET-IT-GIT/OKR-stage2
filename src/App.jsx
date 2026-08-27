@@ -2620,6 +2620,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [cashParsed, setCashParsed] = useState(null);
   const [cashImporting, setCashImporting] = useState(false);
   const [cashDetailRto, setCashDetailRto] = useState("");
+  const [cashFileSelections, setCashFileSelections] = useState([]);
   useEffect(() => {
     if (!cashLoaded && !cashLoading) {
       setCashLoading(true);
@@ -6436,17 +6437,41 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             const files = [...(e.target.files || [])];
             if (!files.length) return;
             e.target.value = "";
-            setCashError(`Parsing ${files.length} file(s)…`);
+            setCashError("Reading sheet names…");
             setCashParsed(null);
-            await new Promise(r => setTimeout(r, 30)); // yield so "Parsing…" renders before blocking work
+            setCashFileSelections([]);
+            await new Promise(r => setTimeout(r, 30));
             try {
-              const result = await cashParseFiles(files);
+              const { default: readXlsxFile } = await import("read-excel-file/browser");
+              const selections = [];
+              for (const file of files) {
+                let sheets = [];
+                try {
+                  const res = await readXlsxFile(file, { getSheets: true });
+                  if (Array.isArray(res) && res.length && !Array.isArray(res[0]) && typeof res[0]?.name === "string")
+                    sheets = res.map(s => s.name);
+                } catch {}
+                selections.push({ file, sheets, selected: sheets[0] || "" });
+              }
+              setCashFileSelections(selections);
+              setCashError(null);
+            } catch (err) { setCashError(`Failed to read files: ${err.message}`); }
+          };
+
+          const handleCashParse = async () => {
+            if (!cashFileSelections.length) return;
+            setCashError(`Parsing ${cashFileSelections.length} file(s)…`);
+            setCashParsed(null);
+            await new Promise(r => setTimeout(r, 30));
+            try {
+              const result = await cashParseFiles(cashFileSelections.map(s => ({ file: s.file, sheetName: s.selected })));
               if (!result.records.length) {
-                setCashError("No valid month data found." + (result.warnings.length ? "\n" + result.warnings.join("\n") : ""));
+                setCashError("No valid data found." + (result.warnings.length ? "\n" + result.warnings.join("\n") : ""));
                 return;
               }
               setCashError(null);
               setCashParsed(result);
+              setCashFileSelections([]);
             } catch (err) { setCashError(`Parse failed: ${err.message}`); }
           };
 
@@ -6545,13 +6570,39 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               })()}
 
               {cashTab === "imports" && (<>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: cashFileSelections.length ? 16 : 20 }}>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", background: T.brand, color: "#fff", borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
                     Upload Excel Files
                     <input type="file" accept=".xlsx" multiple style={{ display: "none" }} onChange={handleCashFiles} />
                   </label>
                   <span style={{ fontSize: 12, color: T.textDim }}>Select one or more .xlsx files (one per RTO)</span>
                 </div>
+
+                {cashFileSelections.length > 0 && !cashParsed && (<>
+                  <div style={{ marginBottom: 10, fontSize: 13, color: T.textDim }}>Select the month sheet to read from each file:</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {cashFileSelections.map((sel, idx) => (
+                      <div key={idx} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
+                        <span style={{ flex: 1, fontSize: 13, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.file.name}</span>
+                        {sel.sheets.length > 0 ? (
+                          <select value={sel.selected} onChange={e => { const u = [...cashFileSelections]; u[idx] = { ...sel, selected: e.target.value }; setCashFileSelections(u); }}
+                            style={{ padding: "5px 8px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body }}>
+                            {sel.sheets.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        ) : (
+                          <input value={sel.selected} onChange={e => { const u = [...cashFileSelections]; u[idx] = { ...sel, selected: e.target.value }; setCashFileSelections(u); }}
+                            placeholder="Sheet tab name (e.g. 07-2026)"
+                            style={{ padding: "5px 8px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body, width: 160 }} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+                    <Btn primary onClick={handleCashParse}>Parse Selected Sheets</Btn>
+                    <Btn onClick={() => { setCashFileSelections([]); setCashError(null); }}>Cancel</Btn>
+                  </div>
+                </>)}
+
                 {cashParsed && (<>
                   <div style={{ marginBottom: 10, padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand }}>
                     Found {cashParsed.records.length} record(s): {[...new Set(cashParsed.records.map(r => r.rto))].join(", ")}
@@ -6560,19 +6611,19 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   <div style={{ overflowX: "auto", marginBottom: 12 }}>
                     <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
                       <thead>
-                        <tr>{["RTO","Month","Total Received","New Students ($)","New Count","Ongoing Students","Variance Check","File"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr>
+                        <tr>{["RTO","Month","Sheet","Total Received","New Students ($)","New Count","Ongoing Students","Variance Check"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr>
                       </thead>
                       <tbody>
                         {[...cashParsed.records].sort((a,b) => a.rto.localeCompare(b.rto) || b.month.localeCompare(a.month)).map(rec => (
                           <tr key={rec.id}>
                             <td style={{ ...tdCss, fontWeight: 600 }}>{rec.rto}</td>
                             <td style={tdCss}>{rec.month}</td>
+                            <td style={{ ...tdCss, fontSize: 11, color: T.textDim }}>{rec.sheetName || "—"}</td>
                             <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.totalReceived)}</td>
                             <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.newStudents)}</td>
                             <td style={{ ...tdCss, textAlign: "right" }}>{rec.newStudentCount}</td>
                             <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.ongoingStudents)}</td>
                             <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.varianceCheck)}</td>
-                            <td style={{ ...tdCss, fontSize: 11, color: T.textMuted }}>{rec.fileName}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -6588,7 +6639,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
                       <thead>
-                        <tr>{["Month","RTO","Total Received","File","Uploaded",""].map(h => <th key={h} style={thCss}>{h}</th>)}</tr>
+                        <tr>{["Month","RTO","Sheet","Total Received","Uploaded",""].map(h => <th key={h} style={thCss}>{h}</th>)}</tr>
                       </thead>
                       <tbody>
                         {[...cashRecords].sort((a,b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto)).map(rec => (
@@ -6596,7 +6647,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                             <td style={{ ...tdCss, fontWeight: 600 }}>{rec.month}</td>
                             <td style={tdCss}>{rec.rto}</td>
                             <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.totalReceived)}</td>
-                            <td style={{ ...tdCss, fontSize: 11, color: T.textMuted }}>{rec.fileName || "—"}</td>
+                            <td style={{ ...tdCss, fontSize: 11, color: T.textDim }}>{rec.sheetName || rec.fileName || "—"}</td>
                             <td style={{ ...tdCss, fontSize: 11, color: T.textMuted }}>{rec.uploadedAt ? rec.uploadedAt.slice(0,16).replace("T"," ") : "—"}</td>
                             <td style={tdCss}>
                               <Btn small danger onClick={async () => {
@@ -7490,7 +7541,7 @@ async function plParseFile(file) {
   };
 }
 
-async function cashParseFiles(files) {
+async function cashParseFiles(fileSheets) {
   const { default: readXlsxFile } = await import("read-excel-file/browser");
 
   const normalizeRto = raw => {
@@ -7525,122 +7576,93 @@ async function cashParseFiles(files) {
 
   const allRecords = [], warnings = [];
 
-  for (const file of files) {
-    // Try getSheets: only trust result if it returns plain objects with string .name (not row arrays)
-    let sheetEntries = null;
+  for (const { file, sheetName } of fileSheets) {
+    if (!sheetName) { warnings.push(`${file.name}: no sheet selected`); continue; }
+
+    let rows;
     try {
-      const sheetList = await readXlsxFile(file, { getSheets: true });
-      if (Array.isArray(sheetList) && sheetList.length &&
-          !Array.isArray(sheetList[0]) && typeof sheetList[0]?.name === "string") {
-        const names = sheetList.map(s => s.name);
-        const allData = await readXlsxFile(file, { sheets: names });
-        if (Array.isArray(allData) && allData[0]?.data) sheetEntries = allData;
-      }
-    } catch {}
+      const raw = await readXlsxFile(file, { sheets: [sheetName] });
+      rows = raw[0]?.data || [];
+    } catch (e) { warnings.push(`${file.name} "${sheetName}": ${e.message}`); continue; }
 
-    // Fallback: read sheets by index; yield between iterations to keep UI responsive
-    if (!sheetEntries) {
-      sheetEntries = [];
-      let emptyRun = 0;
-      for (let i = 1; i <= 13; i++) {
-        await new Promise(r => setTimeout(r, 0));
-        try {
-          const raw = await readXlsxFile(file, { sheet: i });
-          const data = (raw && !Array.isArray(raw[0]) && raw[0]?.data) ? raw[0].data : (Array.isArray(raw) ? raw : []);
-          if (!data.length) { if (++emptyRun >= 2) break; continue; }
-          emptyRun = 0;
-          sheetEntries.push({ name: String(i), data });
-        } catch { break; }
-      }
-    }
+    if (!rows || rows.length < 3) { warnings.push(`${file.name} "${sheetName}": only ${rows?.length ?? 0} rows found`); continue; }
 
-    // Seed RTO from filename; title row (if found) will override with more specific value
+    // Seed RTO from filename; title row overrides if more specific
     const rtoFromFilename = normalizeRto(file.name.replace(/\.(xlsx?)$/i, ""));
     let fileRto = rtoFromFilename !== "Unknown" ? rtoFromFilename : null;
-    const seenMonths = new Set();
 
-    warnings.push(`[diag] ${file.name}: ${sheetEntries.length} sheet(s) loaded`);
-
-    for (const { name: sheetName, data: rows } of sheetEntries) {
-      if (!rows || rows.length < 3) { warnings.push(`[diag] sheet "${sheetName}": ${rows?.length ?? 0} rows (skipped)`); continue; }
-
-      // Find header row: must contain "Date" + at least one financial/student keyword
-      let headerRowIdx = -1, headerRow = null;
-      for (let i = 0; i < Math.min(12, rows.length); i++) {
-        const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
-        const hasDate = cells.some(c => c.trim() === "date");
-        const hasFinancial = cells.some(c =>
-          c.includes("received") || c.includes("student") || c.includes("ongoing") ||
-          c.includes("new") || c.includes("total") || c.includes("cash") || c.includes("fee")
-        );
-        if (hasDate && hasFinancial) { headerRowIdx = i; headerRow = rows[i]; break; }
+    // Find header row: Date + at least one financial keyword, scan up to row 12
+    let headerRowIdx = -1, headerRow = null;
+    for (let i = 0; i < Math.min(12, rows.length); i++) {
+      const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
+      if (cells.some(c => c.trim() === "date") &&
+          cells.some(c => c.includes("received") || c.includes("student") || c.includes("ongoing") ||
+                          c.includes("new") || c.includes("total") || c.includes("cash") || c.includes("fee"))) {
+        headerRowIdx = i; headerRow = rows[i]; break;
       }
-      if (!headerRow) {
-        const rowPeek = rows.slice(0, rows.length).map((r, i) => `r${i}:[${(r||[]).slice(0,4).map(c=>JSON.stringify(c)).join(",")}]`).join(" | ");
-        warnings.push(`[diag] sheet "${sheetName}" (${rows.length} rows): no header — ${rowPeek}`);
-        continue;
+    }
+    if (!headerRow) { warnings.push(`${file.name} "${sheetName}": no header row found (no "Date" + financial column in first 12 rows)`); continue; }
+
+    // Override RTO from title row above header
+    if (headerRowIdx > 0) {
+      for (let i = headerRowIdx - 1; i >= 0; i--) {
+        const found = (rows[i] || []).find(c => c && String(c).trim().length > 0);
+        if (found) { const c = normalizeRto(found); if (c !== "Unknown") { fileRto = c; break; } }
       }
-
-      // Override RTO from title row above header (more reliable than filename)
-      if (headerRowIdx > 0) {
-        for (let i = headerRowIdx - 1; i >= 0; i--) {
-          const found = (rows[i] || []).find(c => c && String(c).trim().length > 0);
-          if (found) { const candidate = normalizeRto(found); if (candidate !== "Unknown") { fileRto = candidate; break; } }
-        }
-      }
-
-      // Extract month from first date cell in data rows
-      const dateColIdx = headerRow.findIndex(c => String(c || "").toLowerCase().trim() === "date");
-      let month = null;
-      for (let i = headerRowIdx + 1; i < rows.length; i++) {
-        const cell = dateColIdx >= 0 ? rows[i]?.[dateColIdx] : rows[i]?.[0];
-        if (!cell) continue;
-        const extracted = extractMonth(cell);
-        if (extracted) { month = extracted; break; }
-      }
-      if (!month) { warnings.push(`[diag] sheet "${sheetName}": no month — dateColIdx=${dateColIdx}, first data cell: ${JSON.stringify(rows[headerRowIdx+1]?.[dateColIdx >= 0 ? dateColIdx : 0])}`); continue; }
-      if (seenMonths.has(month)) continue;
-      seenMonths.add(month);
-
-      const colIdx = {};
-      FIELD_MAP.forEach(({ field, keywords }) => {
-        const idx = headerRow.findIndex(cell => keywords.some(k => String(cell || "").toLowerCase().includes(k)));
-        colIdx[field] = idx >= 0 ? idx : null;
-      });
-
-      // Find Total row scanning from bottom
-      let totalRow = null;
-      for (let i = rows.length - 1; i > headerRowIdx; i--) {
-        const row = rows[i] || [];
-        const checkCols = dateColIdx >= 0 ? [dateColIdx] : [0, 1];
-        if (checkCols.some(ci => String(row[ci] || "").toLowerCase().trim() === "total")) { totalRow = row; break; }
-      }
-      if (!totalRow) { warnings.push(`[diag] sheet "${sheetName}" (${month}): no Total row — last 3 rows col${dateColIdx}: ${[rows[rows.length-3],rows[rows.length-2],rows[rows.length-1]].map(r=>JSON.stringify(r?.[dateColIdx])).join(",")}`); continue; }
-
-      const getNum = field => {
-        const idx = colIdx[field];
-        if (idx == null || idx < 0) return 0;
-        const val = totalRow[idx];
-        if (typeof val === "number") return val;
-        if (typeof val === "string") return parseFloat(val.replace(/[$,]/g, "")) || 0;
-        return 0;
-      };
-
-      const rto = fileRto || "Unknown";
-      allRecords.push({
-        id: `cash_${month}_${rto}`,
-        month, rto,
-        totalReceived:   getNum("totalReceived"),
-        newStudents:     getNum("newStudents"),
-        newStudentCount: getNum("newStudentCount"),
-        ongoingStudents: getNum("ongoingStudents"),
-        varianceCheck:   getNum("varianceCheck"),
-        fileName: file.name,
-        uploadedAt: new Date().toISOString(),
-      });
     }
 
-    if (!fileRto) warnings.push(`${file.name}: Could not detect RTO name`);
+    // Extract month from first date cell, fallback to sheet tab name
+    const dateColIdx = headerRow.findIndex(c => String(c || "").toLowerCase().trim() === "date");
+    let month = null;
+    for (let i = headerRowIdx + 1; i < rows.length; i++) {
+      const cell = dateColIdx >= 0 ? rows[i]?.[dateColIdx] : rows[i]?.[0];
+      if (!cell) continue;
+      const extracted = extractMonth(cell);
+      if (extracted) { month = extracted; break; }
+    }
+    if (!month) {
+      // Fallback: parse sheet tab name like "07-2026", "07-26", "07/26"
+      const m = sheetName.trim().match(/^(\d{1,2})[-\/](\d{2,4})$/);
+      if (m) { const yr = m[2].length === 2 ? `20${m[2]}` : m[2]; month = `${yr}-${m[1].padStart(2, "0")}`; }
+    }
+    if (!month) { warnings.push(`${file.name} "${sheetName}": could not determine month`); continue; }
+
+    // Map column indices
+    const colIdx = {};
+    FIELD_MAP.forEach(({ field, keywords }) => {
+      const idx = headerRow.findIndex(cell => keywords.some(k => String(cell || "").toLowerCase().includes(k)));
+      colIdx[field] = idx >= 0 ? idx : null;
+    });
+
+    // Find Total row from bottom; check date col and adjacent cols
+    let totalRow = null;
+    for (let i = rows.length - 1; i > headerRowIdx; i--) {
+      const row = rows[i] || [];
+      const checkCols = [...new Set([dateColIdx, dateColIdx - 1, 0, 1].filter(c => c >= 0))];
+      if (checkCols.some(ci => String(row[ci] || "").toLowerCase().trim() === "total")) { totalRow = row; break; }
+    }
+    if (!totalRow) { warnings.push(`${file.name} "${sheetName}": no "Total" row found`); continue; }
+
+    const getNum = field => {
+      const idx = colIdx[field];
+      if (idx == null || idx < 0) return 0;
+      const val = totalRow[idx];
+      if (typeof val === "number") return val;
+      if (typeof val === "string") return parseFloat(val.replace(/[$,]/g, "")) || 0;
+      return 0;
+    };
+
+    allRecords.push({
+      id: `cash_${month}_${fileRto || "Unknown"}`,
+      month, rto: fileRto || "Unknown",
+      totalReceived:   getNum("totalReceived"),
+      newStudents:     getNum("newStudents"),
+      newStudentCount: getNum("newStudentCount"),
+      ongoingStudents: getNum("ongoingStudents"),
+      varianceCheck:   getNum("varianceCheck"),
+      fileName: file.name, sheetName,
+      uploadedAt: new Date().toISOString(),
+    });
   }
 
   return { records: allRecords, warnings };
