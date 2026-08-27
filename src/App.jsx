@@ -7566,7 +7566,7 @@ async function cashParseFiles(files) {
 
       // Find header row: must contain "Date" + at least one financial/student keyword
       let headerRowIdx = -1, headerRow = null;
-      for (let i = 0; i < Math.min(6, rows.length); i++) {
+      for (let i = 0; i < Math.min(12, rows.length); i++) {
         const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
         const hasDate = cells.some(c => c.trim() === "date");
         const hasFinancial = cells.some(c =>
@@ -7575,7 +7575,11 @@ async function cashParseFiles(files) {
         );
         if (hasDate && hasFinancial) { headerRowIdx = i; headerRow = rows[i]; break; }
       }
-      if (!headerRow) { warnings.push(`[diag] sheet "${sheetName}" (${rows.length} rows): no Date+financial header — row0: [${(rows[0]||[]).slice(0,5).map(c=>JSON.stringify(c)).join(",")}]`); continue; }
+      if (!headerRow) {
+        const rowPeek = rows.slice(0, rows.length).map((r, i) => `r${i}:[${(r||[]).slice(0,4).map(c=>JSON.stringify(c)).join(",")}]`).join(" | ");
+        warnings.push(`[diag] sheet "${sheetName}" (${rows.length} rows): no header — ${rowPeek}`);
+        continue;
+      }
 
       // Override RTO from title row above header (more reliable than filename)
       if (headerRowIdx > 0) {
