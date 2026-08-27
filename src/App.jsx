@@ -499,6 +499,23 @@ async function dbGetPlData() {
   return result;
 }
 
+async function dbGetCashData() {
+  const result = { cash_records: [] };
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
+      .in("collection", ["cash_records"])
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return result;
+}
+
 async function dbBulkInsert(collection, items) {
   const CHUNK = 200;
   for (let i = 0; i < items.length; i += CHUNK) {
@@ -2595,6 +2612,21 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       }).catch(e => { setPlError(e.message); setPlLoading(false); setPlLoaded(true); });
     }
   }, [plLoaded, plLoading]);
+  const [cashTab, setCashTab] = useState("overview");
+  const [cashRecords, setCashRecords] = useState([]);
+  const [cashLoaded, setCashLoaded] = useState(false);
+  const [cashLoading, setCashLoading] = useState(false);
+  const [cashError, setCashError] = useState(null);
+  const [cashParsed, setCashParsed] = useState(null);
+  const [cashImporting, setCashImporting] = useState(false);
+  const [cashDetailRto, setCashDetailRto] = useState("");
+  useEffect(() => {
+    if (!cashLoaded && !cashLoading) {
+      setCashLoading(true);
+      dbGetCashData().then(r => { setCashRecords(r.cash_records); setCashLoaded(true); setCashLoading(false); })
+        .catch(e => { setCashError(e.message); setCashLoaded(true); setCashLoading(false); });
+    }
+  }, [cashLoaded, cashLoading]);
   const [colWidths, setColWidths] = useState({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const colWidthsRef = useRef({ id: 50, label: 220, operator: 72, period: 90, target: 90, actual: 80, unit: 100, dataSource: 200 });
   const dragColRef = useRef(null);
@@ -2960,6 +2992,12 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       return `TOP DIVISIONS BY NET PROFIT — ${fyLabel} (sorted desc):\n` +
         divNp.map((d, idx) => `  ${idx + 1}. ${d.div}: ${fmtMoney(d.cum)} [${Math.round(d.cum)}]`).join("\n");
     })();
+    const cashContextSection = cashRecords.length === 0
+      ? "CASH STATEMENT RECORDS: None uploaded yet."
+      : `CASH STATEMENT RECORDS (${cashRecords.length} record(s)):\n` +
+        [...cashRecords].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto))
+          .map(r => `  ${r.month} | ${r.rto}: Total Received ${fmtMoney(r.totalReceived)} [${Math.round(r.totalReceived)}], New Students ${fmtMoney(r.newStudents)} [${Math.round(r.newStudents)}], New Count ${r.newStudentCount}, Ongoing ${fmtMoney(r.ongoingStudents)} [${Math.round(r.ongoingStudents)}]`)
+          .join("\n");
 
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
@@ -2972,6 +3010,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       `\n${topProjects}`,
       `\n${topMembers}`,
       `\n${topDivisions}`,
+      `\n${cashContextSection}`,
       `\n${pendingSection}`,
       `\n${projectSection}`,
       `\n${enrolmentSection}`,
@@ -3113,7 +3152,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     { id: "submissions",      icon: "⬡", label: "OKR Submissions"   },
     { id: "reports",          icon: "⬡", label: "OKR Reports"       },
     { id: "projects",         icon: "⬡", label: "Projects"          },
-    { id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "financial", icon: "⬡", label: "Financial Performance" }] },
+    { id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "cash-statement", icon: "⬡", label: "Cash Statement" }] },
     { id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] },
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
     { id: "users",            icon: "⬡", label: "User Management"   },
@@ -6376,6 +6415,207 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           </Pane>
         </>)}
 
+        {page === "cash-statement" && (() => {
+          const FMT = v => (v == null || isNaN(v)) ? "—" : (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+          const FIELDS = [
+            { key: "totalReceived",   label: "Total Received" },
+            { key: "newStudents",     label: "New Students ($)" },
+            { key: "newStudentCount", label: "New Count", isCount: true },
+            { key: "ongoingStudents", label: "Ongoing Students" },
+            { key: "varianceCheck",   label: "Variance Check" },
+          ];
+          const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, fontWeight: 700, fontSize: 12, color: T.textDim, whiteSpace: "nowrap" };
+          const tdCss = { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13, fontFamily: F.mono };
+          const byMonth = {};
+          for (const r of cashRecords) { if (!byMonth[r.month]) byMonth[r.month] = {}; byMonth[r.month][r.rto] = r; }
+          const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+          const rtos = [...new Set(cashRecords.map(r => r.rto))].sort();
+          const selectedRto = cashDetailRto || rtos[0] || "";
+
+          const handleCashFiles = async e => {
+            const files = [...(e.target.files || [])];
+            if (!files.length) return;
+            e.target.value = "";
+            setCashError(null);
+            setCashParsed(null);
+            try {
+              const result = await cashParseFiles(files);
+              if (!result.records.length) {
+                setCashError("No valid month data found." + (result.warnings.length ? "\n" + result.warnings.join("\n") : ""));
+                return;
+              }
+              setCashParsed(result);
+            } catch (err) { setCashError(`Parse failed: ${err.message}`); }
+          };
+
+          const handleCashImport = async () => {
+            if (!cashParsed?.records?.length) return;
+            setCashImporting(true);
+            setCashError(null);
+            try {
+              for (const rec of cashParsed.records) {
+                await supabase.from("app_data").delete().eq("collection","cash_records").eq("id", rec.id);
+              }
+              await dbBulkInsert("cash_records", cashParsed.records);
+              setCashRecords(prev => { const ids = new Set(cashParsed.records.map(r => r.id)); return [...prev.filter(r => !ids.has(r.id)), ...cashParsed.records]; });
+              setCashParsed(null);
+            } catch (err) { setCashError(`Import failed: ${err.message}`); }
+            setCashImporting(false);
+          };
+
+          return (<>
+            <Header title="Cash Statement" sub="Monthly cash intake by RTO — imported from Cash Statement Excel files" />
+            <Pane>
+              {cashError && <div style={{ padding: "10px 14px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 7, fontSize: 13, color: T.bad, marginBottom: 16, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{cashError}</div>}
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
+                {[["overview","Overview"],["detail","By RTO"],["imports","Imports"]].map(([v, label]) => (
+                  <Btn key={v} small primary={cashTab === v} onClick={() => setCashTab(v)}>{label}</Btn>
+                ))}
+              </div>
+
+              {cashTab === "overview" && (() => {
+                if (!cashRecords.length) return <EmptyState text="No cash statement data uploaded yet." />;
+                return (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th style={thCss}>Month</th>
+                          {rtos.map(rto => <th key={rto} style={{ ...thCss, textAlign: "right" }}>{rto}</th>)}
+                          <th style={{ ...thCss, textAlign: "right", color: T.brand }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {months.map(month => {
+                          const rowTotal = rtos.reduce((s, rto) => s + (byMonth[month]?.[rto]?.totalReceived || 0), 0);
+                          return (
+                            <tr key={month}>
+                              <td style={{ ...tdCss, fontWeight: 600, fontFamily: F.body }}>{month}</td>
+                              {rtos.map(rto => {
+                                const rec = byMonth[month]?.[rto];
+                                return <td key={rto} style={{ ...tdCss, textAlign: "right", color: rec ? T.text : T.textDim }}>{rec ? FMT(rec.totalReceived) : "—"}</td>;
+                              })}
+                              <td style={{ ...tdCss, textAlign: "right", fontWeight: 700, color: T.brand }}>{FMT(rowTotal)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+
+              {cashTab === "detail" && (() => {
+                if (!cashRecords.length) return <EmptyState text="No cash statement data uploaded yet." />;
+                const detailRecs = cashRecords.filter(r => r.rto === selectedRto).sort((a, b) => b.month.localeCompare(a.month));
+                return (<>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+                    <span style={{ fontSize: 13, color: T.textDim }}>RTO:</span>
+                    <select value={selectedRto} onChange={e => setCashDetailRto(e.target.value)} style={{ padding: "6px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body }}>
+                      {rtos.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  {!detailRecs.length ? <EmptyState text={`No data for ${selectedRto}`} /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            <th style={thCss}>Month</th>
+                            {FIELDS.map(f => <th key={f.key} style={{ ...thCss, textAlign: "right" }}>{f.label}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailRecs.map(rec => (
+                            <tr key={rec.id}>
+                              <td style={{ ...tdCss, fontFamily: F.body, fontWeight: 600 }}>{rec.month}</td>
+                              {FIELDS.map(f => (
+                                <td key={f.key} style={{ ...tdCss, textAlign: "right" }}>
+                                  {f.isCount ? (rec[f.key] ?? "—") : FMT(rec[f.key])}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>);
+              })()}
+
+              {cashTab === "imports" && (<>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", background: T.brand, color: "#fff", borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                    Upload Excel Files
+                    <input type="file" accept=".xlsx" multiple style={{ display: "none" }} onChange={handleCashFiles} />
+                  </label>
+                  <span style={{ fontSize: 12, color: T.textDim }}>Select one or more .xlsx files (one per RTO)</span>
+                </div>
+                {cashParsed && (<>
+                  <div style={{ marginBottom: 10, padding: "10px 14px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 7, fontSize: 13, color: T.brand }}>
+                    Found {cashParsed.records.length} record(s): {[...new Set(cashParsed.records.map(r => r.rto))].join(", ")}
+                    {cashParsed.warnings?.length > 0 && <div style={{ color: T.warn || T.bad, marginTop: 6, whiteSpace: "pre-wrap" }}>{cashParsed.warnings.join("\n")}</div>}
+                  </div>
+                  <div style={{ overflowX: "auto", marginBottom: 12 }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                      <thead>
+                        <tr>{["RTO","Month","Total Received","New Students ($)","New Count","Ongoing Students","Variance Check","File"].map(h => <th key={h} style={thCss}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {[...cashParsed.records].sort((a,b) => a.rto.localeCompare(b.rto) || b.month.localeCompare(a.month)).map(rec => (
+                          <tr key={rec.id}>
+                            <td style={{ ...tdCss, fontWeight: 600 }}>{rec.rto}</td>
+                            <td style={tdCss}>{rec.month}</td>
+                            <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.totalReceived)}</td>
+                            <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.newStudents)}</td>
+                            <td style={{ ...tdCss, textAlign: "right" }}>{rec.newStudentCount}</td>
+                            <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.ongoingStudents)}</td>
+                            <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.varianceCheck)}</td>
+                            <td style={{ ...tdCss, fontSize: 11, color: T.textMuted }}>{rec.fileName}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn primary onClick={handleCashImport} disabled={cashImporting}>{cashImporting ? "Importing…" : `Import ${cashParsed.records.length} Records`}</Btn>
+                    <Btn onClick={() => { setCashParsed(null); setCashError(null); }}>Cancel</Btn>
+                  </div>
+                </>)}
+                {cashRecords.length > 0 && (<>
+                  <div style={{ marginTop: cashParsed ? 28 : 0, marginBottom: 8, fontSize: 13, fontWeight: 700, color: T.text }}>Uploaded Records</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                      <thead>
+                        <tr>{["Month","RTO","Total Received","File","Uploaded",""].map(h => <th key={h} style={thCss}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {[...cashRecords].sort((a,b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto)).map(rec => (
+                          <tr key={rec.id}>
+                            <td style={{ ...tdCss, fontWeight: 600 }}>{rec.month}</td>
+                            <td style={tdCss}>{rec.rto}</td>
+                            <td style={{ ...tdCss, textAlign: "right" }}>{FMT(rec.totalReceived)}</td>
+                            <td style={{ ...tdCss, fontSize: 11, color: T.textMuted }}>{rec.fileName || "—"}</td>
+                            <td style={{ ...tdCss, fontSize: 11, color: T.textMuted }}>{rec.uploadedAt ? rec.uploadedAt.slice(0,16).replace("T"," ") : "—"}</td>
+                            <td style={tdCss}>
+                              <Btn small danger onClick={async () => {
+                                if (!window.confirm(`Delete ${rec.rto} ${rec.month}? This cannot be undone.`)) return;
+                                try {
+                                  await supabase.from("app_data").delete().eq("collection","cash_records").eq("id", rec.id);
+                                  setCashRecords(prev => prev.filter(r => r.id !== rec.id));
+                                } catch (e) { setCashError(`Delete failed: ${e.message}`); }
+                              }}>Delete</Btn>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>)}
+              </>)}
+            </Pane>
+          </>);
+        })()}
+
         {page === "leaderboard" && (<>
           <Header title="Company Leaderboard" sub={`All staff ranked by OKR completion · ${currentFYQuarter()}`} />
           <Pane>
@@ -7248,7 +7488,98 @@ async function plParseFile(file) {
   };
 }
 
-function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [] }) {
+async function cashParseFiles(files) {
+  const { default: readXlsxFile, readSheetNames } = await import("read-excel-file/browser");
+  const MONTH_RE = /^(\d{1,2})[-/](\d{2,4})$/;
+  const parseSheetMonth = name => {
+    const m = name.trim().match(MONTH_RE);
+    if (!m) return null;
+    const mm = m[1].padStart(2, "0");
+    const yr = m[2].length === 2 ? `20${m[2]}` : m[2];
+    return `${yr}-${mm}`;
+  };
+  const normalizeRto = raw => {
+    const s = String(raw || "").toLowerCase();
+    if (s.includes("aai") || s.includes("niet") || s.includes("australia academy")) return "NIET";
+    if (s.includes("charlton") || s.includes("cb")) return "CB";
+    if (s.includes("educare")) return "Educare";
+    if (s.includes("rhodes")) return "Rhodes";
+    return String(raw || "").trim() || "Unknown";
+  };
+  const FIELD_MAP = [
+    { field: "totalReceived",   keywords: ["total received"] },
+    { field: "newStudents",     keywords: ["new students"] },
+    { field: "newStudentCount", keywords: ["no. of new", "no of new", "number of new"] },
+    { field: "ongoingStudents", keywords: ["ongoing"] },
+    { field: "varianceCheck",   keywords: ["variance"] },
+  ];
+  const allRecords = [], warnings = [];
+  for (const file of files) {
+    let sheetNames;
+    try { sheetNames = await readSheetNames(file); }
+    catch (e) { warnings.push(`${file.name}: Could not read sheet names — ${e.message}`); continue; }
+    const monthSheets = sheetNames.map(n => ({ name: n, month: parseSheetMonth(n) })).filter(s => s.month);
+    if (!monthSheets.length) { warnings.push(`${file.name}: No month sheets found (expected MM-YYYY tabs)`); continue; }
+    for (const { name: sheetName, month } of monthSheets) {
+      let rows;
+      try { rows = await readXlsxFile(file, { sheet: sheetName }); }
+      catch (e) { warnings.push(`${file.name}/${sheetName}: Failed to read — ${e.message}`); continue; }
+      // Find header row: contains "Date" and "total received"
+      let headerRowIdx = -1, headerRow = null;
+      for (let i = 0; i < Math.min(6, rows.length); i++) {
+        const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
+        if (cells.some(c => c.trim() === "date") && cells.some(c => c.includes("total received"))) {
+          headerRowIdx = i; headerRow = rows[i]; break;
+        }
+      }
+      if (!headerRow) { warnings.push(`${file.name}/${sheetName}: Could not find header row`); continue; }
+      // RTO name from row before header
+      let rtoRaw = "";
+      for (let i = headerRowIdx - 1; i >= 0; i--) {
+        const found = (rows[i] || []).find(c => c && String(c).trim().length > 0);
+        if (found) { rtoRaw = found; break; }
+      }
+      const rto = normalizeRto(rtoRaw);
+      // Map column indices
+      const colIdx = {};
+      FIELD_MAP.forEach(({ field, keywords }) => {
+        const idx = headerRow.findIndex(cell => { const s = String(cell || "").toLowerCase(); return keywords.some(k => s.includes(k)); });
+        colIdx[field] = idx >= 0 ? idx : null;
+      });
+      const dateColIdx = headerRow.findIndex(c => String(c || "").toLowerCase().trim() === "date");
+      // Find Total row from bottom
+      let totalRow = null;
+      for (let i = rows.length - 1; i > headerRowIdx; i--) {
+        const row = rows[i] || [];
+        const checkCols = dateColIdx >= 0 ? [dateColIdx] : [0, 1];
+        if (checkCols.some(ci => String(row[ci] || "").toLowerCase().trim() === "total")) { totalRow = row; break; }
+      }
+      if (!totalRow) { warnings.push(`${file.name}/${sheetName}: Could not find Total row`); continue; }
+      const getNum = field => {
+        const idx = colIdx[field];
+        if (idx == null || idx < 0) return 0;
+        const val = totalRow[idx];
+        if (typeof val === "number") return val;
+        if (typeof val === "string") return parseFloat(val.replace(/[$,]/g, "")) || 0;
+        return 0;
+      };
+      allRecords.push({
+        id: `cash_${month}_${rto}`,
+        month, rto,
+        totalReceived:   getNum("totalReceived"),
+        newStudents:     getNum("newStudents"),
+        newStudentCount: getNum("newStudentCount"),
+        ongoingStudents: getNum("ongoingStudents"),
+        varianceCheck:   getNum("varianceCheck"),
+        fileName: file.name, sheetName,
+        uploadedAt: new Date().toISOString(),
+      });
+    }
+  }
+  return { records: allRecords, warnings };
+}
+
+function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [], cashRecords = [] }) {
   const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
   const now = new Date();
   const getCompletedYear = p => {
@@ -7514,6 +7845,12 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     return `TOP DIVISIONS BY NET PROFIT — ${fyLabel} (sorted desc):\n` +
       divNp.map((d, idx) => `  ${idx + 1}. ${d.div}: ${fmtMoney(d.cum)} [${Math.round(d.cum)}]`).join("\n");
   })();
+  const cashSection = cashRecords.length === 0
+    ? "CASH STATEMENT RECORDS: None uploaded yet."
+    : `CASH STATEMENT RECORDS (${cashRecords.length} record(s)):\n` +
+      [...cashRecords].sort((a, b) => b.month.localeCompare(a.month) || a.rto.localeCompare(b.rto))
+        .map(r => `  ${r.month} | ${r.rto}: Total Received ${fmtMoney(r.totalReceived)} [${Math.round(r.totalReceived)}], New Students ${fmtMoney(r.newStudents)} [${Math.round(r.newStudents)}], New Count ${r.newStudentCount}, Ongoing ${fmtMoney(r.ongoingStudents)} [${Math.round(r.ongoingStudents)}]`)
+        .join("\n");
 
   return [
     `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
@@ -7526,6 +7863,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     `\n${topProjects}`,
     `\n${topMembers}`,
     `\n${topDivisions}`,
+    `\n${cashSection}`,
     `\n${pendingSection}`,
     `\n${projectSection}`,
     `\n${enrolmentSection}`,
@@ -7593,6 +7931,18 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
         .catch(() => { setMgrPlLoaded(true); setMgrPlLoading(false); });
     }
   }, [mgrPlLoaded, mgrPlLoading]);
+  const [mgrCashRecords, setMgrCashRecords] = useState([]);
+  const [mgrCashLoaded, setMgrCashLoaded] = useState(false);
+  const [mgrCashLoading, setMgrCashLoading] = useState(false);
+  const [mgrCashTab, setMgrCashTab] = useState("overview");
+  const [mgrCashDetailRto, setMgrCashDetailRto] = useState("");
+  useEffect(() => {
+    if (!mgrCashLoaded && !mgrCashLoading) {
+      setMgrCashLoading(true);
+      dbGetCashData().then(r => { setMgrCashRecords(r.cash_records); setMgrCashLoaded(true); setMgrCashLoading(false); })
+        .catch(() => { setMgrCashLoaded(true); setMgrCashLoading(false); });
+    }
+  }, [mgrCashLoaded, mgrCashLoading]);
 
   const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
@@ -7712,7 +8062,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords, cashRecords: mgrCashRecords });
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
@@ -7734,7 +8084,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "projects",     icon: "⬡", label: "Projects"             },
     { id: "members",      icon: "⬡", label: "Edit Member KPIs"     },
     { id: "reports",      icon: "⬡", label: "OKR Reports"          },
-    ...(user.financeAccess ? [{ id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "pl-reports", icon: "⬡", label: "P&L Reports" }] }] : []),
+    ...(user.financeAccess ? [{ id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "cash-statement", icon: "⬡", label: "Cash Statement" }] }] : []),
     ...(dept?.admissionsAccess ? [{ id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] }] : []),
     ...(user.pilotAccess ? [{ id: "niet-pilot", icon: "⬡", label: "NIET Pilot" }] : []),
   ];
@@ -8828,6 +9178,101 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                   </div>
                 ));
+              })()}
+            </Pane>
+          </>);
+        })()}
+
+        {page === "cash-statement" && user.financeAccess && (() => {
+          const FMT = v => (v == null || isNaN(v)) ? "—" : (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+          const FIELDS = [
+            { key: "totalReceived",   label: "Total Received" },
+            { key: "newStudents",     label: "New Students ($)" },
+            { key: "newStudentCount", label: "New Count", isCount: true },
+            { key: "ongoingStudents", label: "Ongoing Students" },
+            { key: "varianceCheck",   label: "Variance Check" },
+          ];
+          const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, fontWeight: 700, fontSize: 12, color: T.textDim, whiteSpace: "nowrap" };
+          const tdCss = { padding: "8px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13, fontFamily: F.mono };
+          const byMonth = {};
+          for (const r of mgrCashRecords) { if (!byMonth[r.month]) byMonth[r.month] = {}; byMonth[r.month][r.rto] = r; }
+          const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+          const rtos = [...new Set(mgrCashRecords.map(r => r.rto))].sort();
+          const selectedRto = mgrCashDetailRto || rtos[0] || "";
+          return (<>
+            <Header title="Cash Statement" sub="Monthly cash intake by RTO" />
+            <Pane>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
+                {[["overview","Overview"],["detail","By RTO"]].map(([v, label]) => (
+                  <Btn key={v} small primary={mgrCashTab === v} onClick={() => setMgrCashTab(v)}>{label}</Btn>
+                ))}
+              </div>
+              {mgrCashTab === "overview" && (() => {
+                if (!mgrCashRecords.length) return <EmptyState text="No cash statement data uploaded yet." />;
+                return (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th style={thCss}>Month</th>
+                          {rtos.map(rto => <th key={rto} style={{ ...thCss, textAlign: "right" }}>{rto}</th>)}
+                          <th style={{ ...thCss, textAlign: "right", color: T.brand }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {months.map(month => {
+                          const rowTotal = rtos.reduce((s, rto) => s + (byMonth[month]?.[rto]?.totalReceived || 0), 0);
+                          return (
+                            <tr key={month}>
+                              <td style={{ ...tdCss, fontWeight: 600, fontFamily: F.body }}>{month}</td>
+                              {rtos.map(rto => {
+                                const rec = byMonth[month]?.[rto];
+                                return <td key={rto} style={{ ...tdCss, textAlign: "right", color: rec ? T.text : T.textDim }}>{rec ? FMT(rec.totalReceived) : "—"}</td>;
+                              })}
+                              <td style={{ ...tdCss, textAlign: "right", fontWeight: 700, color: T.brand }}>{FMT(rowTotal)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+              {mgrCashTab === "detail" && (() => {
+                if (!mgrCashRecords.length) return <EmptyState text="No cash statement data uploaded yet." />;
+                const detailRecs = mgrCashRecords.filter(r => r.rto === selectedRto).sort((a, b) => b.month.localeCompare(a.month));
+                return (<>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+                    <span style={{ fontSize: 13, color: T.textDim }}>RTO:</span>
+                    <select value={selectedRto} onChange={e => setMgrCashDetailRto(e.target.value)} style={{ padding: "6px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body }}>
+                      {rtos.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  {!detailRecs.length ? <EmptyState text={`No data for ${selectedRto}`} /> : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            <th style={thCss}>Month</th>
+                            {FIELDS.map(f => <th key={f.key} style={{ ...thCss, textAlign: "right" }}>{f.label}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailRecs.map(rec => (
+                            <tr key={rec.id}>
+                              <td style={{ ...tdCss, fontFamily: F.body, fontWeight: 600 }}>{rec.month}</td>
+                              {FIELDS.map(f => (
+                                <td key={f.key} style={{ ...tdCss, textAlign: "right" }}>
+                                  {f.isCount ? (rec[f.key] ?? "—") : FMT(rec[f.key])}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>);
               })()}
             </Pane>
           </>);
