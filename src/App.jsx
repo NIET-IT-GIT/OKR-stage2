@@ -7536,6 +7536,8 @@ async function cashParseFiles(files) {
       let rows;
       try { rows = await readXlsxFile(file, { sheet: sheetIdx }); }
       catch { break; }
+      // Normalize: library may return Row[][] or [{name, data: Row[][]}] depending on version/options
+      if (rows && !Array.isArray(rows[0]) && rows[0]?.data) rows = rows[0].data;
       if (!rows || rows.length < 3) continue;
 
       // Find header row: must contain "Date" AND "total received"
