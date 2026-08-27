@@ -7489,15 +7489,8 @@ async function plParseFile(file) {
 }
 
 async function cashParseFiles(files) {
-  const { default: readXlsxFile, readSheetNames } = await import("read-excel-file/browser");
-  const MONTH_RE = /^(\d{1,2})[-/](\d{2,4})$/;
-  const parseSheetMonth = name => {
-    const m = name.trim().match(MONTH_RE);
-    if (!m) return null;
-    const mm = m[1].padStart(2, "0");
-    const yr = m[2].length === 2 ? `20${m[2]}` : m[2];
-    return `${yr}-${mm}`;
-  };
+  const { default: readXlsxFile } = await import("read-excel-file/browser");
+
   const normalizeRto = raw => {
     const s = String(raw || "").toLowerCase();
     if (s.includes("aai") || s.includes("niet") || s.includes("australia academy")) return "NIET";
@@ -7506,6 +7499,24 @@ async function cashParseFiles(files) {
     if (s.includes("rhodes")) return "Rhodes";
     return String(raw || "").trim() || "Unknown";
   };
+
+  // Extract YYYY-MM from a date cell (Date object, serial number, or string like "7/1/2026" / "3,4,5/07/2026")
+  const extractMonth = cell => {
+    if (cell instanceof Date && !isNaN(cell)) {
+      return `${cell.getFullYear()}-${String(cell.getMonth() + 1).padStart(2, "0")}`;
+    }
+    if (typeof cell === "string" && cell.trim()) {
+      const s = cell.trim();
+      // "d,d,d/MM/YYYY" or "d/MM/YYYY" — match last /month/year
+      const m1 = s.match(/\/(\d{1,2})\/(\d{4})$/);
+      if (m1) return `${m1[2]}-${m1[1].padStart(2, "0")}`;
+      // "M/D/YYYY" at start
+      const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m2) return `${m2[3]}-${m2[1].padStart(2, "0")}`;
+    }
+    return null;
+  };
+
   const FIELD_MAP = [
     { field: "totalReceived",   keywords: ["total received"] },
     { field: "newStudents",     keywords: ["new students"] },
@@ -7513,18 +7524,21 @@ async function cashParseFiles(files) {
     { field: "ongoingStudents", keywords: ["ongoing"] },
     { field: "varianceCheck",   keywords: ["variance"] },
   ];
+
   const allRecords = [], warnings = [];
+
   for (const file of files) {
-    let sheetNames;
-    try { sheetNames = await readSheetNames(file); }
-    catch (e) { warnings.push(`${file.name}: Could not read sheet names — ${e.message}`); continue; }
-    const monthSheets = sheetNames.map(n => ({ name: n, month: parseSheetMonth(n) })).filter(s => s.month);
-    if (!monthSheets.length) { warnings.push(`${file.name}: No month sheets found (expected MM-YYYY tabs)`); continue; }
-    for (const { name: sheetName, month } of monthSheets) {
+    let fileRto = null;
+    const seenMonths = new Set();
+
+    // Read sheets by index until the library throws (no more sheets)
+    for (let sheetIdx = 1; sheetIdx <= 25; sheetIdx++) {
       let rows;
-      try { rows = await readXlsxFile(file, { sheet: sheetName }); }
-      catch (e) { warnings.push(`${file.name}/${sheetName}: Failed to read — ${e.message}`); continue; }
-      // Find header row: contains "Date" and "total received"
+      try { rows = await readXlsxFile(file, { sheet: sheetIdx }); }
+      catch { break; }
+      if (!rows || rows.length < 3) continue;
+
+      // Find header row: must contain "Date" AND "total received"
       let headerRowIdx = -1, headerRow = null;
       for (let i = 0; i < Math.min(6, rows.length); i++) {
         const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
@@ -7532,29 +7546,45 @@ async function cashParseFiles(files) {
           headerRowIdx = i; headerRow = rows[i]; break;
         }
       }
-      if (!headerRow) { warnings.push(`${file.name}/${sheetName}: Could not find header row`); continue; }
-      // RTO name from row before header
-      let rtoRaw = "";
-      for (let i = headerRowIdx - 1; i >= 0; i--) {
-        const found = (rows[i] || []).find(c => c && String(c).trim().length > 0);
-        if (found) { rtoRaw = found; break; }
+      if (!headerRow) continue; // Not a monthly data sheet — skip
+
+      // Detect RTO name once per file from the title row above header
+      if (!fileRto && headerRowIdx > 0) {
+        for (let i = headerRowIdx - 1; i >= 0; i--) {
+          const found = (rows[i] || []).find(c => c && String(c).trim().length > 0);
+          if (found) { fileRto = normalizeRto(found); break; }
+        }
       }
-      const rto = normalizeRto(rtoRaw);
-      // Map column indices
+
+      // Extract month from first date value in the data rows
+      const dateColIdx = headerRow.findIndex(c => String(c || "").toLowerCase().trim() === "date");
+      let month = null;
+      for (let i = headerRowIdx + 1; i < rows.length; i++) {
+        const cell = dateColIdx >= 0 ? rows[i]?.[dateColIdx] : rows[i]?.[0];
+        if (!cell) continue;
+        const extracted = extractMonth(cell);
+        if (extracted) { month = extracted; break; }
+      }
+      if (!month) { warnings.push(`${file.name} sheet ${sheetIdx}: Could not extract month from date column`); continue; }
+      if (seenMonths.has(month)) continue; // Duplicate sheet for same month — skip
+      seenMonths.add(month);
+
+      // Map column indices by header name
       const colIdx = {};
       FIELD_MAP.forEach(({ field, keywords }) => {
-        const idx = headerRow.findIndex(cell => { const s = String(cell || "").toLowerCase(); return keywords.some(k => s.includes(k)); });
+        const idx = headerRow.findIndex(cell => keywords.some(k => String(cell || "").toLowerCase().includes(k)));
         colIdx[field] = idx >= 0 ? idx : null;
       });
-      const dateColIdx = headerRow.findIndex(c => String(c || "").toLowerCase().trim() === "date");
-      // Find Total row from bottom
+
+      // Find Total row scanning from bottom
       let totalRow = null;
       for (let i = rows.length - 1; i > headerRowIdx; i--) {
         const row = rows[i] || [];
         const checkCols = dateColIdx >= 0 ? [dateColIdx] : [0, 1];
         if (checkCols.some(ci => String(row[ci] || "").toLowerCase().trim() === "total")) { totalRow = row; break; }
       }
-      if (!totalRow) { warnings.push(`${file.name}/${sheetName}: Could not find Total row`); continue; }
+      if (!totalRow) { warnings.push(`${file.name} sheet ${sheetIdx} (${month}): Could not find Total row`); continue; }
+
       const getNum = field => {
         const idx = colIdx[field];
         if (idx == null || idx < 0) return 0;
@@ -7563,6 +7593,8 @@ async function cashParseFiles(files) {
         if (typeof val === "string") return parseFloat(val.replace(/[$,]/g, "")) || 0;
         return 0;
       };
+
+      const rto = fileRto || "Unknown";
       allRecords.push({
         id: `cash_${month}_${rto}`,
         month, rto,
@@ -7571,11 +7603,14 @@ async function cashParseFiles(files) {
         newStudentCount: getNum("newStudentCount"),
         ongoingStudents: getNum("ongoingStudents"),
         varianceCheck:   getNum("varianceCheck"),
-        fileName: file.name, sheetName,
+        fileName: file.name,
         uploadedAt: new Date().toISOString(),
       });
     }
+
+    if (!fileRto) warnings.push(`${file.name}: Could not detect RTO name`);
   }
+
   return { records: allRecords, warnings };
 }
 
