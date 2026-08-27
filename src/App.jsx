@@ -7559,8 +7559,10 @@ async function cashParseFiles(files) {
     let fileRto = rtoFromFilename !== "Unknown" ? rtoFromFilename : null;
     const seenMonths = new Set();
 
+    warnings.push(`[diag] ${file.name}: ${sheetEntries.length} sheet(s) loaded`);
+
     for (const { name: sheetName, data: rows } of sheetEntries) {
-      if (!rows || rows.length < 3) continue;
+      if (!rows || rows.length < 3) { warnings.push(`[diag] sheet "${sheetName}": ${rows?.length ?? 0} rows (skipped)`); continue; }
 
       // Find header row: must contain "Date" + at least one financial/student keyword
       let headerRowIdx = -1, headerRow = null;
@@ -7573,7 +7575,7 @@ async function cashParseFiles(files) {
         );
         if (hasDate && hasFinancial) { headerRowIdx = i; headerRow = rows[i]; break; }
       }
-      if (!headerRow) continue; // Not a monthly data sheet
+      if (!headerRow) { warnings.push(`[diag] sheet "${sheetName}" (${rows.length} rows): no Date+financial header — row0: [${(rows[0]||[]).slice(0,5).map(c=>JSON.stringify(c)).join(",")}]`); continue; }
 
       // Override RTO from title row above header (more reliable than filename)
       if (headerRowIdx > 0) {
@@ -7592,7 +7594,7 @@ async function cashParseFiles(files) {
         const extracted = extractMonth(cell);
         if (extracted) { month = extracted; break; }
       }
-      if (!month) { warnings.push(`${file.name} "${sheetName}": Could not extract month from Date column`); continue; }
+      if (!month) { warnings.push(`[diag] sheet "${sheetName}": no month — dateColIdx=${dateColIdx}, first data cell: ${JSON.stringify(rows[headerRowIdx+1]?.[dateColIdx >= 0 ? dateColIdx : 0])}`); continue; }
       if (seenMonths.has(month)) continue;
       seenMonths.add(month);
 
@@ -7609,7 +7611,7 @@ async function cashParseFiles(files) {
         const checkCols = dateColIdx >= 0 ? [dateColIdx] : [0, 1];
         if (checkCols.some(ci => String(row[ci] || "").toLowerCase().trim() === "total")) { totalRow = row; break; }
       }
-      if (!totalRow) { warnings.push(`${file.name} "${sheetName}" (${month}): No "Total" row found — check date column`); continue; }
+      if (!totalRow) { warnings.push(`[diag] sheet "${sheetName}" (${month}): no Total row — last 3 rows col${dateColIdx}: ${[rows[rows.length-3],rows[rows.length-2],rows[rows.length-1]].map(r=>JSON.stringify(r?.[dateColIdx])).join(",")}`); continue; }
 
       const getNum = field => {
         const idx = colIdx[field];
