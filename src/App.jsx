@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment, Component, createContext, useContext } from "react";
+﻿import { useState, useEffect, useCallback, useRef, Fragment, Component, createContext, useContext } from "react";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
 import { loginRequest } from "./authConfig";
@@ -1045,7 +1045,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
 /* ─────────────────────────────────────────────────────────────
    USER MANAGEMENT PAGE
    ───────────────────────────────────────────────────────────── */
-const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false, designatedApproverId: "" };
+const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false, canApproveProjects: false, designatedApproverId: "" };
 
 function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, settings }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -1070,6 +1070,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
       ...(form.role === "manager" && form.teamIds?.length && { teamIds: form.teamIds }),
       ...(form.role === "manager" && form.mgrDeptIds?.length && { mgrDeptIds: form.mgrDeptIds }),
       ...(form.role === "manager" && form.canApprovePeers && { canApprovePeers: true }),
+      ...(form.role === "manager" && form.canApproveProjects && { canApproveProjects: true }),
       ...(form.designatedApproverId && { designatedApproverId: form.designatedApproverId }),
     };
     dispatch({ type: "ADD_USER", user: newUser });
@@ -1078,7 +1079,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
 
   function startEdit(u) {
     setEditId(u.id);
-    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], mgrDeptIds: u.mgrDeptIds || [], secondTeamId: u.secondTeamId || "", canApprovePeers: !!u.canApprovePeers, designatedApproverId: u.designatedApproverId || "" });
+    setEditForm({ name: u.name, email: u.email, role: u.role, title: u.title || "", deptId: u.deptId || "", teamId: u.teamId || "", teamIds: u.teamIds || [], mgrDeptIds: u.mgrDeptIds || [], secondTeamId: u.secondTeamId || "", canApprovePeers: !!u.canApprovePeers, canApproveProjects: !!u.canApproveProjects, designatedApproverId: u.designatedApproverId || "" });
   }
 
   function saveEdit() {
@@ -1091,6 +1092,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
       mgrDeptIds: editForm.role === "manager" ? (editForm.mgrDeptIds?.length ? editForm.mgrDeptIds : undefined) : undefined,
       secondTeamId: editForm.role === "member" ? (editForm.secondTeamId || undefined) : undefined,
       canApprovePeers: editForm.role === "manager" ? (editForm.canApprovePeers || undefined) : undefined,
+      canApproveProjects: editForm.role === "manager" ? (editForm.canApproveProjects || undefined) : undefined,
       designatedApproverId: editForm.designatedApproverId || undefined,
     }});
     setEditId(null);
@@ -1184,6 +1186,16 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
                 Can approve same-department managers' submissions
               </label>
               <div style={{ fontSize: 11, color: T.textDim, marginTop: 5 }}>When enabled, this manager can view and approve pending check-ins from other managers in the same department.</div>
+            </div>
+          )}
+          {form.role === "manager" && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: T.text }}>
+                <input type="checkbox" checked={!!form.canApproveProjects}
+                  onChange={e => setForm(p => ({ ...p, canApproveProjects: e.target.checked }))} />
+                Can approve pending projects (global)
+              </label>
+              <div style={{ fontSize: 11, color: T.textDim, marginTop: 5 }}>When enabled, this manager can view and approve all pending project completions across the organisation.</div>
             </div>
           )}
           {formErr && <div style={{ padding: "8px 12px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, fontSize: 13, color: T.bad, marginBottom: 12 }}>{formErr}</div>}
@@ -1316,6 +1328,16 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
                       Can approve same-department managers' submissions
                     </label>
                     <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>When enabled, this manager can view and approve pending check-ins from other managers in the same department.</div>
+                  </div>
+                )}
+                {editForm.role === "manager" && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: T.text }}>
+                      <input type="checkbox" checked={!!editForm.canApproveProjects}
+                        onChange={e => setEditForm(p => ({ ...p, canApproveProjects: e.target.checked }))} />
+                      Can approve pending projects (global)
+                    </label>
+                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>When enabled, this manager can view and approve all pending project completions across the organisation.</div>
                   </div>
                 )}
                 <div style={{ marginBottom: 12 }}>
@@ -8819,7 +8841,44 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 )}
               </div>
             )}
-            {myProjects.length === 0 && <EmptyState text={user.projectAccess ? "No projects yet. Click '+ New Project' to get started." : "No projects assigned."} />}
+            {user.canApproveProjects && (() => {
+              const pendingAll = projects.filter(p => p.status === "pending approval");
+              if (!pendingAll.length) return null;
+              return (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, paddingBottom: 8, borderBottom: `2px solid ${T.brandBorder}` }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.brand }}>Pending Approvals</div>
+                    <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>{pendingAll.length} project{pendingAll.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  {pendingAll.map(p => {
+                    const mgr = users.find(u => u.id === p.mgrId);
+                    const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
+                    return (
+                      <Card key={p.id} style={{ overflow: "hidden", marginBottom: 8 }}>
+                        <div style={{ padding: "12px 18px" }}>
+                          <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
+                            {mgr ? `${mgr.name} · ` : ""}{dept}{p.due ? ` · Due: ${p.due}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ padding: "8px 18px", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${T.border}` }}>
+                          <Bar value={p.progress} status={p.progress >= 70 ? "green" : p.progress >= 35 ? "yellow" : "red"} h={6} />
+                          <span style={{ fontSize: 13, color: T.textMuted, fontFamily: F.mono, whiteSpace: "nowrap" }}>{p.progress}%</span>
+                          {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
+                          {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
+                          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                            <Btn small onClick={() => { if (window.confirm(`Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "active", completedYear: null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Reject</Btn>
+                            <Btn primary small onClick={() => { if (window.confirm(`Approve "${p.name}" as completed?`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "completed", completedYear: new Date().getFullYear(), updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Approve</Btn>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            {myProjects.length === 0 && !user.canApproveProjects && <EmptyState text={user.projectAccess ? "No projects yet. Click '+ New Project' to get started." : "No projects assigned."} />}
+            {myProjects.length === 0 && user.canApproveProjects && projects.filter(p => p.status === "pending approval").length === 0 && <EmptyState text={user.projectAccess ? "No projects yet. Click '+ New Project' to get started." : "No projects assigned."} />}
             {myProjects.map(p => {
               const draftProg = progressEdits[p.id] ?? p.progress;
               const ps = draftProg >= 70 ? "green" : draftProg >= 35 ? "yellow" : "red";
