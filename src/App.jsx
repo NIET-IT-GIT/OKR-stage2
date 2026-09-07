@@ -2482,12 +2482,17 @@ You can answer forward-looking and predictive questions (e.g. "how will the comp
 - Flag the key risks or assumptions that could change the outcome.
 - Never invent trend data that is not present in the context. If insufficient historical data exists for a reliable prediction, say so and explain what additional data would help.
 
+CONCEPTUAL DEFINITIONS (read before answering any enrolment or application question):
+- "Application" = pre-enrolment pipeline record. Tracked by marketer and RTO. Represents a prospective student who has applied but has NOT yet confirmed enrolment.
+- "Enrolment" = confirmed enrolment. Defined strictly as COE (Confirmation of Enrolment) + Non-COE records. These are students who have been formally enrolled.
+- Applications and Enrolments are DIFFERENT stages. A student may appear in Applications without appearing in Enrolments. Never use Application numbers to answer enrolment questions.
+
 MARKETING & SALES ANALYSIS:
-When answering questions about marketing performance, sales, or student acquisition (e.g. "who is the top marketer?", "how are we tracking on enrolments?", "what does the pipeline look like?"):
-- Consider both Applications data (WEEKLY ENROLMENTS, by marketer and RTO) and COE data (WEEKLY COE RECORDS, by marketer and RTO) — they cover different stages of the student pipeline.
-- Applications = initial enrolment stage. COE (Confirmation of Enrolment) = a later confirmation stage. Both datasets track marketer and RTO.
-- Proactively cross-reference both datasets when answering marketer performance questions — a marketer's Applications count and their COE count together give a fuller picture of their pipeline.
-- COE data covers two separate report sources: NIET/CB/Rhodes and Educare. When answering across all RTOs, include both.
+When answering questions about marketing performance, sales, or student acquisition:
+- "Enrolment" questions (e.g. "how many students enrolled?", "what are our enrolment numbers?", "enrolment by RTO") → answer ONLY from WEEKLY ENROLMENT RECORDS (COE / Non-COE). Do NOT use Applications data to answer enrolment questions.
+- "Applications / pipeline" questions (e.g. "who is the top marketer?", "what does the pipeline look like?", "how many applications?", "marketer performance") → answer from WEEKLY APPLICATIONS data.
+- If asked about both together, clearly distinguish which number is from Applications (pre-enrolment) and which is from Enrolment Records (COE / Non-COE).
+- Enrolment Records cover two separate report sources: NIET/CB/Rhodes and Educare. When answering across all RTOs, include both.
 - If only one dataset has been imported, answer from what's available and note the other is not yet loaded.
 
 RANKING ACCURACY:
@@ -2897,11 +2902,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     // Weekly Enrolment data
     let enrolmentSection;
     if (!enrLoaded) {
-      enrolmentSection = "WEEKLY ENROLMENTS: Data not yet loaded this session.";
+      enrolmentSection = "WEEKLY APPLICATIONS (pre-enrolment pipeline): Data not yet loaded this session.";
     } else if (enrError && enrRecords.length === 0) {
-      enrolmentSection = `WEEKLY ENROLMENTS: Failed to load — ${enrError}`;
+      enrolmentSection = `WEEKLY APPLICATIONS (pre-enrolment pipeline): Failed to load — ${enrError}`;
     } else if (enrRecords.length === 0) {
-      enrolmentSection = "WEEKLY ENROLMENTS: No enrolment data imported yet.";
+      enrolmentSection = "WEEKLY APPLICATIONS (pre-enrolment pipeline): No application data imported yet.";
     } else {
       const enrWeeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
       const enrMarketers = [...new Set(enrRecords.map(r => r.marketerName))].sort();
@@ -2916,10 +2921,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           const rtoParts = mRecs.map(r => `${r.rto}:${r.count}`).join(", ");
           return `    ${m}: ${rtoParts} (total:${mTotal})`;
         }).filter(Boolean);
-        return `  ${w} — ${wTotal} enrolments:\n${mLines.join("\n")}`;
+        return `  ${w} — ${wTotal} applications:\n${mLines.join("\n")}`;
       });
       enrolmentSection = [
-        `WEEKLY ENROLMENTS: ${enrWeeks.length} weeks | Marketers: ${enrMarketers.join(", ")} | RTOs: ${enrRtos.join(", ")}`,
+        `WEEKLY APPLICATIONS (pre-enrolment pipeline): ${enrWeeks.length} weeks | Marketers: ${enrMarketers.join(", ")} | RTOs: ${enrRtos.join(", ")}`,
         weekLines.join("\n"),
       ].join("\n");
     }
@@ -2927,11 +2932,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     // COE records section
     let coeSection;
     if (!coeLoaded) {
-      coeSection = "COE RECORDS: Data not yet loaded this session.";
+      coeSection = "WEEKLY ENROLMENT RECORDS (COE / Non-COE): Data not yet loaded this session.";
     } else if (coeError && coeRecords.length === 0) {
-      coeSection = `COE RECORDS: Failed to load — ${coeError}`;
+      coeSection = `WEEKLY ENROLMENT RECORDS (COE / Non-COE): Failed to load — ${coeError}`;
     } else if (coeRecords.length === 0) {
-      coeSection = "COE RECORDS: No COE data imported yet.";
+      coeSection = "WEEKLY ENROLMENT RECORDS (COE / Non-COE): No enrolment data imported yet.";
     } else {
       const NIET_CB_COMBOS = [{ rto: "NIET", type: "CoE" }, { rto: "NIET", type: "Non-CoE" }, { rto: "CB", type: "CoE" }, { rto: "CB", type: "Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid" }];
       const EDUCARE_COMBOS = [{ rto: "Educare BNE", type: "CoE" }, { rto: "Educare GC", type: "CoE" }, { rto: "Educare ONLINE", type: "Accepted & Paid" }, { rto: "Educare GC", type: "Non-CoE" }, { rto: "Educare BNE", type: "Non-CoE" }, { rto: "Educare Dom", type: "Accepted & Paid" }];
@@ -2942,7 +2947,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         const lines = [...mkLines(NIET_CB_COMBOS, "NIET/CB/Rhodes"), ...mkLines(EDUCARE_COMBOS, "Educare")];
         return `  ${w} — ${wRecs.length} total:\n${lines.join("\n")}`;
       });
-      coeSection = [`COE RECORDS: ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records (NIET/CB/Rhodes + Educare combined)`, coeByWeek.join("\n")].join("\n");
+      coeSection = [`WEEKLY ENROLMENT RECORDS (COE / Non-COE): ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records (NIET/CB/Rhodes + Educare combined)`, coeByWeek.join("\n")].join("\n");
     }
 
     const plRawSection = plRecords.length === 0
@@ -7818,13 +7823,13 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
   ].filter(Boolean).join("\n");
   let enrolmentSection;
   if (!admissionsEnabled) {
-    enrolmentSection = "WEEKLY ENROLMENTS: Not available for this account.";
+    enrolmentSection = "WEEKLY APPLICATIONS (pre-enrolment pipeline): Not available for this account.";
   } else if (!enrLoaded) {
-    enrolmentSection = "WEEKLY ENROLMENTS: Data not yet loaded this session.";
+    enrolmentSection = "WEEKLY APPLICATIONS (pre-enrolment pipeline): Data not yet loaded this session.";
   } else if (enrError && (!enrRecords || enrRecords.length === 0)) {
-    enrolmentSection = `WEEKLY ENROLMENTS: Failed to load — ${enrError}`;
+    enrolmentSection = `WEEKLY APPLICATIONS (pre-enrolment pipeline): Failed to load — ${enrError}`;
   } else if (!enrRecords || enrRecords.length === 0) {
-    enrolmentSection = "WEEKLY ENROLMENTS: No enrolment data imported yet.";
+    enrolmentSection = "WEEKLY APPLICATIONS (pre-enrolment pipeline): No application data imported yet.";
   } else {
     const enrWeeks = enrSortWeeksDesc([...new Set(enrRecords.map(r => r.week))]);
     const enrMarketers = [...new Set(enrRecords.map(r => r.marketerName))].sort();
@@ -7839,22 +7844,22 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
         const rtoParts = mRecs.map(r => `${r.rto}:${r.count}`).join(", ");
         return `    ${m}: ${rtoParts} (total:${mTotal})`;
       }).filter(Boolean);
-      return `  ${w} — ${wTotal} enrolments:\n${mLines.join("\n")}`;
+      return `  ${w} — ${wTotal} applications:\n${mLines.join("\n")}`;
     });
     enrolmentSection = [
-      `WEEKLY ENROLMENTS: ${enrWeeks.length} weeks | Marketers: ${enrMarketers.join(", ")} | RTOs: ${enrRtos.join(", ")}`,
+      `WEEKLY APPLICATIONS (pre-enrolment pipeline): ${enrWeeks.length} weeks | Marketers: ${enrMarketers.join(", ")} | RTOs: ${enrRtos.join(", ")}`,
       weekLines.join("\n"),
     ].join("\n");
   }
   let coeSection;
   if (!admissionsEnabled) {
-    coeSection = "COE RECORDS: Not available for this account.";
+    coeSection = "WEEKLY ENROLMENT RECORDS (COE / Non-COE): Not available for this account.";
   } else if (!coeLoaded) {
-    coeSection = "COE RECORDS: Data not yet loaded this session.";
+    coeSection = "WEEKLY ENROLMENT RECORDS (COE / Non-COE): Data not yet loaded this session.";
   } else if (coeError && (!coeRecords || coeRecords.length === 0)) {
-    coeSection = `COE RECORDS: Failed to load — ${coeError}`;
+    coeSection = `WEEKLY ENROLMENT RECORDS (COE / Non-COE): Failed to load — ${coeError}`;
   } else if (!coeRecords || coeRecords.length === 0) {
-    coeSection = "COE RECORDS: No COE data imported yet.";
+    coeSection = "WEEKLY ENROLMENT RECORDS (COE / Non-COE): No enrolment data imported yet.";
   } else {
     const NIET_CB_COMBOS = [{ rto: "NIET", type: "CoE" }, { rto: "NIET", type: "Non-CoE" }, { rto: "CB", type: "CoE" }, { rto: "CB", type: "Non-CoE" }, { rto: "Rhodes", type: "Accepted & Paid" }];
     const EDUCARE_COMBOS = [{ rto: "Educare BNE", type: "CoE" }, { rto: "Educare GC", type: "CoE" }, { rto: "Educare ONLINE", type: "Accepted & Paid" }, { rto: "Educare GC", type: "Non-CoE" }, { rto: "Educare BNE", type: "Non-CoE" }, { rto: "Educare Dom", type: "Accepted & Paid" }];
@@ -7865,7 +7870,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
       const lines = [...mkLines(NIET_CB_COMBOS, "NIET/CB/Rhodes"), ...mkLines(EDUCARE_COMBOS, "Educare")];
       return `  ${w} — ${wRecs.length} total:\n${lines.join("\n")}`;
     });
-    coeSection = [`COE RECORDS: ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records (NIET/CB/Rhodes + Educare combined)`, coeByWeek.join("\n")].join("\n");
+    coeSection = [`WEEKLY ENROLMENT RECORDS (COE / Non-COE): ${coeWeeks.length} week(s) | Total: ${coeRecords.length} records (NIET/CB/Rhodes + Educare combined)`, coeByWeek.join("\n")].join("\n");
   }
   const plRawSection = plRecords.length === 0
     ? "P&L MONTHLY RECORDS: None uploaded yet."
