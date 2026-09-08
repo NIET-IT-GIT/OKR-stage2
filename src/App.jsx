@@ -286,6 +286,11 @@ function currentWeekLabel() {
 function currentMonth() {
   return new Date().toLocaleDateString("en-AU", { month: "long", year: "numeric" });
 }
+function prevMonthDisplay() {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return d.toLocaleDateString("en-AU", { month: "long", year: "numeric" });
+}
 function getFYWeeks() {
   const now = new Date();
   const m = now.getMonth() + 1;
@@ -3231,7 +3236,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     return { ...d, rate, status: getStatus(rate) };
   }).sort((a, b) => b.rate - a.rate);
   const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
-  const rptMonthKey = currentFYMonthKey();
+  const _rptD = new Date(); _rptD.setMonth(_rptD.getMonth() - 1);
+  const rptMonthKey = `${_rptD.getFullYear()}-${String(_rptD.getMonth()+1).padStart(2,"0")}`;
   const rptSubs = okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === rptMonthKey);
   const rptSubRate = rptSubs.length > 0 ? Math.round((rptSubs.filter(s => s.answer === "yes").length / rptSubs.length) * 1000) / 10 : 0;
   const rptDeptRanks = depts.map(d => {
@@ -4850,10 +4856,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             right={<div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => { setShowGenReport(v => !v); setGenPeriod({ label: "", from: "", to: "" }); }}>{showGenReport ? "Cancel" : "Generate for Period"}</Btn>
               <Btn primary onClick={() => {
-                if (state.monthlyReports.some(r => r.month === currentMonth())) {
-                  if (!window.confirm(`A report for ${currentMonth()} already exists. Publish another?`)) return;
+                if (state.monthlyReports.some(r => r.month === prevMonthDisplay())) {
+                  if (!window.confirm(`A report for ${prevMonthDisplay()} already exists. Publish another?`)) return;
                 }
-                const report = { id: `mr${Date.now()}`, month: currentMonth(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
+                const report = { id: `mr${Date.now()}`, month: prevMonthDisplay(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
                   reportType: "monthly",
                   notes: "",
                   submissionRate: rptSubRate,
@@ -4863,7 +4869,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   },
                 };
                 dispatch({ type: "PUBLISH_REPORT", report });
-              }}>Publish {currentMonth()} Report</Btn>
+              }}>Publish {prevMonthDisplay()} Report</Btn>
             </div>} />
           <Pane>
             {showGenReport && (
@@ -4941,7 +4947,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             <Card style={{ padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>Current Data Preview — what will be published</div>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                <div><span style={{ color: T.textMuted }}>Yes-answer rate ({currentMonth()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
+                <div><span style={{ color: T.textMuted }}>Yes-answer rate ({prevMonthDisplay()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
                 <div><span style={{ color: T.textMuted }}>Top performers: </span>{rptMembers.filter(m => m.hasData).slice(0, 3).map(m => m.name).join(", ") || "—"}</div>
                 <div><span style={{ color: T.textMuted }}>Needs attention: </span>{rptMembers.filter(m => m.hasData && m.status === "red").map(m => m.name).join(", ") || "None"}</div>
               </div>
