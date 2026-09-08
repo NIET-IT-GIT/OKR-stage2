@@ -8514,10 +8514,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
               const r = hasRateKrs ? calcMemberRate(m.id, dmFiltKrsMgr(kd.krs), dmSubs) : null;
               const s = getStatus(r);
               const memberProjCount = projects.filter(p => p.mgrId === m.id).length;
+              const mSubs = allOkrSubs.filter(sub => sub.memberId === m.id);
+              const mPending = mSubs.filter(sub => sub.answer === null).length;
+              const mTotal = mSubs.length;
               return (
                 <Card key={m.id} style={{ marginBottom: 8, overflow: "hidden" }}>
-                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 420, padding: "14px 18px" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 55px 150px 70px", alignItems: "center", gap: 12 }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 560, padding: "14px 18px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 55px 150px 70px 140px", alignItems: "center", gap: 12 }}>
                     <Avatar letters={m.av} size={30} />
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div>
@@ -8529,6 +8532,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                     <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[s].color }}>{r != null ? `${r.toFixed(1)}%` : "N/A"}</span>
                     <Bar value={r ?? 0} status={s} h={6} />
                     <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={s} small /></div>
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      {mTotal > 0 && (
+                        mPending > 0
+                          ? <span style={{ fontSize: 11, fontWeight: 700, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap" }}>{mPending} awaiting submission</span>
+                          : <span style={{ fontSize: 11, fontWeight: 700, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap" }}>✓ All submitted</span>
+                      )}
+                    </div>
                   </div>
                   </div></div>
                 </Card>
