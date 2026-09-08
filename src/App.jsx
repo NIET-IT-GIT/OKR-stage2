@@ -8059,12 +8059,19 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId) || peerManagerIds.includes(s.memberId) || designatedMemberIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
-  const dmSubs = allOkrSubs.filter(s => s.answer !== null);
+  const _dmNowMgr = new Date();
+  const _dmTypesMgr = ["daily", "weekly", "monthly"];
+  const dmSubs = allOkrSubs.filter(s => {
+    if (!_dmTypesMgr.includes(s.period) || !s.sentAt) return false;
+    const _d = new Date(s.sentAt);
+    return _d.getFullYear() === _dmNowMgr.getFullYear() && _d.getMonth() === _dmNowMgr.getMonth();
+  });
+  const dmFiltKrsMgr = krs => krs.filter(kr => _dmTypesMgr.includes(kr.period || "monthly"));
   const myExcludedCount = myMembers.filter(u => u.excludeFromRate).length;
   const myMemberRates = myMembers.filter(u => !u.excludeFromRate).map(u => {
     const kd = memberData[u.id] || { krs: [] };
     if (!memberHasRateKrs(kd.krs)) return null;
-    return calcMemberRate(u.id, kd.krs, dmSubs);
+    return calcMemberRate(u.id, dmFiltKrsMgr(kd.krs), dmSubs);
   }).filter(r => r !== null);
   const myDeptRate = myMemberRates.length ? myMemberRates.reduce((a, b) => a + b, 0) / myMemberRates.length : 0;
 
@@ -8440,7 +8447,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             {myMembers.map(m => {
               const kd = memberData[m.id]; if (!kd) return null;
               const hasRateKrs = memberHasRateKrs(kd.krs);
-              const r = hasRateKrs ? calcMemberRate(m.id, kd.krs, allOkrSubs) : null;
+              const r = hasRateKrs ? calcMemberRate(m.id, dmFiltKrsMgr(kd.krs), dmSubs) : null;
               const s = getStatus(r);
               const memberProjCount = projects.filter(p => p.mgrId === m.id).length;
               return (
@@ -9889,7 +9896,15 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const myOkrSubs = (state.okrSubmissions || []).filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const hasRateKrs = memberHasRateKrs(kd.krs);
-  const rate = hasRateKrs ? calcMemberRate(user.id, kd.krs, state.okrSubmissions || []) : null;
+  const _memNow = new Date();
+  const _memTypes = ["daily", "weekly", "monthly"];
+  const _memMonthSubs = (state.okrSubmissions || []).filter(s => {
+    if (!_memTypes.includes(s.period) || !s.sentAt) return false;
+    const _d = new Date(s.sentAt);
+    return _d.getFullYear() === _memNow.getFullYear() && _d.getMonth() === _memNow.getMonth();
+  });
+  const _memFiltKrs = krs => krs.filter(kr => _memTypes.includes(kr.period || "monthly"));
+  const rate = hasRateKrs ? calcMemberRate(user.id, _memFiltKrs(kd.krs), _memMonthSubs) : null;
   const st = getStatus(rate);
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
   const myOwnProjects = projects.filter(p => p.mgrId === user.id);
@@ -10378,8 +10393,15 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             );
           };
           const dKrs = filterP(myDept.krs);
-          const _deptSubs = (state.okrSubmissions || []).filter(s => s.answer !== null);
-          const _deptRates = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && !u.excludeFromRate).map(u => { const kd2 = memberData[u.id] || { krs: [] }; if (!memberHasRateKrs(kd2.krs)) return null; return calcMemberRate(u.id, kd2.krs, _deptSubs); }).filter(r => r !== null);
+          const _deptNow = new Date();
+          const _deptTypes = ["daily", "weekly", "monthly"];
+          const _deptSubs = (state.okrSubmissions || []).filter(s => {
+            if (!_deptTypes.includes(s.period) || !s.sentAt) return false;
+            const _d = new Date(s.sentAt);
+            return _d.getFullYear() === _deptNow.getFullYear() && _d.getMonth() === _deptNow.getMonth();
+          });
+          const _deptFiltKrs = krs => krs.filter(kr => _deptTypes.includes(kr.period || "monthly"));
+          const _deptRates = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && !u.excludeFromRate).map(u => { const kd2 = memberData[u.id] || { krs: [] }; if (!memberHasRateKrs(kd2.krs)) return null; return calcMemberRate(u.id, _deptFiltKrs(kd2.krs), _deptSubs); }).filter(r => r !== null);
           const deptRate = _deptRates.length ? _deptRates.reduce((a, b) => a + b, 0) / _deptRates.length : 0;
           const deptStatus = getStatus(deptRate);
           const filtMKrs = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
