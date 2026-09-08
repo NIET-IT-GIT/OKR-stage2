@@ -2668,6 +2668,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [dirtySync, setDirtySync] = useState(null);
   const [editReportId, setEditReportId] = useState(null);
   const [editReportForm, setEditReportForm] = useState({ month: "", notes: "" });
+  const [expandedRptDepts, setExpandedRptDepts] = useState({});
   const [reportPeriodView, setReportPeriodView] = useState("all");
   const [lbSearch, setLbSearch] = useState("");
   const [lbDeptFilter, setLbDeptFilter] = useState("all");
@@ -3234,15 +3235,16 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const rptSubs = okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === rptMonthKey);
   const rptSubRate = rptSubs.length > 0 ? Math.round((rptSubs.filter(s => s.answer === "yes").length / rptSubs.length) * 1000) / 10 : 0;
   const rptDeptRanks = depts.map(d => {
-    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
-    const rates = members.map(u => {
+    const dMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
+    const dMemberRates = dMembers.map(u => {
       const kd = memberData[u.id] || { krs: [] };
       if (!kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
-      return calcMemberRate(u.id, kd.krs, rptSubs);
-    }).filter(r => r !== null);
-    const hasData = rates.length > 0;
-    const rate = hasData ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0;
-    return { name: d.name, rate, hasData, status: getStatus(rate) };
+      const mr = calcMemberRate(u.id, kd.krs, rptSubs);
+      return { id: u.id, name: u.name, rate: mr, status: getStatus(mr) };
+    }).filter(r => r !== null).sort((a, b) => b.rate - a.rate);
+    const hasData = dMemberRates.length > 0;
+    const rate = hasData ? Math.round(dMemberRates.reduce((a, b) => a + b.rate, 0) / dMemberRates.length * 10) / 10 : 0;
+    return { name: d.name, rate, hasData, status: getStatus(rate), memberCount: dMemberRates.length, members: dMemberRates };
   }).sort((a, b) => b.rate - a.rate);
   const rptActiveDepts = rptDeptRanks.filter(d => d.hasData);
   const rptCompRate = rptActiveDepts.length ? Math.round(rptActiveDepts.reduce((a, d) => a + d.rate, 0) / rptActiveDepts.length * 10) / 10 : 0;
@@ -4856,8 +4858,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   notes: "",
                   submissionRate: rptSubRate,
                   data: { companyRate: rptCompRate, deptRanks: rptDeptRanks,
-                    topPerformers: rptMembers.filter(m => m.hasData).slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
-                    redFlags: rptMembers.filter(m => m.hasData && m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
+                    topPerformers: rptMembers.filter(m => m.hasData).slice(0, 3).map(m => ({ id: m.id, name: m.name, rate: m.rate })),
+                    redFlags: rptMembers.filter(m => m.hasData && m.status === "red").map(m => ({ id: m.id, name: m.name, rate: m.rate })),
                   },
                 };
                 dispatch({ type: "PUBLISH_REPORT", report });
@@ -4893,15 +4895,16 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     });
                     const gSubRate = allAnswered.length > 0 ? Math.round((allAnswered.filter(s => s.answer === "yes").length / allAnswered.length) * 1000) / 10 : 0;
                     const gDeptRanks = depts.map(d => {
-                      const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
-                      const rates = members.map(u => {
+                      const gdMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
+                      const gdMemberRates = gdMembers.map(u => {
                         const kd = memberData[u.id] || { krs: [] };
                         if (!kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
-                        return calcMemberRate(u.id, kd.krs, allAnswered);
-                      }).filter(r => r !== null);
-                      const hasData = rates.length > 0;
-                      const rate = hasData ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 10) / 10 : 0;
-                      return { name: d.name, rate, hasData, status: getStatus(rate) };
+                        const gr = calcMemberRate(u.id, kd.krs, allAnswered);
+                        return { id: u.id, name: u.name, rate: gr, status: getStatus(gr) };
+                      }).filter(r => r !== null).sort((a, b) => b.rate - a.rate);
+                      const hasData = gdMemberRates.length > 0;
+                      const rate = hasData ? Math.round(gdMemberRates.reduce((a, b) => a + b.rate, 0) / gdMemberRates.length * 10) / 10 : 0;
+                      return { name: d.name, rate, hasData, status: getStatus(rate), memberCount: gdMemberRates.length, members: gdMemberRates };
                     }).sort((a, b) => b.rate - a.rate);
                     const gActiveDepts = gDeptRanks.filter(d => d.hasData);
                     const gCompRate = gActiveDepts.length ? Math.round(gActiveDepts.reduce((a, d) => a + d.rate, 0) / gActiveDepts.length * 10) / 10 : 0;
@@ -4924,8 +4927,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       data: {
                         companyRate: gCompRate,
                         deptRanks: gDeptRanks,
-                        topPerformers: gMembers.filter(m => m.hasData).slice(0, 3).map(m => `${m.name} — ${m.rate.toFixed(1)}%`),
-                        redFlags: gMembers.filter(m => m.hasData && m.status === "red").map(m => `${m.name} — ${m.rate.toFixed(1)}% (action required)`),
+                        topPerformers: gMembers.filter(m => m.hasData).slice(0, 3).map(m => ({ id: m.id, name: m.name, rate: m.rate })),
+                        redFlags: gMembers.filter(m => m.hasData && m.status === "red").map(m => ({ id: m.id, name: m.name, rate: m.rate })),
                       },
                     };
                     dispatch({ type: "PUBLISH_REPORT", report });
@@ -4938,7 +4941,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             <Card style={{ padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>Current Data Preview — what will be published</div>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                <div><span style={{ color: T.textMuted }}>Target met rate ({currentMonth()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
+                <div><span style={{ color: T.textMuted }}>Yes-answer rate ({currentMonth()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
                 <div><span style={{ color: T.textMuted }}>Top performers: </span>{rptMembers.filter(m => m.hasData).slice(0, 3).map(m => m.name).join(", ") || "—"}</div>
                 <div><span style={{ color: T.textMuted }}>Needs attention: </span>{rptMembers.filter(m => m.hasData && m.status === "red").map(m => m.name).join(", ") || "None"}</div>
               </div>
@@ -4946,63 +4949,118 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             {(() => {
               const visibleReports = state.monthlyReports;
               if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
-              return visibleReports.map(r => (
-                <Card key={r.id} style={{ overflow: "hidden" }}>
-                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
-                        <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
-                      </div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""} · Visible to all teams</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
-                      <Btn small onClick={() => { setEditReportId(r.id); setEditReportForm({ month: r.month, notes: r.notes || "" }); }}>Edit</Btn>
-                      <button onClick={() => { if (window.confirm(`Delete report "${r.month}"? This cannot be undone.`)) dispatch({ type: "REMOVE_REPORT", reportId: r.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete report">✕</button>
-                    </div>
-                  </div>
-                  {editReportId === r.id ? (
-                    <div style={{ padding: "16px 20px" }}>
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Period Label</div>
-                        <Input value={editReportForm.month} onChange={e => setEditReportForm(f => ({ ...f, month: e.target.value }))} style={{ width: "100%", marginBottom: 10 }} />
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Notes</div>
-                        <TextArea value={editReportForm.notes} onChange={e => setEditReportForm(f => ({ ...f, notes: e.target.value }))} placeholder="Add notes about this report period..." rows={3} />
-                      </div>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <Btn small onClick={() => setEditReportId(null)}>Cancel</Btn>
-                        <Btn primary small onClick={() => { dispatch({ type: "EDIT_REPORT", reportId: r.id, updates: { month: editReportForm.month, notes: editReportForm.notes } }); setEditReportId(null); }}>Save</Btn>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                      <div>
-                        <SectionLabel>Department Rankings</SectionLabel>
-                        {r.data.deptRanks.map((d, i) => (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14 }}>
-                            <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
-                            <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                            <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
-                            <Tag type={d.status} small />
+              const rPersonStr = p => typeof p === "string" ? p : `${p.name} — ${Number(p.rate).toFixed(1)}%`;
+              const sparkData = [...visibleReports].reverse().slice(0, 6).reverse();
+              const sparkW = 280, sparkH = 44;
+              const sMin = Math.min(...sparkData.map(r => r.data.companyRate));
+              const sMax = Math.max(...sparkData.map(r => r.data.companyRate));
+              const sRange = sMax - sMin || 10;
+              const sX = i => sparkData.length === 1 ? sparkW / 2 : (i / (sparkData.length - 1)) * sparkW;
+              const sY = v => sparkH - 6 - ((v - sMin) / sRange) * (sparkH - 14);
+              const sparkPath = sparkData.map((r, i) => `${i === 0 ? "M" : "L"}${sX(i).toFixed(1)},${sY(r.data.companyRate).toFixed(1)}`).join(" ");
+              return (<>
+                {sparkData.length > 1 && (
+                  <Card style={{ padding: "14px 20px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 10 }}>Company Rate Trend</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                      <svg width={sparkW} height={sparkH + 14} style={{ overflow: "visible", flexShrink: 0 }}>
+                        <path d={sparkPath} fill="none" stroke={T.brand} strokeWidth={2} strokeLinejoin="round" />
+                        {sparkData.map((r, i) => (
+                          <g key={i}>
+                            <circle cx={sX(i)} cy={sY(r.data.companyRate)} r={3.5} fill={STATUS_THEME[getStatus(r.data.companyRate)].color} />
+                            <text x={sX(i)} y={sparkH + 12} textAnchor="middle" fontSize={9} fill={T.textMuted}>{r.month}</text>
+                          </g>
+                        ))}
+                      </svg>
+                      <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.8 }}>
+                        {sparkData.map(r => (
+                          <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[getStatus(r.data.companyRate)].color }}>{Number(r.data.companyRate).toFixed(1)}%</span>
+                            <span>{r.month}</span>
                           </div>
                         ))}
-                        {r.submissionRate != null && (
-                          <div style={{ marginTop: 12 }}>
-                            <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Target met rate: {r.submissionRate}%</span>
-                          </div>
-                        )}
-                        {r.notes && <div style={{ marginTop: 12, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
-                      </div>
-                      <div>
-                        <SectionLabel>Top Performers</SectionLabel>
-                        {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
-                        {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
                       </div>
                     </div>
-                  )}
-                </Card>
-              ));
+                  </Card>
+                )}
+                {visibleReports.map(r => (
+                  <Card key={r.id} style={{ overflow: "hidden" }}>
+                    <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
+                          <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""} · Visible to all teams</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
+                        <Btn small onClick={() => { setEditReportId(r.id); setEditReportForm({ month: r.month, notes: r.notes || "" }); }}>Edit</Btn>
+                        <button onClick={() => { if (window.confirm(`Delete report "${r.month}"? This cannot be undone.`)) dispatch({ type: "REMOVE_REPORT", reportId: r.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px", borderRadius: 4 }} title="Delete report">✕</button>
+                      </div>
+                    </div>
+                    {editReportId === r.id ? (
+                      <div style={{ padding: "16px 20px" }}>
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Period Label</div>
+                          <Input value={editReportForm.month} onChange={e => setEditReportForm(f => ({ ...f, month: e.target.value }))} style={{ width: "100%", marginBottom: 10 }} />
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Notes</div>
+                          <TextArea value={editReportForm.notes} onChange={e => setEditReportForm(f => ({ ...f, notes: e.target.value }))} placeholder="Add notes about this report period..." rows={3} />
+                        </div>
+                        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                          <Btn small onClick={() => setEditReportId(null)}>Cancel</Btn>
+                          <Btn primary small onClick={() => { dispatch({ type: "EDIT_REPORT", reportId: r.id, updates: { month: editReportForm.month, notes: editReportForm.notes } }); setEditReportId(null); }}>Save</Btn>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                        <div>
+                          <SectionLabel>Department Rankings</SectionLabel>
+                          {r.data.deptRanks.map((d, i) => {
+                            const dKey = `${r.id}_${d.name}`;
+                            const isOpen = !!expandedRptDepts[dKey];
+                            return (
+                              <div key={i}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14, cursor: d.members?.length ? "pointer" : "default" }}
+                                  onClick={() => d.members?.length && setExpandedRptDepts(p => ({ ...p, [dKey]: !p[dKey] }))}>
+                                  <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
+                                  <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
+                                  {d.memberCount != null && <span style={{ fontSize: 11, color: T.textMuted }}>{d.memberCount}p</span>}
+                                  <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
+                                  <Tag type={d.status} small />
+                                  {d.members?.length > 0 && <span style={{ fontSize: 11, color: T.brand, minWidth: 14 }}>{isOpen ? "▲" : "▼"}</span>}
+                                </div>
+                                {isOpen && d.members?.length > 0 && (
+                                  <div style={{ marginLeft: 32, marginBottom: 4, borderLeft: `2px solid ${T.border}`, paddingLeft: 12 }}>
+                                    {d.members.map((m, j) => (
+                                      <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 13 }}>
+                                        <span style={{ flex: 1, color: T.textSoft }}>{m.name}</span>
+                                        <span style={{ fontFamily: F.mono, fontWeight: 600, color: STATUS_THEME[m.status].color }}>{Number(m.rate).toFixed(1)}%</span>
+                                        <Tag type={m.status} small />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {r.submissionRate != null && (
+                            <div style={{ marginTop: 12 }}>
+                              <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Yes-answer rate: {r.submissionRate}%</span>
+                            </div>
+                          )}
+                          {r.notes && <div style={{ marginTop: 12, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                        </div>
+                        <div>
+                          <SectionLabel>Top Performers</SectionLabel>
+                          {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {rPersonStr(p)}</div>)}
+                          {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {rPersonStr(f)}</div>)}</>)}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </>);
             })()}
           </Pane>
         </>)}
@@ -9424,44 +9482,99 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             {(() => {
               const visibleReports = monthlyReports;
               if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
-              return visibleReports.map(r => (
-                <Card key={r.id} style={{ overflow: "hidden" }}>
-                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
-                        <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
+              const rPersonStr = p => typeof p === "string" ? p : `${p.name} — ${Number(p.rate).toFixed(1)}%`;
+              const sparkData = [...visibleReports].reverse().slice(0, 6).reverse();
+              const sparkW = 280, sparkH = 44;
+              const sMin = Math.min(...sparkData.map(r => r.data.companyRate));
+              const sMax = Math.max(...sparkData.map(r => r.data.companyRate));
+              const sRange = sMax - sMin || 10;
+              const sX = i => sparkData.length === 1 ? sparkW / 2 : (i / (sparkData.length - 1)) * sparkW;
+              const sY = v => sparkH - 6 - ((v - sMin) / sRange) * (sparkH - 14);
+              const sparkPath = sparkData.map((r, i) => `${i === 0 ? "M" : "L"}${sX(i).toFixed(1)},${sY(r.data.companyRate).toFixed(1)}`).join(" ");
+              return (<>
+                {sparkData.length > 1 && (
+                  <Card style={{ padding: "14px 20px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 10 }}>Company Rate Trend</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                      <svg width={sparkW} height={sparkH + 14} style={{ overflow: "visible", flexShrink: 0 }}>
+                        <path d={sparkPath} fill="none" stroke={T.brand} strokeWidth={2} strokeLinejoin="round" />
+                        {sparkData.map((r, i) => (
+                          <g key={i}>
+                            <circle cx={sX(i)} cy={sY(r.data.companyRate)} r={3.5} fill={STATUS_THEME[getStatus(r.data.companyRate)].color} />
+                            <text x={sX(i)} y={sparkH + 12} textAnchor="middle" fontSize={9} fill={T.textMuted}>{r.month}</text>
+                          </g>
+                        ))}
+                      </svg>
+                      <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.8 }}>
+                        {sparkData.map(r => (
+                          <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[getStatus(r.data.companyRate)].color }}>{Number(r.data.companyRate).toFixed(1)}%</span>
+                            <span>{r.month}</span>
+                          </div>
+                        ))}
                       </div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""}</div>
                     </div>
-                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
-                  </div>
-                  <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    <div>
-                      <SectionLabel>Department Rankings</SectionLabel>
-                      {r.data.deptRanks.map((d, i) => (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
-                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
-                          <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
-                          <Tag type={d.status} small />
+                  </Card>
+                )}
+                {visibleReports.map(r => (
+                  <Card key={r.id} style={{ overflow: "hidden" }}>
+                    <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
+                          <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
                         </div>
-                      ))}
-                      {r.submissionRate != null && (
-                        <div style={{ marginTop: 10 }}>
-                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Target met rate: {r.submissionRate}%</span>
-                        </div>
-                      )}
-                      {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                        <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate}{r.periodFrom && r.periodTo ? ` · ${r.periodFrom} → ${r.periodTo}` : ""}</div>
+                      </div>
+                      <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
                     </div>
-                    <div>
-                      <SectionLabel>Top Performers</SectionLabel>
-                      {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {p}</div>)}
-                      {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {f}</div>)}</>)}
+                    <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div>
+                        <SectionLabel>Department Rankings</SectionLabel>
+                        {r.data.deptRanks.map((d, i) => {
+                          const dKey = `mgr_${r.id}_${d.name}`;
+                          const isOpen = !!expandedRptDepts[dKey];
+                          return (
+                            <div key={i}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14, cursor: d.members?.length ? "pointer" : "default" }}
+                                onClick={() => d.members?.length && setExpandedRptDepts(p => ({ ...p, [dKey]: !p[dKey] }))}>
+                                <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
+                                <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
+                                {d.memberCount != null && <span style={{ fontSize: 11, color: T.textMuted }}>{d.memberCount}p</span>}
+                                <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
+                                <Tag type={d.status} small />
+                                {d.members?.length > 0 && <span style={{ fontSize: 11, color: T.brand, minWidth: 14 }}>{isOpen ? "▲" : "▼"}</span>}
+                              </div>
+                              {isOpen && d.members?.length > 0 && (
+                                <div style={{ marginLeft: 32, marginBottom: 4, borderLeft: `2px solid ${T.border}`, paddingLeft: 12 }}>
+                                  {d.members.map((m, j) => (
+                                    <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 13 }}>
+                                      <span style={{ flex: 1, color: T.textSoft }}>{m.name}</span>
+                                      <span style={{ fontFamily: F.mono, fontWeight: 600, color: STATUS_THEME[m.status].color }}>{Number(m.rate).toFixed(1)}%</span>
+                                      <Tag type={m.status} small />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {r.submissionRate != null && (
+                          <div style={{ marginTop: 10 }}>
+                            <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Yes-answer rate: {r.submissionRate}%</span>
+                          </div>
+                        )}
+                        {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                      </div>
+                      <div>
+                        <SectionLabel>Top Performers</SectionLabel>
+                        {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.ok, display: "flex", alignItems: "center", gap: 6 }}><span>★</span> {rPersonStr(p)}</div>)}
+                        {r.data.redFlags.length > 0 && (<><SectionLabel>Action Required</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "5px 0", fontSize: 14, color: T.bad, display: "flex", alignItems: "center", gap: 6 }}><span>⚠</span> {rPersonStr(f)}</div>)}</>)}
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              ));
+                  </Card>
+                ))}
+              </>);
             })()}
           </Pane>
         </>)}
@@ -11110,43 +11223,98 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             {(() => {
               const visibleReports = monthlyReports;
               if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
-              return visibleReports.map(r => (
-                <Card key={r.id} style={{ overflow: "hidden" }}>
-                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
-                        <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
+              const rPersonStr = p => typeof p === "string" ? p : `${p.name} — ${Number(p.rate).toFixed(1)}%`;
+              const sparkData = [...visibleReports].reverse().slice(0, 6).reverse();
+              const sparkW = 280, sparkH = 44;
+              const sMin = Math.min(...sparkData.map(r => r.data.companyRate));
+              const sMax = Math.max(...sparkData.map(r => r.data.companyRate));
+              const sRange = sMax - sMin || 10;
+              const sX = i => sparkData.length === 1 ? sparkW / 2 : (i / (sparkData.length - 1)) * sparkW;
+              const sY = v => sparkH - 6 - ((v - sMin) / sRange) * (sparkH - 14);
+              const sparkPath = sparkData.map((r, i) => `${i === 0 ? "M" : "L"}${sX(i).toFixed(1)},${sY(r.data.companyRate).toFixed(1)}`).join(" ");
+              return (<>
+                {sparkData.length > 1 && (
+                  <Card style={{ padding: "14px 20px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 10 }}>Company Rate Trend</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                      <svg width={sparkW} height={sparkH + 14} style={{ overflow: "visible", flexShrink: 0 }}>
+                        <path d={sparkPath} fill="none" stroke={T.brand} strokeWidth={2} strokeLinejoin="round" />
+                        {sparkData.map((r, i) => (
+                          <g key={i}>
+                            <circle cx={sX(i)} cy={sY(r.data.companyRate)} r={3.5} fill={STATUS_THEME[getStatus(r.data.companyRate)].color} />
+                            <text x={sX(i)} y={sparkH + 12} textAnchor="middle" fontSize={9} fill={T.textMuted}>{r.month}</text>
+                          </g>
+                        ))}
+                      </svg>
+                      <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.8 }}>
+                        {sparkData.map(r => (
+                          <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[getStatus(r.data.companyRate)].color }}>{Number(r.data.companyRate).toFixed(1)}%</span>
+                            <span>{r.month}</span>
+                          </div>
+                        ))}
                       </div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate} · Visible to everyone</div>
                     </div>
-                    <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
-                  </div>
-                  <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    <div>
-                      <SectionLabel>Department Rankings</SectionLabel>
-                      {r.data.deptRanks.map((d, i) => (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 }}>
-                          <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
-                          <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
-                          <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
+                  </Card>
+                )}
+                {visibleReports.map(r => (
+                  <Card key={r.id} style={{ overflow: "hidden" }}>
+                    <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 18, fontWeight: 800 }}>{r.month}</div>
+                          <span style={{ fontSize: 10, fontWeight: 700, background: r.reportType === "weekly" ? T.brandDim : T.okDim, border: `1px solid ${r.reportType === "weekly" ? T.brandBorder : T.okBorder}`, color: r.reportType === "weekly" ? T.brand : T.ok, borderRadius: 10, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.reportType || "monthly"}</span>
                         </div>
-                      ))}
-                      {r.submissionRate != null && (
-                        <div style={{ marginTop: 10 }}>
-                          <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Target met rate: {r.submissionRate}%</span>
-                        </div>
-                      )}
-                      {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                        <div style={{ fontSize: 12, color: T.textMuted }}>Published: {r.publishedDate} · Visible to everyone</div>
+                      </div>
+                      <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
                     </div>
-                    <div>
-                      <SectionLabel>Top Performers</SectionLabel>
-                      {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.ok }}>★ {p}</div>)}
-                      {r.data.redFlags?.length > 0 && (<><div style={{ marginTop: 10 }} /><SectionLabel>Needs Improvement</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.bad }}>⚠ {f}</div>)}</>)}
+                    <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div>
+                        <SectionLabel>Department Rankings</SectionLabel>
+                        {r.data.deptRanks.map((d, i) => {
+                          const dKey = `mem_${r.id}_${d.name}`;
+                          const isOpen = !!expandedRptDepts[dKey];
+                          return (
+                            <div key={i}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14, cursor: d.members?.length ? "pointer" : "default" }}
+                                onClick={() => d.members?.length && setExpandedRptDepts(p => ({ ...p, [dKey]: !p[dKey] }))}>
+                                <span style={{ fontFamily: F.mono, fontWeight: 800, color: i === 0 ? T.ok : T.textMuted, width: 22 }}>#{i + 1}</span>
+                                <span style={{ flex: 1, fontWeight: 600 }}>{d.name}</span>
+                                {d.memberCount != null && <span style={{ fontSize: 11, color: T.textMuted }}>{d.memberCount}p</span>}
+                                <span style={{ fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[d.status].color }}>{Number(d.rate).toFixed(1)}%</span>
+                                {d.members?.length > 0 && <span style={{ fontSize: 11, color: T.brand, minWidth: 14 }}>{isOpen ? "▲" : "▼"}</span>}
+                              </div>
+                              {isOpen && d.members?.length > 0 && (
+                                <div style={{ marginLeft: 32, marginBottom: 4, borderLeft: `2px solid ${T.border}`, paddingLeft: 12 }}>
+                                  {d.members.map((m, j) => (
+                                    <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 13 }}>
+                                      <span style={{ flex: 1, color: T.textSoft }}>{m.name}</span>
+                                      <span style={{ fontFamily: F.mono, fontWeight: 600, color: STATUS_THEME[m.status].color }}>{Number(m.rate).toFixed(1)}%</span>
+                                      <Tag type={m.status} small />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {r.submissionRate != null && (
+                          <div style={{ marginTop: 10 }}>
+                            <span style={{ fontSize: 12, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 8, padding: "2px 8px", color: T.brand }}>Yes-answer rate: {r.submissionRate}%</span>
+                          </div>
+                        )}
+                        {r.notes && <div style={{ marginTop: 10, padding: "8px 12px", background: T.raised, borderRadius: 7, fontSize: 13, color: T.textSoft, lineHeight: 1.6 }}><strong>Notes:</strong> {r.notes}</div>}
+                      </div>
+                      <div>
+                        <SectionLabel>Top Performers</SectionLabel>
+                        {r.data.topPerformers.map((p, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.ok }}>★ {rPersonStr(p)}</div>)}
+                        {r.data.redFlags?.length > 0 && (<><div style={{ marginTop: 10 }} /><SectionLabel>Needs Improvement</SectionLabel>{r.data.redFlags.map((f, i) => <div key={i} style={{ padding: "4px 0", fontSize: 14, color: T.bad }}>⚠ {rPersonStr(f)}</div>)}</>)}
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              ));
+                  </Card>
+                ))}
+              </>);
             })()}
           </Pane>
         </>)}
