@@ -1070,6 +1070,7 @@ function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
 const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false, canApproveProjects: false, designatedApproverId: "" };
 
 function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, settings }) {
+  const { isMobile } = useContext(MobileContext);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const [formErr, setFormErr] = useState("");
@@ -1275,7 +1276,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
             const lbl = { fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 };
             return (
               <div key={u.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "14px 18px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                   <div><div style={lbl}>Full Name</div><Input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
                   <div><div style={lbl}>Email</div><Input value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
                   <div><div style={lbl}>Job Title</div><Input value={editForm.title} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
@@ -1441,6 +1442,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
 const BLANK_DEPT = { name: "", obj: "", head: "", college: "" };
 
 function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onViewKrs }) {
+  const { isMobile } = useContext(MobileContext);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(BLANK_DEPT);
   const [addErr, setAddErr] = useState("");
@@ -1559,7 +1561,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
           if (editId === d.id) {
             return (
               <div key={d.id} style={{ background: T.brandDim, borderBottom: `1px solid ${T.border}`, padding: "14px 18px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
                   <div><div style={labelStyle}>Name *</div><Input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
                   <div><div style={labelStyle}>Description / Objective</div><Input value={editForm.obj} onChange={e => setEditForm(p => ({ ...p, obj: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
                   <div><div style={labelStyle}>Department Head</div><Input value={editForm.head} onChange={e => setEditForm(p => ({ ...p, head: e.target.value }))} style={{ fontSize: 13, padding: "7px 10px", width: "100%" }} /></div>
@@ -1758,6 +1760,7 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
    FINANCIAL PERFORMANCE PAGE  (shared by Admin + Manager portals)
    ───────────────────────────────────────────────────────────── */
 function FinancialPerformancePage({ state, dispatch, plRecords = [] }) {
+  const { isMobile } = useContext(MobileContext);
   const [finTab, setFinTab] = useState("revenue");
   const [revMonth, setRevMonth] = useState(() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; });
   const [revEditMode, setRevEditMode] = useState(false);
@@ -1899,7 +1902,7 @@ function FinancialPerformancePage({ state, dispatch, plRecords = [] }) {
           </Card>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: noTargets ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : noTargets ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
           {noTargets && (
             <Card style={{ padding: "16px 20px" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{title} — {FY_MONTHS[revMonth]} Only</div>
@@ -4682,15 +4685,17 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               right={totalPending > 0 ? <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }}>{totalPending} awaiting approval</div> : null} />
             <Pane>
               {/* Period tabs */}
-              <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: `2px solid ${T.border}` }}>
+              <div style={{ overflowX: "auto", marginBottom: 20, borderBottom: `2px solid ${T.border}` }}>
+              <div style={{ display: "flex", gap: 0, minWidth: "fit-content" }}>
                 {PERIOD_TABS.map(p => {
                   const cnt = okrSubmissions.filter(s => s.period === p.id && s.answer !== null && s.approval === "pending").length;
                   return (
-                    <button key={p.id} onClick={() => setSubPeriod(p.id)} style={{ padding: "8px 22px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer", background: "none", border: "none", borderBottom: subPeriod === p.id ? `3px solid ${p.color}` : "3px solid transparent", color: subPeriod === p.id ? p.color : T.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                    <button key={p.id} onClick={() => setSubPeriod(p.id)} style={{ padding: "8px 22px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer", background: "none", border: "none", borderBottom: subPeriod === p.id ? `3px solid ${p.color}` : "3px solid transparent", color: subPeriod === p.id ? p.color : T.textMuted, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                       {p.label}{cnt > 0 ? <span style={{ background: T.warn, color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{cnt}</span> : null}
                     </button>
                   );
                 })}
+              </div>
               </div>
               {/* Metrics + Send button */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
@@ -5143,7 +5148,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                         </div>
                       </div>
                     ) : (
-                      <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                      <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 12 : 20 }}>
                         <div>
                           <SectionLabel>Department Rankings</SectionLabel>
                           {r.data.deptRanks.map((d, i) => {
@@ -5457,8 +5462,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                           </div>
                           {isDetailsOpen && (
                             <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-                                <div>
+                              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "2fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                <div style={{ gridColumn: isMobile ? "1 / -1" : undefined }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Name</div>
                                   <Input value={editProjForm.name} onChange={e => setEditProjForm(f => ({ ...f, name: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                                 </div>
@@ -5479,7 +5484,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                   <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                                 </div>
                               </div>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                                 <div>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
                                   <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
@@ -7331,7 +7336,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   )}
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "start" }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 20 : 32, alignItems: "start" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, color: T.text }}>Template Fields</div>
                   <Field label="Sender Name" value={localDraft.fromName} onChange={v => setField("fromName", v)} hint='Displayed in the From field, e.g. "NIET Group OKRs"' />
@@ -9406,7 +9411,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   )}
                   {isDetailsOpen && (
                     <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
@@ -9424,7 +9429,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                         </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
                           <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
@@ -9930,7 +9935,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       </div>
                       <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
                     </div>
-                    <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 12 : 16 }}>
                       <div>
                         <SectionLabel>Department Rankings</SectionLabel>
                         {r.data.deptRanks.map((d, i) => {
@@ -10883,7 +10888,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     {(annDream > 0 || annSumTarget > 0) && <Bar value={annDream > 0 ? annVsDream : annVsSum} status={annSt} h={8} />}
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Monthly Breakdown</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : "repeat(6, 1fr)", gap: 8 }}>
                     {fyMs.map(({ key, label }) => {
                       const isCur = key === curKey;
                       const t = kr.monthlyTargets[key] || 0;
@@ -11550,7 +11555,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   )}
                   {isDetailsOpen && (
                     <div style={{ padding: "14px 18px", borderTop: `1px solid ${T.border}` }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Status</div>
                           <select value={editProjForm.status} onChange={e => setEditProjForm(f => ({ ...f, status: e.target.value }))} style={{ width: "100%", padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 14, fontFamily: F.body }}>
@@ -11568,7 +11573,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <Input type="date" value={editProjForm.due} onChange={e => setEditProjForm(f => ({ ...f, due: e.target.value }))} style={{ width: "100%", padding: "7px 10px", fontSize: 14 }} />
                         </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>Project Income ($)</div>
                           <Input type="number" value={editProjForm.income} onChange={e => setEditProjForm(f => ({ ...f, income: e.target.value }))} placeholder="e.g. 250000" style={{ width: "100%", padding: "7px 10px", fontSize: 14, fontFamily: F.mono }} />
@@ -11683,7 +11688,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       </div>
                       <Tag type={getStatus(r.data.companyRate)} label={`Company: ${Number(r.data.companyRate).toFixed(1)}%`} />
                     </div>
-                    <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div style={{ padding: "14px 20px", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 12 : 16 }}>
                       <div>
                         <SectionLabel>Department Rankings</SectionLabel>
                         {r.data.deptRanks.map((d, i) => {
