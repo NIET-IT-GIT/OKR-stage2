@@ -521,6 +521,23 @@ async function dbGetCashData() {
   return result;
 }
 
+async function dbGetGoogleReviews() {
+  const result = { google_reviews: [] };
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
+      .in("collection", ["google_reviews"])
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return result;
+}
+
 async function dbBulkInsert(collection, items) {
   const CHUNK = 200;
   for (let i = 0; i < items.length; i += CHUNK) {
@@ -2720,6 +2737,28 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [pilotSetExpanded, setPilotSetExpanded] = useState(null);
   const [pilotNewSetName, setPilotNewSetName] = useState("");
   const [pilotNewQ, setPilotNewQ] = useState({});
+  const [grvLoaded, setGrvLoaded] = useState(false);
+  const [grvLoading, setGrvLoading] = useState(false);
+  const [grvError, setGrvError] = useState(null);
+  const [grvData, setGrvData] = useState({});
+  const [grvCampus, setGrvCampus] = useState("charlton-brown-brisbane-cbd");
+  const [grvStarFilter, setGrvStarFilter] = useState(0);
+  const [grvSearch, setGrvSearch] = useState("");
+  const [grvImporting, setGrvImporting] = useState(false);
+  const [grvImportError, setGrvImportError] = useState(null);
+  const [grvImportMsg, setGrvImportMsg] = useState(null);
+  useEffect(() => {
+    if (page !== "google-reviews") return;
+    if (grvLoaded || grvLoading) return;
+    setGrvLoading(true);
+    dbGetGoogleReviews().then(r => {
+      const bySlug = {};
+      for (const doc of r.google_reviews) bySlug[doc.campusSlug] = doc;
+      setGrvData(bySlug);
+      setGrvLoaded(true);
+      setGrvLoading(false);
+    }).catch(e => { setGrvError(e.message); setGrvLoaded(true); setGrvLoading(false); });
+  }, [page, grvLoaded, grvLoading]);
   const chatEndRef = useRef(null);
   const chatHistoryRef = useRef([]);
   const pilotPrevPageRef = useRef(null);
@@ -3197,6 +3236,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
     { id: "users",            icon: "⬡", label: "User Management"   },
     { id: "email-templates",  icon: "⬡", label: "Email Templates"   },
+    { id: "google-reviews",   icon: "⬡", label: "Google Reviews"    },
   ];
   const deptSubItems = [
     { id: "__all__",   label: "All Departments", icon: "⬡" },
@@ -7547,6 +7587,182 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           );
         })()}
 
+        {page === "google-reviews" && (() => {
+          const GRV_CAMPUSES = [
+            { slug: "charlton-brown-brisbane-cbd", label: "Charlton Brown Brisbane CBD" },
+            { slug: "charlton-brown-southport",    label: "Charlton Brown Southport"    },
+            { slug: "educare-brisbane-cbd",        label: "Educare Brisbane CBD"        },
+            { slug: "educare-southport",           label: "Educare Southport"           },
+          ];
+          const campusDoc = grvData[grvCampus] || null;
+          const reviews = campusDoc?.reviews || [];
+          const filtered = reviews.filter(rv => {
+            if (grvStarFilter > 0 && rv.rating !== grvStarFilter) return false;
+            if (grvSearch.trim()) {
+              const q = grvSearch.toLowerCase();
+              if (!(rv.text || "").toLowerCase().includes(q) && !(rv.author || "").toLowerCase().includes(q)) return false;
+            }
+            return true;
+          }).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          const totalReviews = reviews.length;
+          const avgRating = totalReviews ? Math.round(reviews.reduce((s, rv) => s + (rv.rating || 0), 0) / totalReviews * 10) / 10 : 0;
+          const starDist = [5,4,3,2,1].map(n => ({ star: n, count: reviews.filter(rv => rv.rating === n).length }));
+          async function grvHandleImport(file) {
+            setGrvImporting(true); setGrvImportError(null); setGrvImportMsg(null);
+            try {
+              const parsed = await grvParseFile(file);
+              const campusLabel = GRV_CAMPUSES.find(c => c.slug === grvCampus)?.label || grvCampus;
+              const doc = { id: grvCampus, campusSlug: grvCampus, campusName: campusLabel, reviews: parsed, lastImport: new Date().toISOString(), count: parsed.length };
+              await dbUpsert("google_reviews", doc);
+              setGrvData(prev => ({ ...prev, [grvCampus]: doc }));
+              setGrvImportMsg(`Imported ${parsed.length} reviews for ${campusLabel}`);
+            } catch (e) { setGrvImportError(e.message); }
+            setGrvImporting(false);
+          }
+          function renderStars(rating) {
+            return [1,2,3,4,5].map(n => <span key={n} style={{ color: n <= rating ? "#F59E0B" : T.textDim, fontSize: 14 }}>★</span>);
+          }
+          return (
+            <div style={{ flex: 1, overflow: "auto", padding: isMobile ? "20px 16px" : "32px 40px" }}>
+              <div style={{ maxWidth: 900, margin: "0 auto" }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: T.text, letterSpacing: "-0.02em" }}>Google Reviews</div>
+                    <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>Import and view campus reviews from Outscraper exports</div>
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", background: T.brand, color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: grvImporting ? "not-allowed" : "pointer", opacity: grvImporting ? 0.7 : 1, flexShrink: 0 }}>
+                    {grvImporting ? "Importing…" : "Import Excel"}
+                    <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} disabled={grvImporting}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) { grvHandleImport(f); e.target.value = ""; } }} />
+                  </label>
+                </div>
+
+                {/* Campus tabs */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 24, flexWrap: "wrap" }}>
+                  {GRV_CAMPUSES.map(c => (
+                    <button key={c.slug} onClick={() => { setGrvCampus(c.slug); setGrvStarFilter(0); setGrvSearch(""); }}
+                      style={{ padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: `1.5px solid ${grvCampus === c.slug ? T.brand : T.border}`, background: grvCampus === c.slug ? T.brandDim : T.surface, color: grvCampus === c.slug ? T.brand : T.text, cursor: "pointer" }}>
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Import messages */}
+                {grvImportMsg && (
+                  <div style={{ padding: "10px 16px", background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, color: T.ok, fontSize: 13, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>✓ {grvImportMsg}</span>
+                    <button onClick={() => setGrvImportMsg(null)} style={{ background: "none", border: "none", color: T.ok, cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+                  </div>
+                )}
+                {grvImportError && (
+                  <div style={{ padding: "10px 16px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, color: T.warn, fontSize: 13, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Import error: {grvImportError}</span>
+                    <button onClick={() => setGrvImportError(null)} style={{ background: "none", border: "none", color: T.warn, cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+                  </div>
+                )}
+                {grvError && (
+                  <div style={{ padding: "10px 16px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, color: T.warn, fontSize: 13, marginBottom: 16 }}>Load error: {grvError}</div>
+                )}
+
+                {grvLoading && <div style={{ color: T.textMuted, fontSize: 14, padding: "40px 0", textAlign: "center" }}>Loading…</div>}
+
+                {!grvLoading && (
+                  <>
+                    {/* Summary card */}
+                    {totalReviews > 0 ? (
+                      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 24px", marginBottom: 24, display: "flex", gap: 32, flexWrap: "wrap", alignItems: "flex-start" }}>
+                        <div style={{ textAlign: "center", minWidth: 90 }}>
+                          <div style={{ fontSize: 44, fontWeight: 800, color: T.text, letterSpacing: "-0.04em", lineHeight: 1 }}>{avgRating.toFixed(1)}</div>
+                          <div style={{ display: "flex", justifyContent: "center", gap: 1, margin: "6px 0 4px" }}>{renderStars(Math.round(avgRating))}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>{totalReviews} reviews</div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 180 }}>
+                          {starDist.map(({ star, count }) => {
+                            const pct = totalReviews ? Math.round(count / totalReviews * 100) : 0;
+                            return (
+                              <div key={star} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                <span style={{ fontSize: 12, color: T.textSoft, width: 10, textAlign: "right", flexShrink: 0 }}>{star}</span>
+                                <span style={{ color: "#F59E0B", fontSize: 12, flexShrink: 0 }}>★</span>
+                                <div style={{ flex: 1, height: 7, background: T.raised, borderRadius: 4, overflow: "hidden" }}>
+                                  <div style={{ width: `${pct}%`, height: "100%", background: star >= 4 ? T.ok : star === 3 ? "#F59E0B" : T.warn, borderRadius: 4 }} />
+                                </div>
+                                <span style={{ fontSize: 12, color: T.textMuted, width: 28, textAlign: "right", flexShrink: 0 }}>{count}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {campusDoc?.lastImport && (
+                          <div style={{ fontSize: 11, color: T.textMuted, alignSelf: "flex-end" }}>
+                            Last import: {new Date(campusDoc.lastImport).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "40px 24px", marginBottom: 24, textAlign: "center", color: T.textMuted, fontSize: 14 }}>
+                        No reviews imported yet for this campus. Use "Import Excel" to upload an Outscraper export.
+                      </div>
+                    )}
+
+                    {totalReviews > 0 && (
+                      <>
+                        {/* Filter bar */}
+                        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                          {[0,5,4,3,2,1].map(n => (
+                            <button key={n} onClick={() => setGrvStarFilter(n)}
+                              style={{ padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, border: `1.5px solid ${grvStarFilter === n ? T.brand : T.border}`, background: grvStarFilter === n ? T.brandDim : T.surface, color: grvStarFilter === n ? T.brand : T.text, cursor: "pointer" }}>
+                              {n === 0 ? `All (${totalReviews})` : `${n}★ (${reviews.filter(rv => rv.rating === n).length})`}
+                            </button>
+                          ))}
+                          <input value={grvSearch} onChange={e => setGrvSearch(e.target.value)} placeholder="Search reviews…"
+                            style={{ marginLeft: "auto", padding: "6px 14px", borderRadius: 8, border: `1.5px solid ${T.border}`, background: T.surface, color: T.text, fontSize: 13, outline: "none", minWidth: 180 }} />
+                        </div>
+
+                        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14 }}>
+                          Showing {filtered.length}{filtered.length !== totalReviews ? ` of ${totalReviews}` : ""} reviews{grvStarFilter > 0 ? ` · ${grvStarFilter}★` : ""}
+                          {grvSearch.trim() ? ` · "${grvSearch}"` : ""}
+                        </div>
+
+                        {/* Review cards */}
+                        {filtered.length === 0 ? (
+                          <div style={{ color: T.textMuted, fontSize: 14, textAlign: "center", padding: "40px 0" }}>No reviews match your filter.</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                            {filtered.map((rv, i) => (
+                              <div key={rv.reviewId || i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px" }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, gap: 12 }}>
+                                  <div>
+                                    <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{rv.author || "Anonymous"}</div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                                      <div style={{ display: "flex", gap: 1 }}>{renderStars(rv.rating || 0)}</div>
+                                      {rv.date && <span style={{ fontSize: 11, color: T.textMuted }}>{rv.date.slice(0, 10)}</span>}
+                                      {rv.likes > 0 && <span style={{ fontSize: 11, color: T.textMuted }}>· {rv.likes} like{rv.likes !== 1 ? "s" : ""}</span>}
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: (rv.rating || 0) >= 4 ? T.okDim : (rv.rating || 0) <= 2 ? T.warnDim : "#FEF3C7", color: (rv.rating || 0) >= 4 ? T.ok : (rv.rating || 0) <= 2 ? T.warn : "#92400E", flexShrink: 0 }}>{rv.rating || 0}★</div>
+                                </div>
+                                {rv.text && <div style={{ fontSize: 13, color: T.textSoft, lineHeight: 1.65, whiteSpace: "pre-wrap", marginBottom: rv.reply ? 12 : 0 }}>{rv.text}</div>}
+                                {rv.reply && (
+                                  <div style={{ padding: "10px 14px", background: T.raised, borderRadius: 8, borderLeft: `3px solid ${T.brand}` }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: T.brand, marginBottom: 4 }}>
+                                      Owner Reply{rv.replyDate ? ` · ${String(rv.replyDate).slice(0, 10)}` : ""}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: T.textSoft, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{rv.reply}</div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {syncNote && (
           <div style={{ position: "fixed", bottom: 28, right: 28, zIndex: 1100, background: T.ok, color: "#fff", borderRadius: 12, padding: "14px 22px", boxShadow: "0 6px 28px rgba(0,0,0,0.22)", display: "flex", alignItems: "center", gap: 12, fontSize: 14, fontWeight: 600, minWidth: 280 }}>
             <span style={{ fontSize: 20 }}>✓</span>
@@ -7560,6 +7776,50 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     </div>
     </MobileContext.Provider>
   );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   GOOGLE REVIEWS EXCEL PARSER
+   ───────────────────────────────────────────────────────────── */
+async function grvParseFile(file) {
+  const { default: readXlsxFile } = await import("read-excel-file/browser");
+  let rows;
+  try {
+    const sheets = await readXlsxFile(file, { getSheets: true });
+    const sheetName = (sheets || []).find(s => s.name === "Generated by Outscraper ©")?.name || (sheets?.[0]?.name);
+    const raw = sheetName
+      ? await readXlsxFile(file, { sheet: sheetName })
+      : await readXlsxFile(file);
+    rows = Array.isArray(raw[0]) ? raw : (raw[0]?.data || []);
+  } catch {
+    const raw = await readXlsxFile(file);
+    rows = Array.isArray(raw[0]) ? raw : (raw[0]?.data || []);
+  }
+  if (!rows.length) throw new Error("No data found in file");
+  const headers = rows[0].map(h => String(h ?? "").trim().toLowerCase());
+  const col = name => headers.indexOf(name);
+  const iReviewId  = col("review_id");
+  const iAuthor    = col("author_title");
+  const iText      = col("review_text");
+  const iReply     = col("owner_answer");
+  const iReplyDate = col("owner_answer_timestamp_datetime_utc");
+  const iRating    = col("review_rating");
+  const iTimestamp = col("review_timestamp");
+  const iDate      = col("review_datetime_utc");
+  const iLikes     = col("review_likes");
+  return rows.slice(1)
+    .filter(r => r.some(c => c !== null && c !== undefined && c !== ""))
+    .map(r => ({
+      reviewId:  r[iReviewId]  != null ? String(r[iReviewId])  : null,
+      author:    r[iAuthor]    != null ? String(r[iAuthor])     : null,
+      text:      r[iText]      != null ? String(r[iText])       : null,
+      reply:     r[iReply]     != null ? String(r[iReply])      : null,
+      replyDate: r[iReplyDate] != null ? String(r[iReplyDate])  : null,
+      rating:    r[iRating]    != null ? Number(r[iRating])     : null,
+      timestamp: r[iTimestamp] != null ? Number(r[iTimestamp])  : null,
+      date:      r[iDate]      != null ? String(r[iDate])       : null,
+      likes:     r[iLikes]     != null ? Number(r[iLikes])      : 0,
+    }));
 }
 
 /* ─────────────────────────────────────────────────────────────
