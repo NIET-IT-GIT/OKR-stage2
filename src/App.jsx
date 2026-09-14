@@ -2523,9 +2523,15 @@ When answering questions about marketing performance, sales, or student acquisit
 - If only one dataset has been imported, answer from what's available and note the other is not yet loaded.
 
 RANKING ACCURACY:
-The context includes pre-sorted sections prefixed with "TOP ..." (e.g. TOP INCOME LINE ITEMS, TOP PROJECTS BY INCOME, TOP MEMBERS BY OKR COMPLETION RATE, TOP DIVISIONS BY NET PROFIT). These are computed server-side and are authoritative — always use them as-is when answering ranking questions. Do not re-sort them.
+The context includes pre-sorted sections prefixed with "TOP ..." (e.g. TOP INCOME LINE ITEMS, TOP PROJECTS BY INCOME, TOP MEMBERS BY OKR COMPLETION RATE, TOP MEMBERS BY SALES, TOP DIVISIONS BY NET PROFIT). These are computed server-side and are authoritative — always use them as-is when answering ranking questions. Do not re-sort them.
 When a pre-sorted section is not available and you must rank from raw data, use the raw integer values in brackets [N] to determine order — never sort by the formatted abbreviations ($X.XK, $X.XM) as those can be misleading.
 Before presenting any ranked list, verify the order is strictly descending by the values shown.
+
+PERFORMANCE QUESTIONS:
+When asked who performs best, who are the top staff, or any general staff ranking question — always answer from TWO dimensions in the same response:
+1. OKR completion rate — use TOP MEMBERS BY OKR COMPLETION RATE.
+2. Sales performance — use TOP MEMBERS BY SALES (latest actual values for sales/revenue KRs).
+Present both dimensions clearly labelled. If one dataset has no data, note it briefly and answer from the other.
 
 ACTIONS:
 When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
@@ -7999,6 +8005,34 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     return `TOP MEMBERS BY OKR COMPLETION RATE — current month (sorted desc):\n` +
       withData.map((m, idx) => `  ${idx + 1}. ${m.name} (${m.dept}, ${m.role}): ${m.rate.toFixed(1)}% [${Math.round(m.rate)}] [${m.status}]`).join("\n");
   })();
+  const topMembersBySales = (() => {
+    const isSalesKr = kr => {
+      const lbl = (kr.label || "").toLowerCase();
+      const unt = (kr.unit || "").toLowerCase();
+      return lbl.includes("sale") || lbl.includes("revenue") || unt === "$" || unt.includes("usd") || unt.includes("aud");
+    };
+    const ranked = members.map(u => {
+      const kd = memberData[u.id] || { krs: [] };
+      const dept = depts.find(d => d.id === u.deptId)?.name || "—";
+      const salesKrs = kd.krs.filter(isSalesKr);
+      if (!salesKrs.length) return null;
+      let total = 0;
+      const details = [];
+      salesKrs.forEach(kr => {
+        const latest = okrSubmissions
+          .filter(s => s.memberId === u.id && s.krId === kr.id && s.answer !== null && s.actualValue != null)
+          .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+        if (!latest) return;
+        total += latest.actualValue;
+        details.push(`${kr.label}: ${fmtMoney(latest.actualValue)} [${Math.round(latest.actualValue)}]`);
+      });
+      if (!details.length) return null;
+      return { name: u.name, dept, role: u.role, total, details };
+    }).filter(Boolean).sort((a, b) => b.total - a.total);
+    if (!ranked.length) return "TOP MEMBERS BY SALES: No sales KR data available.";
+    return `TOP MEMBERS BY SALES (latest actual values per sales KR, sorted by total desc):\n` +
+      ranked.map((m, i) => `  ${i + 1}. ${m.name} (${m.dept}, ${m.role}): ${fmtMoney(m.total)} [${Math.round(m.total)}] — ${m.details.join(", ")}`).join("\n");
+  })();
   const topDivisions = (() => {
     const divNp = REV_DIVS.map(div => ({ div, cum: (_aiNpDivs[div] || []).slice(0, nowFYMonth + 1).reduce((a, b) => a + b, 0) })).sort((a, b) => b.cum - a.cum);
     if (divNp.every(d => d.cum === 0)) return "TOP DIVISIONS BY NET PROFIT: No P&L data uploaded yet.";
@@ -8022,6 +8056,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     `\n${plTopLineItems}`,
     `\n${topProjects}`,
     `\n${topMembers}`,
+    `\n${topMembersBySales}`,
     `\n${topDivisions}`,
     `\n${cashSection}`,
     `\n${pendingSection}`,
