@@ -2550,8 +2550,56 @@ When asked who performs best, who are the top staff, or any general staff rankin
 2. Sales performance — use TOP MEMBERS BY SALES (latest actual values for sales/revenue KRs).
 Present both dimensions clearly labelled. If one dataset has no data, note it briefly and answer from the other.
 
+GOOGLE REVIEWS:
+Campus review data is included under "GOOGLE REVIEWS SUMMARY". When asked about Google Reviews, campus ratings, review scores, or review performance:
+1. Reference GOOGLE REVIEWS SUMMARY for actual average ratings and star distribution per campus.
+2. Cross-reference with any Google Reviews-related KRs in the OKR data (e.g. "Teacher Google & Social Reviews", "Google Review" KRs) to compare targets vs. actual review performance.
+3. Highlight campuses with a high count of 1–2★ reviews as risk areas.
+4. When asked about negative feedback or complaints, refer to RECENT NEGATIVE REVIEWS (1-2★) for specific examples.
+5. If review data for a campus has not been imported yet, say so clearly and direct the user to import it via Admin → Google Reviews.
+6. Do not fabricate ratings or review counts — only use what is in the context.
+
 ACTIONS:
 When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
+
+function buildGrvContextStr(grvData = {}) {
+  const GRV_CAMPUSES = [
+    { slug: "charlton-brown-brisbane-cbd", label: "Charlton Brown Brisbane CBD" },
+    { slug: "charlton-brown-southport",    label: "Charlton Brown Southport"    },
+    { slug: "educare-brisbane-cbd",        label: "Educare Brisbane CBD"        },
+    { slug: "educare-southport",           label: "Educare Southport"           },
+  ];
+  const loaded = GRV_CAMPUSES.filter(c => grvData[c.slug]);
+  if (!loaded.length) return "GOOGLE REVIEWS: No review data imported yet (import Outscraper Excel exports via Admin → Google Reviews).";
+  const summaryLines = loaded.map(c => {
+    const doc = grvData[c.slug];
+    const reviews = doc.reviews || [];
+    if (!reviews.length) return `  ${c.label}: imported but no reviews found`;
+    const avg = reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length;
+    const dist = [5,4,3,2,1].map(n => `${n}★:${reviews.filter(r => r.rating === n).length}`).join(", ");
+    const lastImport = doc.lastImport
+      ? new Date(doc.lastImport).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
+      : "unknown";
+    return `  ${c.label}: ${avg.toFixed(1)}★ avg | ${reviews.length} reviews (${dist}) | last import: ${lastImport}`;
+  }).join("\n");
+  const nowMs = Date.now();
+  const negativeReviews = loaded.flatMap(c => {
+    const doc = grvData[c.slug];
+    return (doc.reviews || [])
+      .filter(r => (r.rating || 0) <= 2 && r.timestamp && (nowMs / 1000 - r.timestamp) <= 90 * 86400)
+      .map(r => ({ ...r, campusLabel: c.label }));
+  }).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 10);
+  const negSection = negativeReviews.length
+    ? "\nRECENT NEGATIVE REVIEWS (1-2★, last 90 days — read for risk awareness):\n" +
+      negativeReviews.map(r => {
+        const dateStr = r.date ? String(r.date).slice(0, 10) : "unknown date";
+        const text = (r.text || "").slice(0, 150) + ((r.text || "").length > 150 ? "…" : "");
+        const replyFlag = r.reply ? " [replied]" : " [no reply]";
+        return `  ${r.campusLabel} (${r.rating}★, ${dateStr}, ${r.author || "Anonymous"}${replyFlag}): "${text}"`;
+      }).join("\n")
+    : "\nRECENT NEGATIVE REVIEWS (1-2★, last 90 days): None found.";
+  return `GOOGLE REVIEWS SUMMARY (Outscraper import, campuses sorted as listed):\n${summaryLines}${negSection}`;
+}
 
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
@@ -3071,6 +3119,34 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       return `TOP DIVISIONS BY NET PROFIT — ${fyLabel} (sorted desc):\n` +
         divNp.map((d, idx) => `  ${idx + 1}. ${d.div}: ${fmtMoney(d.cum)} [${Math.round(d.cum)}]`).join("\n");
     })();
+    const topMembersBySales = (() => {
+      const isSalesKr = kr => {
+        const lbl = (kr.label || "").toLowerCase();
+        const unt = (kr.unit || "").toLowerCase();
+        return lbl.includes("sale") || lbl.includes("revenue") || unt === "$" || unt.includes("usd") || unt.includes("aud");
+      };
+      const ranked = members.map(u => {
+        const kd = memberData[u.id] || { krs: [] };
+        const dept = depts.find(d => d.id === u.deptId)?.name || "—";
+        const salesKrs = kd.krs.filter(isSalesKr);
+        if (!salesKrs.length) return null;
+        let total = 0;
+        const details = [];
+        salesKrs.forEach(kr => {
+          const latest = okrSubmissions
+            .filter(s => s.memberId === u.id && s.krId === kr.id && s.answer !== null && s.actualValue != null)
+            .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+          if (!latest) return;
+          total += latest.actualValue;
+          details.push(`${kr.label}: ${fmtMoney(latest.actualValue)} [${Math.round(latest.actualValue)}]`);
+        });
+        if (!details.length) return null;
+        return { name: u.name, dept, role: u.role, total, details };
+      }).filter(Boolean).sort((a, b) => b.total - a.total);
+      if (!ranked.length) return "TOP MEMBERS BY SALES: No sales KR data available.";
+      return `TOP MEMBERS BY SALES (latest actual values per sales KR, sorted by total desc):\n` +
+        ranked.map((m, i) => `  ${i + 1}. ${m.name} (${m.dept}, ${m.role}): ${fmtMoney(m.total)} [${Math.round(m.total)}] — ${m.details.join(", ")}`).join("\n");
+    })();
     const cashContextSection = cashRecords.length === 0
       ? "CASH STATEMENT RECORDS: None uploaded yet."
       : `CASH STATEMENT RECORDS (${cashRecords.length} record(s)):\n` +
@@ -3088,12 +3164,14 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       `\n${plTopLineItems}`,
       `\n${topProjects}`,
       `\n${topMembers}`,
+      `\n${topMembersBySales}`,
       `\n${topDivisions}`,
       `\n${cashContextSection}`,
       `\n${pendingSection}`,
       `\n${projectSection}`,
       `\n${enrolmentSection}`,
       `\n${coeSection}`,
+      `\n${buildGrvContextStr(grvData)}`,
     ].join("\n");
   }
 
@@ -8005,7 +8083,7 @@ async function cashParseFiles(fileSheets) {
   return { records: allRecords, warnings };
 }
 
-function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [], cashRecords = [] }) {
+function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [], cashRecords = [], grvData = {} }) {
   const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
   const now = new Date();
   const getCompletedYear = p => {
@@ -8323,6 +8401,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     `\n${projectSection}`,
     `\n${enrolmentSection}`,
     `\n${coeSection}`,
+    `\n${buildGrvContextStr(grvData)}`,
   ].join("\n");
 }
 
@@ -8511,6 +8590,18 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     }
   }, [coeLoaded, coeLoading, dept?.admissionsAccess]);
 
+  const [mgrGrvData, setMgrGrvData] = useState({});
+  const [mgrGrvLoaded, setMgrGrvLoaded] = useState(false);
+  useEffect(() => {
+    if (mgrGrvLoaded) return;
+    dbGetGoogleReviews().then(r => {
+      const bySlug = {};
+      for (const doc of r.google_reviews) bySlug[doc.campusSlug] = doc;
+      setMgrGrvData(bySlug);
+      setMgrGrvLoaded(true);
+    }).catch(() => setMgrGrvLoaded(true));
+  }, [mgrGrvLoaded]);
+
   const [pilotResponse, setPilotResponse] = useState(null);
   const [pilotLoading, setPilotLoading] = useState(false);
   const [pilotRefresh, setPilotRefresh] = useState(0);
@@ -8524,7 +8615,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords, cashRecords: mgrCashRecords });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords, cashRecords: mgrCashRecords, grvData: mgrGrvData });
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
@@ -10383,6 +10474,18 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     }
   }, [coeLoaded, coeLoading, myDept?.admissionsAccess]);
 
+  const [memGrvData, setMemGrvData] = useState({});
+  const [memGrvLoaded, setMemGrvLoaded] = useState(false);
+  useEffect(() => {
+    if (memGrvLoaded) return;
+    dbGetGoogleReviews().then(r => {
+      const bySlug = {};
+      for (const doc of r.google_reviews) bySlug[doc.campusSlug] = doc;
+      setMemGrvData(bySlug);
+      setMemGrvLoaded(true);
+    }).catch(() => setMemGrvLoaded(true));
+  }, [memGrvLoaded]);
+
   const [pilotResponse, setPilotResponse] = useState(null);
   const [pilotLoading, setPilotLoading] = useState(false);
   const [pilotRefresh, setPilotRefresh] = useState(0);
@@ -10396,7 +10499,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [] });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [], grvData: memGrvData });
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
