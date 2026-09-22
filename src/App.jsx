@@ -8963,8 +8963,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   if (!byPK[s.periodKey]) byPK[s.periodKey] = { pk: s.periodKey, dr: s.dateRange || "", p: [], a: [] };
                   if (s.answer === null) byPK[s.periodKey].p.push(s); else byPK[s.periodKey].a.push(s);
                 });
+                const pkCmp = (a, b) => { const wA = a.match(/Wk\s*(\d+)/), wB = b.match(/Wk\s*(\d+)/); return wA && wB ? parseInt(wA[1]) - parseInt(wB[1]) : a.localeCompare(b); };
                 const pkGroups = Object.values(byPK).sort((a, b) =>
-                  a.p.length > 0 && b.p.length === 0 ? -1 : a.p.length === 0 && b.p.length > 0 ? 1 : b.pk.localeCompare(a.pk));
+                  a.p.length > 0 && b.p.length === 0 ? -1 : a.p.length === 0 && b.p.length > 0 ? 1 : pkCmp(b.pk, a.pk));
                 return (
                 <div key={period} style={{ marginBottom: 28 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
@@ -11089,8 +11090,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   if (!byPK[s.periodKey]) byPK[s.periodKey] = { pk: s.periodKey, dr: s.dateRange || "", p: [], a: [] };
                   if (s.answer === null) byPK[s.periodKey].p.push(s); else byPK[s.periodKey].a.push(s);
                 });
+                const pkCmp = (a, b) => { const wA = a.match(/Wk\s*(\d+)/), wB = b.match(/Wk\s*(\d+)/); return wA && wB ? parseInt(wA[1]) - parseInt(wB[1]) : a.localeCompare(b); };
                 const pkGroups = Object.values(byPK).sort((a, b) =>
-                  a.p.length > 0 && b.p.length === 0 ? -1 : a.p.length === 0 && b.p.length > 0 ? 1 : b.pk.localeCompare(a.pk));
+                  a.p.length > 0 && b.p.length === 0 ? -1 : a.p.length === 0 && b.p.length > 0 ? 1 : pkCmp(b.pk, a.pk));
                 return (
                 <div key={period} style={{ marginBottom: 28 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${PERIOD_COLORS[period]}` }}>
