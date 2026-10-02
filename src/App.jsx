@@ -2604,6 +2604,15 @@ function buildGrvContextStr(grvData = {}) {
   return `GOOGLE REVIEWS SUMMARY (Outscraper import, campuses sorted as listed):\n${summaryLines}${negSection}`;
 }
 
+const PURSUIT_STAGES = [
+  { id: "opportunity",   label: "Opportunity Identified",       color: "#60a5fa" },
+  { id: "qualification", label: "Qualification & Go/No-Go",    color: "#a78bfa" },
+  { id: "partnership",   label: "Partnership / Capture Dev",   color: "#f59e0b" },
+  { id: "bid-prep",      label: "Bid Preparation",              color: "#f97316" },
+  { id: "submitted",     label: "Submitted & Under Evaluation", color: "#10b981" },
+  { id: "contract",      label: "Contract Negotiation",         color: "#059669" },
+];
+
 function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
@@ -2648,6 +2657,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [projReminderResult, setProjReminderResult] = useState(null);
   const [projReminderPreviewId, setProjReminderPreviewId] = useState(null);
   const [logDrafts, setLogDrafts] = useState({});
+  const [pursuitAdminTab, setPursuitAdminTab] = useState("active");
+  const [editPursuitId, setEditPursuitId] = useState(null);
+  const [editPursuitForm, setEditPursuitForm] = useState({});
   const [subFilter, setSubFilter] = useState("all");
   const [enrTab, setEnrTab] = useState("overview");
   const [enrRecords, setEnrRecords] = useState([]);
@@ -2887,7 +2899,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         return `    KR — ${kr.label}: ${latest.answer === "yes" ? "✓ Yes" : "✗ No"} · actual ${latest.actualValue}${kr.unit ? " " + kr.unit : ""} (${latest.dateRange || latest.periodKey})`;
       }).filter(Boolean);
       const ppLines = kd.krs.filter(kr => kr.type === "project_profit").map(kr => {
-        const yearProjects = projects.filter(p => p.mgrId === u.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+        const yearProjects = projects.filter(p => p.mgrId === u.id && p.status === "completed" && p.type !== "pursuit" && getCompletedYear(p) === kr.krYear);
         const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
         const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
         const missing = yearProjects.filter(p => p.income == null || p.margin == null).length;
@@ -3312,6 +3324,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     { id: "submissions",      icon: "⬡", label: "OKR Submissions"   },
     { id: "reports",          icon: "⬡", label: "OKR Reports"       },
     { id: "projects",         icon: "⬡", label: "Projects"          },
+    { id: "pursuits",         icon: "⬡", label: "Pursuits / Pipeline" },
     { id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "cash-statement", icon: "⬡", label: "Cash Statement" }] },
     { id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] },
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
@@ -5411,8 +5424,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               const groups = [...depts.map(d => ({ id: d.id, name: d.name })), { id: null, name: "Other" }];
               const groupElements = groups.map(group => {
                 const deptProjects = (group.id
-                  ? projects.filter(p => ownerDept(p) === group.id)
-                  : projects.filter(p => !ownerDept(p))
+                  ? projects.filter(p => p.type !== "pursuit" && ownerDept(p) === group.id)
+                  : projects.filter(p => p.type !== "pursuit" && !ownerDept(p))
                 ).filter(p => !searchLower || (users.find(u => u.id === p.mgrId)?.name || "").toLowerCase().includes(searchLower));
                 if (deptProjects.length === 0) return null;
                 return (
@@ -5544,7 +5557,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   </div>
                 );
               });
-              const pendingApprovalProjects = projects.filter(p => p.status === "pending approval" && (!searchLower || (users.find(u => u.id === p.mgrId)?.name || "").toLowerCase().includes(searchLower)));
+              const pendingApprovalProjects = projects.filter(p => p.type !== "pursuit" && p.status === "pending approval" && (!searchLower || (users.find(u => u.id === p.mgrId)?.name || "").toLowerCase().includes(searchLower)));
               const hasAny = pendingApprovalProjects.length > 0 || groupElements.some(Boolean);
               if (!hasAny) return <EmptyState text="No managers match your search." />;
               return (
@@ -5589,6 +5602,114 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             })()}
           </Pane>
         </>)}
+
+        {page === "pursuits" && (() => {
+          const allPursuits = projects.filter(p => p.type === "pursuit");
+          const activePursuits = allPursuits.filter(p => !p.outcome || p.outcome === "active");
+          const wonPursuits = allPursuits.filter(p => p.outcome === "won");
+          const lostPursuits = allPursuits.filter(p => p.outcome === "lost");
+          const deferredPursuits = allPursuits.filter(p => p.outcome === "deferred");
+          const tabMap = { active: activePursuits, won: wonPursuits, lost: lostPursuits, deferred: deferredPursuits };
+          const tabPursuits = tabMap[pursuitAdminTab] || [];
+          const totalValue = activePursuits.reduce((s, p) => s + (p.estimatedValue || 0), 0);
+          const weightedValue = Math.round(activePursuits.reduce((s, p) => s + (p.estimatedValue || 0) * (p.probability != null ? p.probability / 100 : 1), 0));
+          const stageInfo = id => PURSUIT_STAGES.find(s => s.id === id) || PURSUIT_STAGES[0];
+          const byStage = PURSUIT_STAGES.map(st => ({ ...st, items: activePursuits.filter(p => (p.stage || "opportunity") === st.id) })).filter(st => st.items.length > 0);
+          const PursuitEditForm = ({ p, onSave, onCancel }) => (
+            <div style={{ marginTop: 12, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Opportunity Name</div><Input value={editPursuitForm.name} onChange={e => setEditPursuitForm(f => ({ ...f, name: e.target.value }))} /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Stage</div><select value={editPursuitForm.stage} onChange={e => setEditPursuitForm(f => ({ ...f, stage: e.target.value }))} style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.text, fontSize: 13 }}>{PURSUIT_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Outcome</div><select value={editPursuitForm.outcome} onChange={e => setEditPursuitForm(f => ({ ...f, outcome: e.target.value }))} style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.text, fontSize: 13 }}><option value="active">Active</option><option value="won">Won</option><option value="lost">Lost</option><option value="deferred">Deferred</option></select></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Estimated Value ($)</div><Input type="number" value={editPursuitForm.estimatedValue} onChange={e => setEditPursuitForm(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="0" /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Probability (%)</div><Input type="number" value={editPursuitForm.probability} onChange={e => setEditPursuitForm(f => ({ ...f, probability: e.target.value }))} placeholder="optional" /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Deadline</div><Input type="date" value={editPursuitForm.deadline} onChange={e => setEditPursuitForm(f => ({ ...f, deadline: e.target.value }))} /></div>
+              </div>
+              <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Next Action</div><Input value={editPursuitForm.nextAction} onChange={e => setEditPursuitForm(f => ({ ...f, nextAction: e.target.value }))} placeholder="e.g. Submit EOI by Friday" /></div>
+              <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Notes</div><TextArea value={editPursuitForm.notes || ""} onChange={e => setEditPursuitForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Additional context..." /></div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <Btn small onClick={onCancel}>Cancel</Btn>
+                <Btn primary small onClick={onSave}>Save</Btn>
+              </div>
+            </div>
+          );
+          const openEdit = p => { setEditPursuitId(p.id); setEditPursuitForm({ name: p.name, stage: p.stage || "opportunity", outcome: p.outcome || "active", estimatedValue: p.estimatedValue != null ? String(p.estimatedValue) : "", probability: p.probability != null ? String(p.probability) : "", deadline: p.deadline || "", nextAction: p.nextAction || "", notes: p.notes || "" }); };
+          const saveEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitForm.name.trim() || p.name, stage: editPursuitForm.stage, outcome: editPursuitForm.outcome, estimatedValue: editPursuitForm.estimatedValue !== "" ? Number(editPursuitForm.estimatedValue) : null, probability: editPursuitForm.probability !== "" ? Number(editPursuitForm.probability) : null, deadline: editPursuitForm.deadline, nextAction: editPursuitForm.nextAction.trim(), notes: editPursuitForm.notes.trim(), updatedDate: new Date().toISOString().slice(0, 10) } }); setEditPursuitId(null); };
+          const convertToProject = p => { if (!window.confirm(`Convert "${p.name}" to a Project? It will appear in the Projects page with income set to $${(p.estimatedValue || 0).toLocaleString()}.`)) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: p.mgrId, name: p.name, status: "active", startDate: new Date().toISOString().slice(0, 10), due: p.deadline || "TBD", progress: 0, income: p.estimatedValue || null, margin: null } }); dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); };
+          const PursuitCard = ({ p, showStage = false }) => {
+            const mgr = users.find(u => u.id === p.mgrId);
+            const dept = depts.find(d => d.id === mgr?.deptId);
+            const st = stageInfo(p.stage || "opportunity");
+            const outcomeColor = p.outcome === "won" ? T.ok : p.outcome === "lost" ? T.bad : p.outcome === "deferred" ? T.warn : st.color;
+            const isEditing = editPursuitId === p.id;
+            return (
+              <Card key={p.id} style={{ marginBottom: 8, borderLeft: `3px solid ${outcomeColor}` }}>
+                <div style={{ padding: "12px 16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{p.name}</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: T.textMuted, alignItems: "center" }}>
+                        {mgr && <span>{mgr.name}{dept ? ` · ${dept.name}` : ""}</span>}
+                        {p.estimatedValue != null && <span style={{ color: T.brand, fontWeight: 700 }}>${p.estimatedValue.toLocaleString()}</span>}
+                        {p.probability != null && <span>{p.probability}% probability</span>}
+                        {p.deadline && <span>Deadline: {p.deadline}</span>}
+                        {showStage && p.stage && <span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span>}
+                        {p.updatedDate && <span>Updated: {p.updatedDate}</span>}
+                      </div>
+                      {p.nextAction && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 4 }}>↳ {p.nextAction}</div>}
+                      {p.notes && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2, fontStyle: "italic" }}>{p.notes}</div>}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                      {p.outcome === "won" && <Btn primary small onClick={() => convertToProject(p)}>Convert to Project</Btn>}
+                      <Btn small onClick={() => { isEditing ? setEditPursuitId(null) : openEdit(p); }}>{isEditing ? "Close" : "Edit"}</Btn>
+                      <button onClick={() => { if (window.confirm(`Delete "${p.name}"?`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px" }}>✕</button>
+                    </div>
+                  </div>
+                  {isEditing && <PursuitEditForm p={p} onSave={() => saveEdit(p)} onCancel={() => setEditPursuitId(null)} />}
+                </div>
+              </Card>
+            );
+          };
+          return (<>
+            <Header title="Pursuits / Pipeline" sub="Business development opportunities across all departments" />
+            <Pane>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                <Metric label="Active" value={activePursuits.length} />
+                <Metric label="Pipeline Value" value={`$${totalValue.toLocaleString()}`} status="blue" />
+                <Metric label="Weighted Value" value={`$${weightedValue.toLocaleString()}`} status="blue" />
+                <Metric label="Won" value={wonPursuits.length} status="green" />
+                <Metric label="Lost" value={lostPursuits.length} status="red" />
+                <Metric label="Deferred" value={deferredPursuits.length} status="yellow" />
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {[["active","Active Pipeline"], ["won","Won"], ["lost","Lost"], ["deferred","Deferred"]].map(([id, label]) => (
+                  <button key={id} onClick={() => setPursuitAdminTab(id)} style={{ padding: "6px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", background: pursuitAdminTab === id ? T.brand : T.raised, color: pursuitAdminTab === id ? "#fff" : T.textDim, border: `1px solid ${pursuitAdminTab === id ? T.brand : T.border}` }}>{label} {tabMap[id].length > 0 ? `(${tabMap[id].length})` : ""}</button>
+                ))}
+              </div>
+              {pursuitAdminTab === "active" && (
+                allPursuits.length === 0
+                  ? <EmptyState text="No pursuits yet. Managers can create them from their Pursuits / Pipeline page." />
+                  : byStage.length === 0
+                    ? <EmptyState text="No active pursuits." />
+                    : byStage.map(st => (
+                      <div key={st.id} style={{ marginBottom: 28 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${st.color}` }}>
+                          <div style={{ width: 4, height: 18, background: st.color, borderRadius: 2 }} />
+                          <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{st.label}</span>
+                          <span style={{ fontSize: 12, color: T.textMuted, marginLeft: "auto" }}>{st.items.length} pursuit{st.items.length !== 1 ? "s" : ""} · ${st.items.reduce((s, p) => s + (p.estimatedValue || 0), 0).toLocaleString()}</span>
+                        </div>
+                        {st.items.map(p => <PursuitCard key={p.id} p={p} />)}
+                      </div>
+                    ))
+              )}
+              {pursuitAdminTab !== "active" && (
+                tabPursuits.length === 0
+                  ? <EmptyState text={`No ${pursuitAdminTab} pursuits.`} />
+                  : tabPursuits.map(p => <PursuitCard key={p.id} p={p} showStage />)
+              )}
+            </Pane>
+          </>);
+        })()}
 
         {page === "admissions" && (<>
           <Header title="Weekly Applications Dashboard" sub="Marketer application tracking by RTO" />
@@ -8135,7 +8256,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
       return `    KR — ${kr.label}: ${latest.answer === "yes" ? "✓ Yes" : "✗ No"} · actual ${latest.actualValue}${kr.unit ? " " + kr.unit : ""} (${latest.dateRange || latest.periodKey})`;
     }).filter(Boolean);
     const ppLines = kd.krs.filter(kr => kr.type === "project_profit").map(kr => {
-      const yearProjects = projects.filter(p => p.mgrId === u.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+      const yearProjects = projects.filter(p => p.mgrId === u.id && p.status === "completed" && p.type !== "pursuit" && getCompletedYear(p) === kr.krYear);
       const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
       const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
       const missing = yearProjects.filter(p => p.income == null || p.margin == null).length;
@@ -8439,6 +8560,11 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "", contributeRate: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
+  const [pursuitMgrTab, setPursuitMgrTab] = useState("active");
+  const [showNewPursuit, setShowNewPursuit] = useState(false);
+  const [newPursuit, setNewPursuit] = useState({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" });
+  const [editPursuitId, setEditPursuitId] = useState(null);
+  const [editPursuitForm, setEditPursuitForm] = useState({});
   const [syncPrompt, setSyncPrompt] = useState(null);
   const syncTimerRef = useRef(null);
   const [syncNote, setSyncNote] = useState(null);
@@ -8501,7 +8627,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const designatedMemberIds = users.filter(u => u.designatedApproverId === user.id).map(u => u.id);
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId) || peerManagerIds.includes(s.memberId) || designatedMemberIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
-  const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
+  const myProjects = projects.filter(p => p.type !== "pursuit" && (user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id));
   const _dmNowMgr = new Date();
   const _dmTypesMgr = ["daily", "weekly", "monthly"];
   const dmSubs = allOkrSubs.filter(s => {
@@ -8640,6 +8766,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "checkin",      icon: "⬡", label: "OKR Check-In"         },
     { id: "approvals",    icon: "⬡", label: "Approve Submissions"   },
     { id: "projects",     icon: "⬡", label: "Projects"             },
+    { id: "pursuits",     icon: "⬡", label: "Pursuits / Pipeline"  },
     { id: "members",      icon: "⬡", label: "Edit Member KPIs"     },
     { id: "reports",      icon: "⬡", label: "OKR Reports"          },
     ...(user.financeAccess ? [{ id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "cash-statement", icon: "⬡", label: "Cash Statement" }] }] : []),
@@ -9315,7 +9442,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
               </div>
             )}
             {user.canApproveProjects && (() => {
-              const pendingAll = projects.filter(p => p.status === "pending approval");
+              const pendingAll = projects.filter(p => p.type !== "pursuit" && p.status === "pending approval");
               if (!pendingAll.length) return null;
               return (
                 <div style={{ marginBottom: 24 }}>
@@ -9493,6 +9620,140 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           </Pane>
         </>)}
 
+        {page === "pursuits" && (() => {
+          const deptUsers = user.deptId ? users.filter(u => u.deptId === user.deptId) : [user];
+          const deptUserIds = new Set(deptUsers.map(u => u.id));
+          const allPursuits = projects.filter(p => p.type === "pursuit" && deptUserIds.has(p.mgrId));
+          const activePursuits = allPursuits.filter(p => !p.outcome || p.outcome === "active");
+          const wonPursuits = allPursuits.filter(p => p.outcome === "won");
+          const lostPursuits = allPursuits.filter(p => p.outcome === "lost");
+          const deferredPursuits = allPursuits.filter(p => p.outcome === "deferred");
+          const tabMap = { active: activePursuits, won: wonPursuits, lost: lostPursuits, deferred: deferredPursuits };
+          const tabPursuits = tabMap[pursuitMgrTab] || [];
+          const totalValue = activePursuits.reduce((s, p) => s + (p.estimatedValue || 0), 0);
+          const weightedValue = Math.round(activePursuits.reduce((s, p) => s + (p.estimatedValue || 0) * (p.probability != null ? p.probability / 100 : 1), 0));
+          const stageInfo = id => PURSUIT_STAGES.find(s => s.id === id) || PURSUIT_STAGES[0];
+          const byStage = PURSUIT_STAGES.map(st => ({ ...st, items: activePursuits.filter(p => (p.stage || "opportunity") === st.id) })).filter(st => st.items.length > 0);
+          const openEdit = p => { setEditPursuitId(p.id); setEditPursuitForm({ name: p.name, stage: p.stage || "opportunity", outcome: p.outcome || "active", estimatedValue: p.estimatedValue != null ? String(p.estimatedValue) : "", probability: p.probability != null ? String(p.probability) : "", deadline: p.deadline || "", nextAction: p.nextAction || "", notes: p.notes || "" }); };
+          const saveEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitForm.name.trim() || p.name, stage: editPursuitForm.stage, outcome: editPursuitForm.outcome, estimatedValue: editPursuitForm.estimatedValue !== "" ? Number(editPursuitForm.estimatedValue) : null, probability: editPursuitForm.probability !== "" ? Number(editPursuitForm.probability) : null, deadline: editPursuitForm.deadline, nextAction: editPursuitForm.nextAction.trim(), notes: editPursuitForm.notes.trim(), updatedDate: new Date().toISOString().slice(0, 10) } }); setEditPursuitId(null); };
+          const convertToProject = p => { if (!window.confirm(`Convert "${p.name}" to a Project? It will appear in the Projects page with income set to $${(p.estimatedValue || 0).toLocaleString()}.`)) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: p.mgrId, name: p.name, status: "active", startDate: new Date().toISOString().slice(0, 10), due: p.deadline || "TBD", progress: 0, income: p.estimatedValue || null, margin: null } }); dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); };
+          const createPursuit = () => { if (!newPursuit.name.trim()) return; dispatch({ type: "ADD_PROJECT", project: { id: `pursuit_${Date.now()}`, type: "pursuit", mgrId: user.id, name: newPursuit.name.trim(), stage: "opportunity", outcome: "active", estimatedValue: newPursuit.estimatedValue !== "" ? Number(newPursuit.estimatedValue) : null, probability: newPursuit.probability !== "" ? Number(newPursuit.probability) : null, deadline: newPursuit.deadline, nextAction: newPursuit.nextAction.trim(), notes: "", startDate: new Date().toISOString().slice(0, 10), updatedDate: "" } }); setShowNewPursuit(false); setNewPursuit({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); };
+          const PursuitEditForm = ({ p }) => (
+            <div style={{ marginTop: 12, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Opportunity Name</div><Input value={editPursuitForm.name} onChange={e => setEditPursuitForm(f => ({ ...f, name: e.target.value }))} /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Stage</div><select value={editPursuitForm.stage} onChange={e => setEditPursuitForm(f => ({ ...f, stage: e.target.value }))} style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.text, fontSize: 13 }}>{PURSUIT_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Outcome</div><select value={editPursuitForm.outcome} onChange={e => setEditPursuitForm(f => ({ ...f, outcome: e.target.value }))} style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.text, fontSize: 13 }}><option value="active">Active</option><option value="won">Won</option><option value="lost">Lost</option><option value="deferred">Deferred</option></select></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Estimated Value ($)</div><Input type="number" value={editPursuitForm.estimatedValue} onChange={e => setEditPursuitForm(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="0" /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Probability (%)</div><Input type="number" value={editPursuitForm.probability} onChange={e => setEditPursuitForm(f => ({ ...f, probability: e.target.value }))} placeholder="optional" /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Deadline</div><Input type="date" value={editPursuitForm.deadline} onChange={e => setEditPursuitForm(f => ({ ...f, deadline: e.target.value }))} /></div>
+              </div>
+              <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Next Action</div><Input value={editPursuitForm.nextAction} onChange={e => setEditPursuitForm(f => ({ ...f, nextAction: e.target.value }))} placeholder="e.g. Submit EOI by Friday" /></div>
+              <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Notes</div><TextArea value={editPursuitForm.notes || ""} onChange={e => setEditPursuitForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Additional context..." /></div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <Btn small onClick={() => setEditPursuitId(null)}>Cancel</Btn>
+                <Btn primary small onClick={() => saveEdit(p)}>Save</Btn>
+              </div>
+            </div>
+          );
+          const PursuitCard = ({ p, showStage = false }) => {
+            const mgr = users.find(u => u.id === p.mgrId);
+            const isOwn = p.mgrId === user.id;
+            const st = stageInfo(p.stage || "opportunity");
+            const outcomeColor = p.outcome === "won" ? T.ok : p.outcome === "lost" ? T.bad : p.outcome === "deferred" ? T.warn : st.color;
+            const isEditing = editPursuitId === p.id;
+            return (
+              <Card key={p.id} style={{ marginBottom: 8, borderLeft: `3px solid ${outcomeColor}` }}>
+                <div style={{ padding: "12px 16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</span>
+                        {!isOwn && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 4, padding: "1px 6px" }}>{mgr?.name}</span>}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: T.textMuted, alignItems: "center" }}>
+                        {p.estimatedValue != null && <span style={{ color: T.brand, fontWeight: 700 }}>${p.estimatedValue.toLocaleString()}</span>}
+                        {p.probability != null && <span>{p.probability}% probability</span>}
+                        {p.deadline && <span>Deadline: {p.deadline}</span>}
+                        {showStage && p.stage && <span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span>}
+                        {p.updatedDate && <span>Updated: {p.updatedDate}</span>}
+                      </div>
+                      {p.nextAction && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 4 }}>↳ {p.nextAction}</div>}
+                      {p.notes && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2, fontStyle: "italic" }}>{p.notes}</div>}
+                    </div>
+                    {isOwn && (
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                        {p.outcome === "won" && <Btn primary small onClick={() => convertToProject(p)}>Convert to Project</Btn>}
+                        <Btn small onClick={() => { isEditing ? setEditPursuitId(null) : openEdit(p); }}>{isEditing ? "Close" : "Edit"}</Btn>
+                        <button onClick={() => { if (window.confirm(`Delete "${p.name}"?`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px" }}>✕</button>
+                      </div>
+                    )}
+                  </div>
+                  {isOwn && isEditing && <PursuitEditForm p={p} />}
+                </div>
+              </Card>
+            );
+          };
+          return (<>
+            <Header title="Pursuits / Pipeline" sub="Business development opportunities in your department" />
+            <Pane>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  <Metric label="Active" value={activePursuits.length} />
+                  <Metric label="Pipeline Value" value={`$${totalValue.toLocaleString()}`} status="blue" />
+                  <Metric label="Weighted Value" value={`$${weightedValue.toLocaleString()}`} status="blue" />
+                  <Metric label="Won" value={wonPursuits.length} status="green" />
+                </div>
+                <Btn primary onClick={() => { setShowNewPursuit(v => !v); }}>+ New Pursuit</Btn>
+              </div>
+              {showNewPursuit && (
+                <Card style={{ marginBottom: 20 }}>
+                  <div style={{ padding: "14px 16px" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>New Pursuit</div>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Opportunity Name *</div><Input value={newPursuit.name} onChange={e => setNewPursuit(f => ({ ...f, name: e.target.value }))} placeholder="e.g. TAFE NSW Contract" /></div>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Estimated Value ($)</div><Input type="number" value={newPursuit.estimatedValue} onChange={e => setNewPursuit(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="optional" /></div>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Probability (%)</div><Input type="number" value={newPursuit.probability} onChange={e => setNewPursuit(f => ({ ...f, probability: e.target.value }))} placeholder="optional" /></div>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Deadline</div><Input type="date" value={newPursuit.deadline} onChange={e => setNewPursuit(f => ({ ...f, deadline: e.target.value }))} /></div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Next Action</div><Input value={newPursuit.nextAction} onChange={e => setNewPursuit(f => ({ ...f, nextAction: e.target.value }))} placeholder="e.g. Schedule discovery call" /></div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <Btn small onClick={() => { setShowNewPursuit(false); setNewPursuit({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); }}>Cancel</Btn>
+                      <Btn primary small onClick={createPursuit} disabled={!newPursuit.name.trim()}>Create</Btn>
+                    </div>
+                  </div>
+                </Card>
+              )}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {[["active","Active Pipeline"], ["won","Won"], ["lost","Lost"], ["deferred","Deferred"]].map(([id, label]) => (
+                  <button key={id} onClick={() => setPursuitMgrTab(id)} style={{ padding: "6px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", background: pursuitMgrTab === id ? T.brand : T.raised, color: pursuitMgrTab === id ? "#fff" : T.textDim, border: `1px solid ${pursuitMgrTab === id ? T.brand : T.border}` }}>{label} {tabMap[id].length > 0 ? `(${tabMap[id].length})` : ""}</button>
+                ))}
+              </div>
+              {pursuitMgrTab === "active" && (
+                allPursuits.length === 0
+                  ? <EmptyState text="No pursuits yet. Click '+ New Pursuit' to create your first opportunity." />
+                  : byStage.length === 0
+                    ? <EmptyState text="No active pursuits." />
+                    : byStage.map(st => (
+                      <div key={st.id} style={{ marginBottom: 28 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${st.color}` }}>
+                          <div style={{ width: 4, height: 18, background: st.color, borderRadius: 2 }} />
+                          <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{st.label}</span>
+                          <span style={{ fontSize: 12, color: T.textMuted, marginLeft: "auto" }}>{st.items.length} pursuit{st.items.length !== 1 ? "s" : ""} · ${st.items.reduce((s, p) => s + (p.estimatedValue || 0), 0).toLocaleString()}</span>
+                        </div>
+                        {st.items.map(p => <PursuitCard key={p.id} p={p} />)}
+                      </div>
+                    ))
+              )}
+              {pursuitMgrTab !== "active" && (
+                tabPursuits.length === 0
+                  ? <EmptyState text={`No ${pursuitMgrTab} pursuits.`} />
+                  : tabPursuits.map(p => <PursuitCard key={p.id} p={p} showStage />)
+              )}
+            </Pane>
+          </>);
+        })()}
+
         {page === "members" && (() => {
           const PERIOD_ORDER = ["daily","weekly","monthly","quarterly","biannual","annual"];
           const getPK = p => mgrKpiPeriodKeys[p] || currentPeriodKey(p);
@@ -9631,10 +9892,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                         </div>
                         {ppKrsTeam.map((kr, ki) => {
                           const ppTGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
-                          const ppTAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && ppTGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
+                          const ppTAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && p.type !== "pursuit" && ppTGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                           const ppTPct = kr.target > 0 ? Math.min(Math.round(ppTAct / kr.target * 100), 100) : 0;
                           const ppTSt = getStatus(ppTPct);
-                          const ppTMissing = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && ppTGetCY(p) === kr.krYear && (p.income == null || p.margin == null)).length;
+                          const ppTMissing = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && p.type !== "pursuit" && ppTGetCY(p) === kr.krYear && (p.income == null || p.margin == null)).length;
                           return (
                             <div key={kr.id} style={{ padding: "12px 18px", borderBottom: ki < ppKrsTeam.length - 1 ? `1px solid ${T.border}` : "none", background: ki % 2 ? T.raised : "transparent" }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -10428,8 +10689,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const rate = hasRateKrs ? calcMemberRate(user.id, _memFiltKrs(kd.krs), _memMonthSubs) : null;
   const st = getStatus(rate);
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
-  const myOwnProjects = projects.filter(p => p.mgrId === user.id);
-  const myProjects = projects.filter(p => user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id);
+  const myOwnProjects = projects.filter(p => p.type !== "pursuit" && p.mgrId === user.id);
+  const myProjects = projects.filter(p => p.type !== "pursuit" && (user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id));
   const designatedApproveeIds = users.filter(u => u.designatedApproverId === user.id).map(u => u.id);
   const designatedApproveeSubs = (state.okrSubmissions || []).filter(s => designatedApproveeIds.includes(s.memberId) && s.answer !== null && !s.managerFilled);
   const designatedPendingCount = designatedApproveeSubs.filter(s => s.approval === "pending").length;
@@ -10753,7 +11014,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   ) : kr.type === "project_profit" ? (
                     (() => {
                       const kpiGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
-                      const kpiYearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && kpiGetCY(p) === kr.krYear);
+                      const kpiYearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && p.type !== "pursuit" && kpiGetCY(p) === kr.krYear);
                       const kpiAct = kpiYearProjects.reduce((acc, p) => acc + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                       const kpiPct = kr.target > 0 ? Math.min(Math.round(kpiAct / kr.target * 100), 100) : 0;
                       const kpiSt = getStatus(kpiPct);
@@ -11050,7 +11311,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       <span style={{ fontSize: 11, color: T.textMuted }}>auto-tracked from completed projects</span>
                     </div>
                     {ppKrs.map(kr => {
-                      const yearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+                      const yearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && p.type !== "pursuit" && getCompletedYear(p) === kr.krYear);
                       const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                       const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
                       const st = getStatus(pct);
@@ -11347,7 +11608,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                         <span style={{ fontSize: 11, color: T.textDim, marginLeft: "auto" }}>{ppKrs.length} KR{ppKrs.length !== 1 ? "s" : ""}</span>
                       </div>
                       {ppKrs.map((kr, idx) => {
-                        const yearProjects = projects.filter(p => p.mgrId === memberId && p.status === "completed" && getCompletedYear(p) === kr.krYear);
+                        const yearProjects = projects.filter(p => p.mgrId === memberId && p.status === "completed" && p.type !== "pursuit" && getCompletedYear(p) === kr.krYear);
                         const actual = yearProjects.reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                         const pct = kr.target > 0 ? Math.min(Math.round(actual / kr.target * 100), 100) : 0;
                         const st = getStatus(pct);
