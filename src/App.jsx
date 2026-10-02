@@ -1406,6 +1406,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { projectAccess: !u.projectAccess } })} style={{ background: u.projectAccess ? T.brandDim : T.raised, border: `1px solid ${u.projectAccess ? T.brandBorder : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.projectAccess ? T.brand : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Project access">◫</button>
                 )}
                 {!isSystem && u.role !== "admin" && (
+                  <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { pursuitAccess: !u.pursuitAccess } })} style={{ background: u.pursuitAccess ? "#e0f2fe" : T.raised, border: `1px solid ${u.pursuitAccess ? "#7dd3fc" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.pursuitAccess ? "#0369a1" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Pursuits / Pipeline access">⬡</button>
+                )}
+                {!isSystem && u.role !== "admin" && (
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { pilotAccess: !u.pilotAccess, ...(u.pilotAccess ? { pilotSetId: null } : {}) } })} style={{ background: u.pilotAccess ? "#fce7f3" : T.raised, border: `1px solid ${u.pilotAccess ? "#f9a8d4" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.pilotAccess ? "#9d174d" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle NIET Pilot access">✈</button>
                 )}
                 {!isSystem && u.role !== "admin" && u.pilotAccess && (
@@ -8766,7 +8769,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "checkin",      icon: "⬡", label: "OKR Check-In"         },
     { id: "approvals",    icon: "⬡", label: "Approve Submissions"   },
     { id: "projects",     icon: "⬡", label: "Projects"             },
-    { id: "pursuits",     icon: "⬡", label: "Pursuits / Pipeline"  },
+    ...(user.pursuitAccess ? [{ id: "pursuits", icon: "⬡", label: "Pursuits / Pipeline" }] : []),
     { id: "members",      icon: "⬡", label: "Edit Member KPIs"     },
     { id: "reports",      icon: "⬡", label: "OKR Reports"          },
     ...(user.financeAccess ? [{ id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "cash-statement", icon: "⬡", label: "Cash Statement" }] }] : []),
@@ -9620,7 +9623,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           </Pane>
         </>)}
 
-        {page === "pursuits" && (() => {
+        {page === "pursuits" && user.pursuitAccess && (() => {
           const deptUsers = user.deptId ? users.filter(u => u.deptId === user.deptId) : [user];
           const deptUserIds = new Set(deptUsers.map(u => u.id));
           const allPursuits = projects.filter(p => p.type === "pursuit" && deptUserIds.has(p.mgrId));
@@ -10666,6 +10669,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [editProjForm, setEditProjForm] = useState({ status: "active", startDate: "", due: "", income: "", margin: "", contributeRate: "" });
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
+  const [pursuitMemTab, setPursuitMemTab] = useState("active");
   const [logPopup, setLogPopup] = useState(null);
   useEffect(() => { if (!logPopup) return; const h = e => { if (e.key === "Escape") setLogPopup(null); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [logPopup]);
   const [designatedRejectOkr, setDesignatedRejectOkr] = useState(null);
@@ -10788,6 +10792,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     { id: "reports",      icon: "⬡", label: "OKR Reports"      },
     ...(designatedApproveeIds.length > 0 ? [{ id: "approvals", icon: "⬡", label: "Approvals" }] : []),
     ...(user.projectAccess ? [{ id: "projects", icon: "⬡", label: "Projects" }] : []),
+    ...(user.pursuitAccess ? [{ id: "pursuits", icon: "⬡", label: "Pursuits / Pipeline" }] : []),
     ...(myDept?.admissionsAccess ? [{ id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] }] : []),
     ...(user.pilotAccess ? [{ id: "niet-pilot", icon: "⬡", label: "NIET Pilot" }] : []),
   ];
@@ -12000,6 +12005,107 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             })()}
           </Pane>
         </>)}
+
+        {page === "pursuits" && user.pursuitAccess && (() => {
+          const myDeptUserIds = new Set((myDept ? users.filter(u => u.deptId === myDept.id) : [user]).map(u => u.id));
+          const allPursuits = projects.filter(p => p.type === "pursuit" && myDeptUserIds.has(p.mgrId));
+          const activePursuits = allPursuits.filter(p => !p.outcome || p.outcome === "active");
+          const wonPursuits = allPursuits.filter(p => p.outcome === "won");
+          const lostPursuits = allPursuits.filter(p => p.outcome === "lost");
+          const deferredPursuits = allPursuits.filter(p => p.outcome === "deferred");
+          const tabMap = { active: activePursuits, won: wonPursuits, lost: lostPursuits, deferred: deferredPursuits };
+          const tabPursuits = tabMap[pursuitMemTab] || [];
+          const totalValue = activePursuits.reduce((s, p) => s + (p.estimatedValue || 0), 0);
+          const stageInfo = id => PURSUIT_STAGES.find(s => s.id === id) || PURSUIT_STAGES[0];
+          const byStage = PURSUIT_STAGES.map(st => ({ ...st, items: activePursuits.filter(p => (p.stage || "opportunity") === st.id) })).filter(st => st.items.length > 0);
+          return (<>
+            <Header title="Pursuits / Pipeline" sub="Business development opportunities in your department" />
+            <Pane>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
+                <Metric label="Active" value={activePursuits.length} />
+                <Metric label="Pipeline Value" value={`$${totalValue.toLocaleString()}`} status="blue" />
+                <Metric label="Won" value={wonPursuits.length} status="green" />
+                <Metric label="Lost" value={lostPursuits.length} status="red" />
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {[["active","Active Pipeline"], ["won","Won"], ["lost","Lost"], ["deferred","Deferred"]].map(([id, label]) => (
+                  <button key={id} onClick={() => setPursuitMemTab(id)} style={{ padding: "6px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", background: pursuitMemTab === id ? T.brand : T.raised, color: pursuitMemTab === id ? "#fff" : T.textDim, border: `1px solid ${pursuitMemTab === id ? T.brand : T.border}` }}>{label} {tabMap[id].length > 0 ? `(${tabMap[id].length})` : ""}</button>
+                ))}
+              </div>
+              {pursuitMemTab === "active" && (
+                allPursuits.length === 0
+                  ? <EmptyState text="No pursuits in your department yet." />
+                  : byStage.length === 0
+                    ? <EmptyState text="No active pursuits." />
+                    : byStage.map(st => (
+                      <div key={st.id} style={{ marginBottom: 28 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${st.color}` }}>
+                          <div style={{ width: 4, height: 18, background: st.color, borderRadius: 2 }} />
+                          <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{st.label}</span>
+                          <span style={{ fontSize: 12, color: T.textMuted, marginLeft: "auto" }}>{st.items.length} pursuit{st.items.length !== 1 ? "s" : ""} · ${st.items.reduce((s, p) => s + (p.estimatedValue || 0), 0).toLocaleString()}</span>
+                        </div>
+                        {st.items.map(p => {
+                          const mgr = users.find(u => u.id === p.mgrId);
+                          const isOwn = p.mgrId === user.id;
+                          const outcomeColor = st.color;
+                          return (
+                            <Card key={p.id} style={{ marginBottom: 8, borderLeft: `3px solid ${outcomeColor}` }}>
+                              <div style={{ padding: "12px 16px" }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                      <span style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</span>
+                                      {!isOwn && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 4, padding: "1px 6px" }}>{mgr?.name}</span>}
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: T.textMuted }}>
+                                      {p.estimatedValue != null && <span style={{ color: T.brand, fontWeight: 700 }}>${p.estimatedValue.toLocaleString()}</span>}
+                                      {p.probability != null && <span>{p.probability}% probability</span>}
+                                      {p.deadline && <span>Deadline: {p.deadline}</span>}
+                                    </div>
+                                    {p.nextAction && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 4 }}>↳ {p.nextAction}</div>}
+                                  </div>
+                                </div>
+                              </div>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    ))
+              )}
+              {pursuitMemTab !== "active" && (
+                tabPursuits.length === 0
+                  ? <EmptyState text={`No ${pursuitMemTab} pursuits.`} />
+                  : tabPursuits.map(p => {
+                    const mgr = users.find(u => u.id === p.mgrId);
+                    const isOwn = p.mgrId === user.id;
+                    const st = stageInfo(p.stage || "opportunity");
+                    const outcomeColor = p.outcome === "won" ? T.ok : p.outcome === "lost" ? T.bad : p.outcome === "deferred" ? T.warn : st.color;
+                    return (
+                      <Card key={p.id} style={{ marginBottom: 8, borderLeft: `3px solid ${outcomeColor}` }}>
+                        <div style={{ padding: "12px 16px" }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                <span style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</span>
+                                {!isOwn && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 4, padding: "1px 6px" }}>{mgr?.name}</span>}
+                              </div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: T.textMuted }}>
+                                {p.estimatedValue != null && <span style={{ color: T.brand, fontWeight: 700 }}>${p.estimatedValue.toLocaleString()}</span>}
+                                {p.probability != null && <span>{p.probability}% probability</span>}
+                                {p.deadline && <span>Deadline: {p.deadline}</span>}
+                                {p.stage && <span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span>}
+                              </div>
+                              {p.nextAction && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 4 }}>↳ {p.nextAction}</div>}
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })
+              )}
+            </Pane>
+          </>);
+        })()}
 
         {page === "admissions" && myDept?.admissionsAccess && (<>
           <Header title="Weekly Applications Dashboard" sub="Marketer application tracking by RTO" />
