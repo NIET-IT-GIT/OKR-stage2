@@ -10670,6 +10670,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const [progressEdits, setProgressEdits] = useState({});
   const [logDrafts, setLogDrafts] = useState({});
   const [pursuitMemTab, setPursuitMemTab] = useState("active");
+  const [showNewPursuitMem, setShowNewPursuitMem] = useState(false);
+  const [newPursuitMem, setNewPursuitMem] = useState({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" });
+  const [editPursuitMemId, setEditPursuitMemId] = useState(null);
+  const [editPursuitMemForm, setEditPursuitMemForm] = useState({});
   const [logPopup, setLogPopup] = useState(null);
   useEffect(() => { if (!logPopup) return; const h = e => { if (e.key === "Escape") setLogPopup(null); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [logPopup]);
   const [designatedRejectOkr, setDesignatedRejectOkr] = useState(null);
@@ -12018,15 +12022,94 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           const totalValue = activePursuits.reduce((s, p) => s + (p.estimatedValue || 0), 0);
           const stageInfo = id => PURSUIT_STAGES.find(s => s.id === id) || PURSUIT_STAGES[0];
           const byStage = PURSUIT_STAGES.map(st => ({ ...st, items: activePursuits.filter(p => (p.stage || "opportunity") === st.id) })).filter(st => st.items.length > 0);
+          const openMemEdit = p => { setEditPursuitMemId(p.id); setEditPursuitMemForm({ name: p.name, stage: p.stage || "opportunity", outcome: p.outcome || "active", estimatedValue: p.estimatedValue != null ? String(p.estimatedValue) : "", probability: p.probability != null ? String(p.probability) : "", deadline: p.deadline || "", nextAction: p.nextAction || "", notes: p.notes || "" }); };
+          const saveMemEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitMemForm.name.trim() || p.name, stage: editPursuitMemForm.stage, outcome: editPursuitMemForm.outcome, estimatedValue: editPursuitMemForm.estimatedValue !== "" ? Number(editPursuitMemForm.estimatedValue) : null, probability: editPursuitMemForm.probability !== "" ? Number(editPursuitMemForm.probability) : null, deadline: editPursuitMemForm.deadline, nextAction: editPursuitMemForm.nextAction.trim(), notes: editPursuitMemForm.notes.trim(), updatedDate: new Date().toISOString().slice(0, 10) } }); setEditPursuitMemId(null); };
+          const createMemPursuit = () => { if (!newPursuitMem.name.trim()) return; dispatch({ type: "ADD_PROJECT", project: { id: `pursuit_${Date.now()}`, type: "pursuit", mgrId: user.id, name: newPursuitMem.name.trim(), stage: "opportunity", outcome: "active", estimatedValue: newPursuitMem.estimatedValue !== "" ? Number(newPursuitMem.estimatedValue) : null, probability: newPursuitMem.probability !== "" ? Number(newPursuitMem.probability) : null, deadline: newPursuitMem.deadline, nextAction: newPursuitMem.nextAction.trim(), notes: "", startDate: new Date().toISOString().slice(0, 10), updatedDate: "" } }); setShowNewPursuitMem(false); setNewPursuitMem({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); };
+          const MemEditForm = ({ p }) => (
+            <div style={{ marginTop: 12, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Opportunity Name</div><Input value={editPursuitMemForm.name} onChange={e => setEditPursuitMemForm(f => ({ ...f, name: e.target.value }))} /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Stage</div><select value={editPursuitMemForm.stage} onChange={e => setEditPursuitMemForm(f => ({ ...f, stage: e.target.value }))} style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.text, fontSize: 13 }}>{PURSUIT_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Outcome</div><select value={editPursuitMemForm.outcome} onChange={e => setEditPursuitMemForm(f => ({ ...f, outcome: e.target.value }))} style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.text, fontSize: 13 }}><option value="active">Active</option><option value="won">Won</option><option value="lost">Lost</option><option value="deferred">Deferred</option></select></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Estimated Value ($)</div><Input type="number" value={editPursuitMemForm.estimatedValue} onChange={e => setEditPursuitMemForm(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="0" /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Probability (%)</div><Input type="number" value={editPursuitMemForm.probability} onChange={e => setEditPursuitMemForm(f => ({ ...f, probability: e.target.value }))} placeholder="optional" /></div>
+                <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Deadline</div><Input type="date" value={editPursuitMemForm.deadline} onChange={e => setEditPursuitMemForm(f => ({ ...f, deadline: e.target.value }))} /></div>
+              </div>
+              <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Next Action</div><Input value={editPursuitMemForm.nextAction} onChange={e => setEditPursuitMemForm(f => ({ ...f, nextAction: e.target.value }))} placeholder="e.g. Submit EOI by Friday" /></div>
+              <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Notes</div><TextArea value={editPursuitMemForm.notes || ""} onChange={e => setEditPursuitMemForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Additional context..." /></div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <Btn small onClick={() => setEditPursuitMemId(null)}>Cancel</Btn>
+                <Btn primary small onClick={() => saveMemEdit(p)}>Save</Btn>
+              </div>
+            </div>
+          );
+          const MemCard = ({ p, showStage = false }) => {
+            const mgr = users.find(u => u.id === p.mgrId);
+            const isOwn = p.mgrId === user.id;
+            const st = stageInfo(p.stage || "opportunity");
+            const outcomeColor = p.outcome === "won" ? T.ok : p.outcome === "lost" ? T.bad : p.outcome === "deferred" ? T.warn : st.color;
+            const isEditing = editPursuitMemId === p.id;
+            return (
+              <Card key={p.id} style={{ marginBottom: 8, borderLeft: `3px solid ${outcomeColor}` }}>
+                <div style={{ padding: "12px 16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</span>
+                        {!isOwn && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 4, padding: "1px 6px" }}>{mgr?.name}</span>}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: T.textMuted }}>
+                        {p.estimatedValue != null && <span style={{ color: T.brand, fontWeight: 700 }}>${p.estimatedValue.toLocaleString()}</span>}
+                        {p.probability != null && <span>{p.probability}% probability</span>}
+                        {p.deadline && <span>Deadline: {p.deadline}</span>}
+                        {showStage && p.stage && <span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span>}
+                        {p.updatedDate && <span>Updated: {p.updatedDate}</span>}
+                      </div>
+                      {p.nextAction && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 4 }}>↳ {p.nextAction}</div>}
+                      {p.notes && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2, fontStyle: "italic" }}>{p.notes}</div>}
+                    </div>
+                    {isOwn && (
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                        <Btn small onClick={() => { isEditing ? setEditPursuitMemId(null) : openMemEdit(p); }}>{isEditing ? "Close" : "Edit"}</Btn>
+                        <button onClick={() => { if (window.confirm(`Delete "${p.name}"?`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px" }}>✕</button>
+                      </div>
+                    )}
+                  </div>
+                  {isOwn && isEditing && <MemEditForm p={p} />}
+                </div>
+              </Card>
+            );
+          };
           return (<>
             <Header title="Pursuits / Pipeline" sub="Business development opportunities in your department" />
             <Pane>
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <Metric label="Active" value={activePursuits.length} />
-                <Metric label="Pipeline Value" value={`$${totalValue.toLocaleString()}`} status="blue" />
-                <Metric label="Won" value={wonPursuits.length} status="green" />
-                <Metric label="Lost" value={lostPursuits.length} status="red" />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  <Metric label="Active" value={activePursuits.length} />
+                  <Metric label="Pipeline Value" value={`$${totalValue.toLocaleString()}`} status="blue" />
+                  <Metric label="Won" value={wonPursuits.length} status="green" />
+                  <Metric label="Lost" value={lostPursuits.length} status="red" />
+                </div>
+                <Btn primary onClick={() => setShowNewPursuitMem(v => !v)}>+ New Pursuit</Btn>
               </div>
+              {showNewPursuitMem && (
+                <Card style={{ marginBottom: 20 }}>
+                  <div style={{ padding: "14px 16px" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>New Pursuit</div>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Opportunity Name *</div><Input value={newPursuitMem.name} onChange={e => setNewPursuitMem(f => ({ ...f, name: e.target.value }))} placeholder="e.g. TAFE NSW Contract" /></div>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Estimated Value ($)</div><Input type="number" value={newPursuitMem.estimatedValue} onChange={e => setNewPursuitMem(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="optional" /></div>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Probability (%)</div><Input type="number" value={newPursuitMem.probability} onChange={e => setNewPursuitMem(f => ({ ...f, probability: e.target.value }))} placeholder="optional" /></div>
+                      <div><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Deadline</div><Input type="date" value={newPursuitMem.deadline} onChange={e => setNewPursuitMem(f => ({ ...f, deadline: e.target.value }))} /></div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>Next Action</div><Input value={newPursuitMem.nextAction} onChange={e => setNewPursuitMem(f => ({ ...f, nextAction: e.target.value }))} placeholder="e.g. Schedule discovery call" /></div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <Btn small onClick={() => { setShowNewPursuitMem(false); setNewPursuitMem({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); }}>Cancel</Btn>
+                      <Btn primary small onClick={createMemPursuit} disabled={!newPursuitMem.name.trim()}>Create</Btn>
+                    </div>
+                  </div>
+                </Card>
+              )}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
                 {[["active","Active Pipeline"], ["won","Won"], ["lost","Lost"], ["deferred","Deferred"]].map(([id, label]) => (
                   <button key={id} onClick={() => setPursuitMemTab(id)} style={{ padding: "6px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", background: pursuitMemTab === id ? T.brand : T.raised, color: pursuitMemTab === id ? "#fff" : T.textDim, border: `1px solid ${pursuitMemTab === id ? T.brand : T.border}` }}>{label} {tabMap[id].length > 0 ? `(${tabMap[id].length})` : ""}</button>
@@ -12034,7 +12117,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
               </div>
               {pursuitMemTab === "active" && (
                 allPursuits.length === 0
-                  ? <EmptyState text="No pursuits in your department yet." />
+                  ? <EmptyState text="No pursuits in your department yet. Click '+ New Pursuit' to create your first opportunity." />
                   : byStage.length === 0
                     ? <EmptyState text="No active pursuits." />
                     : byStage.map(st => (
@@ -12044,64 +12127,14 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{st.label}</span>
                           <span style={{ fontSize: 12, color: T.textMuted, marginLeft: "auto" }}>{st.items.length} pursuit{st.items.length !== 1 ? "s" : ""} · ${st.items.reduce((s, p) => s + (p.estimatedValue || 0), 0).toLocaleString()}</span>
                         </div>
-                        {st.items.map(p => {
-                          const mgr = users.find(u => u.id === p.mgrId);
-                          const isOwn = p.mgrId === user.id;
-                          const outcomeColor = st.color;
-                          return (
-                            <Card key={p.id} style={{ marginBottom: 8, borderLeft: `3px solid ${outcomeColor}` }}>
-                              <div style={{ padding: "12px 16px" }}>
-                                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                      <span style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</span>
-                                      {!isOwn && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 4, padding: "1px 6px" }}>{mgr?.name}</span>}
-                                    </div>
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: T.textMuted }}>
-                                      {p.estimatedValue != null && <span style={{ color: T.brand, fontWeight: 700 }}>${p.estimatedValue.toLocaleString()}</span>}
-                                      {p.probability != null && <span>{p.probability}% probability</span>}
-                                      {p.deadline && <span>Deadline: {p.deadline}</span>}
-                                    </div>
-                                    {p.nextAction && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 4 }}>↳ {p.nextAction}</div>}
-                                  </div>
-                                </div>
-                              </div>
-                            </Card>
-                          );
-                        })}
+                        {st.items.map(p => <MemCard key={p.id} p={p} />)}
                       </div>
                     ))
               )}
               {pursuitMemTab !== "active" && (
                 tabPursuits.length === 0
                   ? <EmptyState text={`No ${pursuitMemTab} pursuits.`} />
-                  : tabPursuits.map(p => {
-                    const mgr = users.find(u => u.id === p.mgrId);
-                    const isOwn = p.mgrId === user.id;
-                    const st = stageInfo(p.stage || "opportunity");
-                    const outcomeColor = p.outcome === "won" ? T.ok : p.outcome === "lost" ? T.bad : p.outcome === "deferred" ? T.warn : st.color;
-                    return (
-                      <Card key={p.id} style={{ marginBottom: 8, borderLeft: `3px solid ${outcomeColor}` }}>
-                        <div style={{ padding: "12px 16px" }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                <span style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</span>
-                                {!isOwn && <span style={{ fontSize: 11, color: T.textMuted, background: T.raised, borderRadius: 4, padding: "1px 6px" }}>{mgr?.name}</span>}
-                              </div>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: T.textMuted }}>
-                                {p.estimatedValue != null && <span style={{ color: T.brand, fontWeight: 700 }}>${p.estimatedValue.toLocaleString()}</span>}
-                                {p.probability != null && <span>{p.probability}% probability</span>}
-                                {p.deadline && <span>Deadline: {p.deadline}</span>}
-                                {p.stage && <span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span>}
-                              </div>
-                              {p.nextAction && <div style={{ fontSize: 12, color: T.textSoft, marginTop: 4 }}>↳ {p.nextAction}</div>}
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })
+                  : tabPursuits.map(p => <MemCard key={p.id} p={p} showStage />)
               )}
             </Pane>
           </>);
