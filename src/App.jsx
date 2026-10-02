@@ -13137,8 +13137,8 @@ export default function App({ redirectAccount = null }) {
   const routeByEmail = useCallback((email) => {
     if (!email) return;
     pendingEmailRef.current = email;
-    const lc = email.toLowerCase();
-    const matched = usersRef.current.find(u => u.email.toLowerCase() === lc);
+    const lc = email.trim().toLowerCase();
+    const matched = usersRef.current.find(u => u.email.trim().toLowerCase() === lc);
     if (matched) {
       setMsalErr("");
       setUser(matched);
@@ -13160,8 +13160,12 @@ export default function App({ redirectAccount = null }) {
     routeByEmail(accounts[0].username);
   }, [accounts]); // eslint-disable-line
 
-  // Retry routing once Supabase data is loaded — handles users added via admin portal
-  // who aren't in the hardcoded INIT_USERS seed used before DB is ready.
+  // Retry routing whenever the users list changes or dbReady flips — handles:
+  // (1) users not yet loaded from Supabase at login time, and
+  // (2) users added after the initial DB load (dbReady would stay true and never re-trigger).
+  useEffect(() => {
+    if (pendingEmailRef.current && !user) routeByEmail(pendingEmailRef.current);
+  }, [state.users]); // eslint-disable-line
   useEffect(() => {
     if (dbReady && pendingEmailRef.current && !user) routeByEmail(pendingEmailRef.current);
   }, [dbReady]); // eslint-disable-line
