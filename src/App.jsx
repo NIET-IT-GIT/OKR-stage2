@@ -453,6 +453,22 @@ async function dbDelete(collection, id) {
   if (error) throw new Error(error.message);
 }
 
+async function dbWriteLoginLog(log) {
+  const id = `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  await supabase.from("app_data").insert({ collection: "loginLogs", id, doc: { ...log, id } });
+}
+
+async function dbGetLoginLogs(limit = 500) {
+  const { data, error } = await supabase
+    .from("app_data")
+    .select("doc")
+    .eq("collection", "loginLogs")
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data || []).map(r => r.doc);
+}
+
 async function dbGetEnrolments() {
   const result = { enrolment_records: [], enrolment_batches: [] };
   const PAGE = 1000;
@@ -2813,6 +2829,22 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [grvImporting, setGrvImporting] = useState(false);
   const [grvImportError, setGrvImportError] = useState(null);
   const [grvImportMsg, setGrvImportMsg] = useState(null);
+  const [loginLogs, setLoginLogs] = useState([]);
+  const [loginLogsLoaded, setLoginLogsLoaded] = useState(false);
+  const [loginLogsLoading, setLoginLogsLoading] = useState(false);
+  const [loginLogsError, setLoginLogsError] = useState(null);
+  const [loginLogsSearch, setLoginLogsSearch] = useState("");
+  const [loginLogsDateFilter, setLoginLogsDateFilter] = useState("all");
+  useEffect(() => {
+    if (page !== "login-logs" || loginLogsLoaded || loginLogsLoading) return;
+    setLoginLogsLoading(true);
+    dbGetLoginLogs(500).then(logs => {
+      setLoginLogs(logs.sort((a, b) => (b.loginAt || "").localeCompare(a.loginAt || "")));
+      setLoginLogsLoaded(true);
+      setLoginLogsLoading(false);
+      setLoginLogsError(null);
+    }).catch(e => { setLoginLogsError(e.message); setLoginLogsLoading(false); setLoginLogsLoaded(true); });
+  }, [page, loginLogsLoaded, loginLogsLoading]);
   useEffect(() => {
     if (page !== "google-reviews") return;
     if (grvLoaded || grvLoading) return;
@@ -3334,6 +3366,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     { id: "users",            icon: "⬡", label: "User Management"   },
     { id: "email-templates",  icon: "⬡", label: "Email Templates"   },
     { id: "google-reviews",   icon: "⬡", label: "Google Reviews"    },
+    { id: "login-logs",       icon: "⬡", label: "Login Logs"         },
   ];
   const deptSubItems = [
     { id: "__all__",   label: "All Departments", icon: "⬡" },
@@ -7964,6 +7997,108 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       </>
                     )}
                   </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {page === "login-logs" && (() => {
+          const now = new Date();
+          const filtered = loginLogs.filter(log => {
+            if (loginLogsSearch.trim()) {
+              const q = loginLogsSearch.toLowerCase();
+              if (!(log.email || "").toLowerCase().includes(q) && !(log.userName || "").toLowerCase().includes(q)) return false;
+            }
+            if (loginLogsDateFilter !== "all" && log.loginAt) {
+              const d = new Date(log.loginAt);
+              if (loginLogsDateFilter === "today") {
+                if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth() || d.getDate() !== now.getDate()) return false;
+              } else if (loginLogsDateFilter === "week") {
+                if (now - d > 7 * 24 * 60 * 60 * 1000) return false;
+              } else if (loginLogsDateFilter === "month") {
+                if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) return false;
+              }
+            }
+            return true;
+          });
+          function fmtLoginTime(iso) {
+            if (!iso) return "—";
+            return new Date(iso).toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+          }
+          const ROLE_CHIP = {
+            admin:   { background: "#FEF3C7", color: "#D97706", border: "1px solid #FDE68A" },
+            manager: { background: T.brandDim, color: T.brand, border: `1px solid ${T.brandBorder}` },
+            member:  { background: T.okDim, color: T.ok, border: `1px solid ${T.okBorder}` },
+          };
+          return (
+            <div style={{ flex: 1, overflow: "auto", padding: isMobile ? "20px 16px" : "32px 40px" }}>
+              <div style={{ maxWidth: 980, margin: "0 auto" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, gap: 16, flexWrap: "wrap" }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: T.text, letterSpacing: "-0.02em" }}>Login Logs</h2>
+                    <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>Latest 500 records · success and failed attempts</div>
+                  </div>
+                  <button onClick={() => { setLoginLogsLoaded(false); setLoginLogsLoading(false); setLoginLogs([]); setLoginLogsError(null); }}
+                    style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, fontWeight: 600, color: T.textSoft, fontFamily: F.body }}>
+                    ↻ Refresh
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+                  <input value={loginLogsSearch} onChange={e => setLoginLogsSearch(e.target.value)} placeholder="Search by name or email…"
+                    style={{ flex: 1, minWidth: 200, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, color: T.text, fontFamily: F.body, outline: "none", boxSizing: "border-box" }} />
+                  {["all","today","week","month"].map(f => (
+                    <button key={f} onClick={() => setLoginLogsDateFilter(f)}
+                      style={{ background: loginLogsDateFilter === f ? T.brandDim : T.raised, border: `1px solid ${loginLogsDateFilter === f ? T.brandBorder : T.border}`, borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: loginLogsDateFilter === f ? T.brand : T.textMuted, fontFamily: F.body, whiteSpace: "nowrap" }}>
+                      {{ all: "All Time", today: "Today", week: "This Week", month: "This Month" }[f]}
+                    </button>
+                  ))}
+                </div>
+                {loginLogsLoading ? (
+                  <div style={{ textAlign: "center", padding: "60px 0", color: T.textMuted, fontSize: 15 }}>Loading…</div>
+                ) : loginLogsError ? (
+                  <div style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 10, padding: "16px 20px", color: T.bad, fontSize: 14 }}>{loginLogsError}</div>
+                ) : filtered.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "60px 0", color: T.textMuted, fontSize: 15 }}>No records found</div>
+                ) : (
+                  <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden", boxShadow: T.shadowSm }}>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                        <thead>
+                          <tr style={{ borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+                            {["Status","Name","Email","Role","Time"].map(h => (
+                              <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: T.textMuted, fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map((log, i) => (
+                            <tr key={log.id || i} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${T.border}` : "none", background: i % 2 === 0 ? T.surface : T.bgSoft }}>
+                              <td style={{ padding: "11px 16px", whiteSpace: "nowrap" }}>
+                                {log.status === "success"
+                                  ? <span style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, color: T.ok, borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 700 }}>✓ Success</span>
+                                  : <span style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, color: T.bad, borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 700 }}>✕ Failed</span>
+                                }
+                              </td>
+                              <td style={{ padding: "11px 16px", color: T.text, fontWeight: 500 }}>{log.userName || "—"}</td>
+                              <td style={{ padding: "11px 16px", color: T.textSoft, fontFamily: F.mono, fontSize: 13 }}>{log.email || "—"}</td>
+                              <td style={{ padding: "11px 16px" }}>
+                                {log.role
+                                  ? <span style={{ ...(ROLE_CHIP[log.role] || { background: T.raised, color: T.textMuted, border: `1px solid ${T.border}` }), borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 600 }}>{log.role}</span>
+                                  : <span style={{ color: T.textDim }}>—</span>
+                                }
+                              </td>
+                              <td style={{ padding: "11px 16px", color: T.textMuted, whiteSpace: "nowrap", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmtLoginTime(log.loginAt)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.textDim }}>
+                      {filtered.length} record{filtered.length !== 1 ? "s" : ""}
+                      {loginLogs.length >= 500 && " · Showing latest 500 records only"}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -13133,6 +13268,7 @@ export default function App({ redirectAccount = null }) {
   useEffect(() => { usersRef.current = state.users; }, [state.users]);
 
   const pendingEmailRef = useRef(null);
+  const loginLogSentRef = useRef({ failed: new Set(), success: new Set() });
 
   const routeByEmail = useCallback((email) => {
     if (!email) return;
@@ -13143,8 +13279,16 @@ export default function App({ redirectAccount = null }) {
       setMsalErr("");
       setUser(matched);
       pendingEmailRef.current = null;
+      if (!loginLogSentRef.current.success.has(lc)) {
+        loginLogSentRef.current.success.add(lc);
+        dbWriteLoginLog({ userId: matched.id, userName: matched.name, email: matched.email, role: matched.role, loginAt: new Date().toISOString(), status: "success" }).catch(() => {});
+      }
     } else {
       setMsalErr(lc);
+      if (!loginLogSentRef.current.failed.has(lc)) {
+        loginLogSentRef.current.failed.add(lc);
+        dbWriteLoginLog({ email: lc, loginAt: new Date().toISOString(), status: "failed", reason: "no_match" }).catch(() => {});
+      }
     }
   }, []);
 
