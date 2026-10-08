@@ -3204,10 +3204,30 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           .map(r => `  ${r.month} | ${r.rto}: Total Received ${fmtMoney(r.totalReceived)} [${Math.round(r.totalReceived)}], New Students ${fmtMoney(r.newStudents)} [${Math.round(r.newStudents)}], New Count ${r.newStudentCount}, Ongoing ${fmtMoney(r.ongoingStudents)} [${Math.round(r.ongoingStudents)}]`)
           .join("\n");
 
+    const inactiveSection = (() => {
+      const inactive = memberStats.filter(m => !m.answered && !m.pending);
+      if (!inactive.length) return "MEMBERS WITH NO OKR ACTIVITY THIS MONTH: None — all members are active this month.";
+      const lines = inactive.map(m => {
+        const u = users.find(u => u.id === m.id);
+        const lastSub = okrSubmissions
+          .filter(s => s.memberId === m.id && s.answer !== null)
+          .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+        const lastOkrDate = lastSub ? (lastSub.answeredAt || lastSub.sentAt || "").slice(0, 10) : null;
+        const okrDaysAgo = lastOkrDate ? Math.floor((nowMs - new Date(lastOkrDate).getTime()) / 86400000) : null;
+        const okrStr = lastOkrDate ? `last OKR: ${lastOkrDate} (${okrDaysAgo}d ago)` : "never submitted OKR";
+        const lastLogin = u?.lastLoginAt;
+        const loginDaysAgo = lastLogin ? Math.floor((nowMs - new Date(lastLogin).getTime()) / 86400000) : null;
+        const loginStr = lastLogin ? `last login: ${lastLogin.slice(0, 10)} (${loginDaysAgo}d ago)` : "never logged in";
+        return `  - ${m.name} (${m.dept}, ${m.role}) — ${loginStr} · ${okrStr}`;
+      }).join("\n");
+      return `MEMBERS WITH NO OKR ACTIVITY THIS MONTH (${inactive.length}):\n${lines}`;
+    })();
+
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
       `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
       `\nMEMBER DETAILS (current month):\n${memberSection}`,
+      `\n${inactiveSection}`,
       reportSection ? `\n${reportSection}` : "",
       `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
       `\n${plRawSection}`,
@@ -8648,10 +8668,30 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
         .map(r => `  ${r.month} | ${r.rto}: Total Received ${fmtMoney(r.totalReceived)} [${Math.round(r.totalReceived)}], New Students ${fmtMoney(r.newStudents)} [${Math.round(r.newStudents)}], New Count ${r.newStudentCount}, Ongoing ${fmtMoney(r.ongoingStudents)} [${Math.round(r.ongoingStudents)}]`)
         .join("\n");
 
+  const inactiveSection = (() => {
+    const inactive = memberStats.filter(m => !m.answered && !m.pending);
+    if (!inactive.length) return "MEMBERS WITH NO OKR ACTIVITY THIS MONTH: None — all members are active this month.";
+    const lines = inactive.map(m => {
+      const u = users.find(u => u.id === m.id);
+      const lastSub = okrSubmissions
+        .filter(s => s.memberId === m.id && s.answer !== null)
+        .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+      const lastOkrDate = lastSub ? (lastSub.answeredAt || lastSub.sentAt || "").slice(0, 10) : null;
+      const okrDaysAgo = lastOkrDate ? Math.floor((nowMs - new Date(lastOkrDate).getTime()) / 86400000) : null;
+      const okrStr = lastOkrDate ? `last OKR: ${lastOkrDate} (${okrDaysAgo}d ago)` : "never submitted OKR";
+      const lastLogin = u?.lastLoginAt;
+      const loginDaysAgo = lastLogin ? Math.floor((nowMs - new Date(lastLogin).getTime()) / 86400000) : null;
+      const loginStr = lastLogin ? `last login: ${lastLogin.slice(0, 10)} (${loginDaysAgo}d ago)` : "never logged in";
+      return `  - ${m.name} (${m.dept}, ${m.role}) — ${loginStr} · ${okrStr}`;
+    }).join("\n");
+    return `MEMBERS WITH NO OKR ACTIVITY THIS MONTH (${inactive.length}):\n${lines}`;
+  })();
+
   return [
     `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
     `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
     `\nMEMBER DETAILS (current month):\n${memberSection}`,
+    `\n${inactiveSection}`,
     reportSection ? `\n${reportSection}` : "",
     `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
     `\n${plRawSection}`,
@@ -13279,9 +13319,11 @@ export default function App({ redirectAccount = null }) {
       setMsalErr("");
       setUser(matched);
       pendingEmailRef.current = null;
+      const loginAt = new Date().toISOString();
+      dispatch({ type: "UPDATE_USER", userId: matched.id, updates: { lastLoginAt: loginAt } });
       if (!loginLogSentRef.current.success.has(lc)) {
         loginLogSentRef.current.success.add(lc);
-        dbWriteLoginLog({ userId: matched.id, userName: matched.name, email: matched.email, role: matched.role, loginAt: new Date().toISOString(), status: "success" }).catch(() => {});
+        dbWriteLoginLog({ userId: matched.id, userName: matched.name, email: matched.email, role: matched.role, loginAt, status: "success" }).catch(() => {});
       }
     } else {
       setMsalErr(lc);
