@@ -6632,6 +6632,15 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   <Btn key={v} small primary={plTab === v} onClick={() => setPlTab(v)}>{label}</Btn>
                 ))}
                 <div style={{ flex: 1 }} />
+                {plRecords.length > 0 && (
+                  <Btn small onClick={() => {
+                    const html = generateFinancePack({ plRecords, cashRecords, enrRecords });
+                    const blob = new Blob([html], { type: "text/html" });
+                    const url = URL.createObjectURL(blob);
+                    const w = window.open(url, "_blank");
+                    if (w) setTimeout(() => URL.revokeObjectURL(url), 10000);
+                  }}>⬡ Generate Finance Pack</Btn>
+                )}
                 <select value={plFilterRto} onChange={e => setPlFilterRto(e.target.value)} style={selCss}>
                   <option value="all">All RTOs</option>
                   {RTO_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -8707,6 +8716,493 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     `\n${coeSection}`,
     `\n${buildGrvContextStr(grvData)}`,
   ].join("\n");
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FINANCE PACK GENERATOR
+   ───────────────────────────────────────────────────────────── */
+function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
+  const ENTS = [
+    { key: "NIET",    label: "NIET",           color: "#3B2F6E" },
+    { key: "CB",      label: "Charlton Brown",  color: "#2D1B69" },
+    { key: "Rhodes",  label: "Rhodes",          color: "#5A4490" },
+    { key: "Educare", label: "Educare",         color: "#1ABCCD" },
+  ];
+  const COVER_BG = "#2D1B69";
+  const TEAL     = "#2ECAD5";
+  const RED_NEG  = "#E54B4B";
+  const entKeys  = ENTS.map(e => e.key);
+
+  function normRto(rto) {
+    if (!rto) return "Unknown";
+    if (rto === "CB" || rto === "Charlton Brown") return "CB";
+    if (rto.startsWith("Educare") || rto === "Educare") return "Educare";
+    return rto;
+  }
+
+  function mergeByKey(recs, fields, liField) {
+    const map = {};
+    for (const r of recs) {
+      const rto = normRto(r.rto);
+      const k = rto + "|" + r.month;
+      if (!map[k]) { map[k] = { rto, month: r.month }; fields.forEach(f => { map[k][f] = 0; }); if (liField) map[k][liField] = []; }
+      fields.forEach(f => { map[k][f] += (r[f] || 0); });
+      if (liField && r[liField]) {
+        for (const li of r[liField]) {
+          const ex = map[k][liField].find(x => x.account === li.account && x.category === li.category);
+          if (ex) ex.amount += (li.amount || 0); else map[k][liField].push({ ...li, amount: li.amount || 0 });
+        }
+      }
+    }
+    return Object.values(map);
+  }
+
+  const plM = mergeByKey(plRecords,  ["tradingIncome","otherIncome","totalExpenses","netProfit"], "lineItems");
+  const csM = mergeByKey(cashRecords, ["totalReceived","newStudents","newStudentCount","ongoingStudents"], null);
+
+  const allMonths = [...new Set(plM.map(r => r.month))].sort();
+  const months = allMonths.slice(-13);
+  const cur  = months[months.length - 1] || "";
+  const prev = months[months.length - 2] || "";
+
+  function plv(rto, mo, f) { const r = plM.find(x => x.rto === rto && x.month === mo); return r ? (r[f] || 0) : 0; }
+  function csv(rto, mo, f) { const r = csM.find(x => x.rto === rto && x.month === mo); return r ? (r[f] || 0) : 0; }
+  function grpPl(mo, f)    { return entKeys.reduce((s, k) => s + plv(k, mo, f), 0); }
+  function grpCs(mo, f)    { return entKeys.reduce((s, k) => s + csv(k, mo, f), 0); }
+
+  function fm(v) {
+    if (v == null || isNaN(v)) return "—";
+    const neg = v < 0, a = Math.abs(v);
+    const s = a >= 1e6 ? "$" + (a/1e6).toFixed(2) + "m" : a >= 1000 ? "$" + Math.round(a/1000) + "k" : "$" + Math.round(a);
+    return neg ? "(" + s + ")" : s;
+  }
+  function fmColor(v) { return v < 0 ? RED_NEG : "#1D1D1F"; }
+  function moLabel(mo) {
+    if (!mo) return "";
+    const [y, m] = mo.split("-");
+    return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1] + "-" + y.slice(2);
+  }
+  function moFull(mo) {
+    if (!mo) return "";
+    const [y, m] = mo.split("-");
+    return ["January","February","March","April","May","June","July","August","September","October","November","December"][+m-1] + " " + y;
+  }
+  function momPct(c, p) { return p ? (c - p) / Math.abs(p) * 100 : null; }
+  function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+  /* SVG line chart */
+  function svgLine(series, labels, { w = 640, h = 285 } = {}) {
+    const PL = 62, PR = 24, PT = 16, PB = 52;
+    const cW = w - PL - PR, cH = h - PT - PB, n = labels.length;
+    if (!n) return "<svg width='" + w + "' height='" + h + "'></svg>";
+    const allV = series.flatMap(s => s.values.filter(v => v != null));
+    const lo = Math.min(...allV), hi = Math.max(...allV);
+    const pad = (hi - lo) * 0.1 || 1;
+    const vLo = lo - pad, vHi = hi + pad, vR = vHi - vLo;
+    const px = i => PL + (n > 1 ? i / (n - 1) * cW : cW / 2);
+    const py = v => PT + cH - (v - vLo) / vR * cH;
+    const grid = Array.from({ length: 6 }, (_, i) => {
+      const tv = vLo + (vHi - vLo) * i / 5, ty = py(tv);
+      return "<line x1='" + PL + "' y1='" + ty + "' x2='" + (PL + cW) + "' y2='" + ty + "' stroke='#E5E5EA' stroke-width='1'/>"
+        + "<text x='" + (PL - 5) + "' y='" + (ty + 4) + "' text-anchor='end' font-size='10' fill='#8E8E93'>" + fm(tv) + "</text>";
+    }).join("");
+    const zero = (vLo < 0 && vHi > 0)
+      ? "<line x1='" + PL + "' y1='" + py(0) + "' x2='" + (PL + cW) + "' y2='" + py(0) + "' stroke='#C7C7CC' stroke-width='1.5' stroke-dasharray='4,3'/>"
+      : "";
+    const xax = labels.map((l, i) => {
+      const lx = px(i);
+      return "<text x='" + lx + "' y='" + (PT + cH + 14) + "' text-anchor='middle' font-size='9' fill='#8E8E93' transform='rotate(-30," + lx + "," + (PT + cH + 14) + ")'>" + l + "</text>";
+    }).join("");
+    const lines = series.map(s => {
+      const pts = s.values.map((v, i) => v != null ? px(i) + "," + py(v) : null).filter(Boolean).join(" ");
+      const dots = s.values.map((v, i) => v != null ? "<circle cx='" + px(i) + "' cy='" + py(v) + "' r='2.5' fill='" + s.color + "'/>" : "").join("");
+      const lv = s.values[s.values.length - 1], li = s.values.length - 1;
+      const lbl = lv != null ? "<text x='" + (px(li) + 4) + "' y='" + (py(lv) - 4) + "' font-size='9' fill='" + s.color + "' font-weight='600'>" + fm(lv) + "</text>" : "";
+      return "<polyline points='" + pts + "' fill='none' stroke='" + s.color + "' stroke-width='2' stroke-linejoin='round'/>" + dots + lbl;
+    }).join("");
+    const leg = series.map((s, i) => {
+      const lx = PL + i * 130;
+      return "<rect x='" + lx + "' y='" + (PT + cH + 36) + "' width='10' height='3' fill='" + s.color + "' rx='1'/>"
+        + "<text x='" + (lx + 14) + "' y='" + (PT + cH + 40) + "' font-size='10' fill='#3A3A3C'>" + s.label + "</text>";
+    }).join("");
+    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">"
+      + grid + zero + "<line x1='" + PL + "' y1='" + PT + "' x2='" + PL + "' y2='" + (PT + cH) + "' stroke='#C7C7CC'/>"
+      + xax + lines + leg + "</svg>";
+  }
+
+  /* SVG horizontal bar */
+  function svgHBar(items, { w = 580, barH = 15, gap = 6, lw = 250, rw = 80 } = {}) {
+    const h = items.length * (barH + gap) + 24;
+    const chartW = w - lw - rw;
+    const maxV = Math.max(...items.map(x => Math.abs(x.value)), 1);
+    const bars = items.map((item, i) => {
+      const y = 10 + i * (barH + gap);
+      const bw = Math.max(1, Math.abs(item.value) / maxV * chartW);
+      const col = item.color || COVER_BG;
+      return "<text x='" + (lw - 6) + "' y='" + (y + barH * 0.75) + "' text-anchor='end' font-size='11' fill='#3A3A3C'>" + esc(item.label) + "</text>"
+        + "<rect x='" + lw + "' y='" + y + "' width='" + bw + "' height='" + barH + "' fill='" + col + "' rx='2'/>"
+        + "<text x='" + (lw + bw + 6) + "' y='" + (y + barH * 0.75) + "' font-size='11' fill='#3A3A3C' font-weight='600'>" + fm(item.value) + "</text>";
+    }).join("");
+    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">" + bars + "</svg>";
+  }
+
+  /* SVG grouped bar */
+  function svgGBar(groups, serLabels, serColors, data, { w = 560, h = 295 } = {}) {
+    const PL = 62, PR = 16, PT = 24, PB = 60;
+    const cW = w - PL - PR, cH = h - PT - PB;
+    const ng = groups.length, ns = serLabels.length;
+    const gW = cW / ng, bW = gW * 0.65 / ns;
+    const allV = groups.flatMap(g => (data[g] || []).map(v => v || 0));
+    const lo = Math.min(...allV, 0), hi = Math.max(...allV, 1), vR = hi - lo || 1;
+    const py = v => PT + cH - (v - lo) / vR * cH;
+    const grid = Array.from({ length: 6 }, (_, i) => {
+      const tv = lo + (hi - lo) * i / 5, ty = py(tv);
+      return "<line x1='" + PL + "' y1='" + ty + "' x2='" + (PL + cW) + "' y2='" + ty + "' stroke='#E5E5EA' stroke-width='1'/>"
+        + "<text x='" + (PL - 5) + "' y='" + (ty + 4) + "' text-anchor='end' font-size='10' fill='#8E8E93'>" + fm(tv) + "</text>";
+    }).join("");
+    const z0 = py(0);
+    const bars = groups.map((g, gi) => {
+      const gx = PL + gi * gW + gW * 0.175;
+      const serBars = serLabels.map((_, si) => {
+        const v = (data[g] || [])[si] || 0;
+        const bx = gx + si * (bW + 1.5);
+        const top = py(Math.max(v, 0)), bot = py(Math.min(v, 0));
+        const bh = Math.max(Math.abs(top - bot), 1);
+        const by = v >= 0 ? top : z0;
+        return "<rect x='" + bx + "' y='" + by + "' width='" + bW + "' height='" + bh + "' fill='" + serColors[si] + "' rx='1'/>"
+          + "<text x='" + (bx + bW / 2) + "' y='" + (v >= 0 ? top - 4 : bot + 11) + "' text-anchor='middle' font-size='8' fill='" + serColors[si] + "'>" + fm(v) + "</text>";
+      }).join("");
+      const glabel = g === "CB" ? "Charlton Brown" : g;
+      return serBars + "<text x='" + (PL + gi * gW + gW / 2) + "' y='" + (PT + cH + 16) + "' text-anchor='middle' font-size='10' fill='#3A3A3C'>" + glabel + "</text>";
+    }).join("");
+    const leg = serLabels.map((l, i) => {
+      const lx = PL + i * 140;
+      return "<rect x='" + lx + "' y='" + (PT + cH + 28) + "' width='10' height='3' fill='" + serColors[i] + "' rx='1'/>"
+        + "<text x='" + (lx + 14) + "' y='" + (PT + cH + 33) + "' font-size='10' fill='#3A3A3C'>" + l + "</text>";
+    }).join("");
+    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">"
+      + grid + "<line x1='" + PL + "' y1='" + z0 + "' x2='" + (PL + cW) + "' y2='" + z0 + "' stroke='#C7C7CC' stroke-width='1.5'/>"
+      + "<line x1='" + PL + "' y1='" + PT + "' x2='" + PL + "' y2='" + (PT + cH) + "' stroke='#C7C7CC'/>"
+      + bars + leg + "</svg>";
+  }
+
+  /* Layout helpers */
+  function slide(content, dark) {
+    return "<section class='slide'" + (dark ? " style='background:" + COVER_BG + ";color:#fff'" : "") + ">" + content + "</section>";
+  }
+  function slHdr(title, sub) {
+    return "<div class='sl-hdr'><div><h2 class='sl-title'>" + esc(title) + "</h2><p class='sl-sub'>" + esc(sub) + "</p></div>"
+      + "<div class='mo-badge'>" + moLabel(cur).toUpperCase() + "</div></div>";
+  }
+  function cmtPanel(head, val, valLbl, valCol, bullets) {
+    const buls = bullets.filter(Boolean).map(b => "<li>" + b + "</li>").join("");
+    return "<div class='cmt-panel'><div class='cp-head'>" + esc(head) + "</div>"
+      + "<div class='cp-kpi' style='color:" + (valCol || "#fff") + "'>" + esc(val) + "</div>"
+      + "<div class='cp-kpi-lbl'>" + esc(valLbl) + "</div>"
+      + "<ul class='cp-buls'>" + buls + "</ul></div>";
+  }
+  function kpiCard(lbl, val, sub, col) {
+    return "<div class='kpi-card'><div class='kpi-v' style='color:" + (col || "#1D1D1F") + "'>" + esc(val) + "</div>"
+      + "<div class='kpi-l'>" + esc(lbl) + "</div>"
+      + (sub ? "<div class='kpi-s'>" + esc(sub) + "</div>" : "") + "</div>";
+  }
+
+  /* S1: Cover */
+  function s1() {
+    const [y, m] = (cur || "2026-01").split("-"), mn = +m;
+    const fy = mn >= 7 ? +y + 1 : +y, fyMo = mn >= 7 ? mn - 6 : mn + 6;
+    return slide(
+      "<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;padding:40px'>"
+      + "<div style='font-size:48px;font-weight:300;letter-spacing:0.18em;color:#fff'>NIET GROUP</div>"
+      + "<div style='font-size:13px;letter-spacing:0.32em;color:rgba(255,255,255,0.65)'>FINANCE UPDATE</div>"
+      + "<div style='width:56px;height:1px;background:" + TEAL + ";margin:4px 0'></div>"
+      + "<div style='font-size:11px;letter-spacing:0.2em;color:rgba(255,255,255,0.5)'>NIET · CHARLTON BROWN · EDUCARE · RHODES</div>"
+      + "<div style='font-size:15px;letter-spacing:0.14em;color:" + TEAL + ";font-weight:600'>" + moFull(cur).toUpperCase() + " · MONTH " + fyMo + ", FY" + fy + "</div>"
+      + "</div>", true);
+  }
+
+  /* S2: Executive Summary */
+  function s2() {
+    const grpI = entKeys.reduce((s, k) => s + plv(k, cur, "tradingIncome"), 0);
+    const grpE = entKeys.reduce((s, k) => s + plv(k, cur, "totalExpenses"), 0);
+    const grpN = entKeys.reduce((s, k) => s + plv(k, cur, "netProfit"), 0);
+    const cir  = grpI > 0 ? Math.round(grpE / grpI * 100) : null;
+    const kpis = "<div class='kpi-row'>"
+      + kpiCard("Trading income",     fm(grpI), "all entities",                                                         "#1D1D1F")
+      + kpiCard("Operating expenses", fm(grpE), "",                                                                     "#1D1D1F")
+      + kpiCard("Net result",         fm(grpN), prev ? "from " + fm(grpPl(prev, "netProfit")) + " in " + moLabel(prev) : "", fmColor(grpN))
+      + kpiCard("Cost-to-income",     cir != null ? cir + "%" : "—", cir != null && cir > 100 ? "above 100% — trading at a loss" : "", cir != null && cir > 100 ? RED_NEG : "#1D1D1F")
+      + "</div>";
+    const entCards = ENTS.map(e => {
+      const ti = plv(e.key, cur, "tradingIncome"), np = plv(e.key, cur, "netProfit");
+      const pti = plv(e.key, prev, "tradingIncome");
+      const mm = momPct(ti, pti);
+      const buls = [
+        mm != null ? "Income " + (mm >= 0 ? "up +" : "down ") + Math.abs(mm).toFixed(1) + "% on " + moLabel(prev) + "." : null,
+        np < 0 ? "Loss of " + fm(Math.abs(np)) + " for the month." : np > 0 ? "Net profit " + fm(np) + "." : null,
+      ].filter(Boolean);
+      return "<div class='ent-card' style='border-top:3px solid " + e.color + "'>"
+        + "<div class='ent-nm'>" + e.label.toUpperCase() + "</div>"
+        + "<div style='display:flex;gap:16px;margin:5px 0'>"
+        + "<div><div style='font-size:15px;font-weight:700'>" + fm(ti) + "</div><div style='font-size:8px;color:#6E6E73'>Trading income</div></div>"
+        + "<div><div style='font-size:15px;font-weight:700;color:" + fmColor(np) + "'>" + fm(np) + "</div><div style='font-size:8px;color:#6E6E73'>Net result</div></div>"
+        + "</div><ul style='margin:0;padding-left:13px;font-size:8.5px;color:#3A3A3C;line-height:1.55'>" + buls.map(b => "<li>" + b + "</li>").join("") + "</ul></div>";
+    }).join("");
+    return slide(slHdr("Executive Summary", "GROUP POSITION — " + moFull(cur).toUpperCase())
+      + kpis + "<div class='ent-row'>" + entCards + "</div>");
+  }
+
+  /* S3: Group result by entity */
+  function s3() {
+    const serColors = [COVER_BG, "#5B4E8A", TEAL];
+    const data = {};
+    entKeys.forEach(k => { data[k] = [plv(k, cur, "tradingIncome"), plv(k, cur, "totalExpenses"), plv(k, cur, "netProfit")]; });
+    const chart = svgGBar(entKeys, ["Trading income", "Oper. expenses", "Net result"], serColors, data, { w: 560, h: 285 });
+    const grpN = grpPl(cur, "netProfit"), grpI = grpPl(cur, "tradingIncome");
+    const sorted = [...ENTS].sort((a, b) => plv(b.key, cur, "tradingIncome") - plv(a.key, cur, "tradingIncome"));
+    const topPct = grpI ? Math.round(plv(sorted[0].key, cur, "tradingIncome") / grpI * 100) : 0;
+    const buls = [
+      sorted[0].label + " is " + topPct + "% of group trading income.",
+      "Group net result: " + fm(grpN) + ".",
+      grpI > 0 ? "Cost-to-income ratio: " + Math.round(grpPl(cur, "totalExpenses") / grpI * 100) + "%." : null,
+    ];
+    return slide(slHdr("Group result by entity", moFull(cur).toUpperCase() + " — ALL ENTITIES")
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + chart + "</div>"
+      + cmtPanel("GROUP READ", fm(grpN), "Group net result", grpN < 0 ? "#FF8080" : TEAL, buls)
+      + "</div><p style='font-size:9px;color:#8E8E93;margin-top:6px'>Not a statutory consolidation.</p>");
+  }
+
+  /* S4: Cash collections — monthly total */
+  function s4() {
+    const mLbls = months.map(moLabel);
+    const series = ENTS.map(e => ({ label: e.label, color: e.color, values: months.map(m => csv(e.key, m, "totalReceived")) }));
+    const grpVals = months.map(m => grpCs(m, "totalReceived"));
+    series.push({ label: "Group", color: "#8E8E93", values: grpVals });
+    const ct = grpVals[grpVals.length - 1] || 0, pt = grpVals[grpVals.length - 2] || 0;
+    const mm = momPct(ct, pt);
+    const buls = [
+      "Group cash: " + fm(ct) + " in " + moFull(cur) + ".",
+      mm != null ? (mm >= 0 ? "Up +" : "Down ") + Math.abs(mm).toFixed(1) + "% on " + moLabel(prev) + "." : null,
+    ];
+    return slide(slHdr("Cash collections — monthly total", moLabel(months[0]) + " – " + moLabel(cur))
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
+      + cmtPanel("TREND", fm(ct), "Group cash " + moFull(cur), TEAL, buls) + "</div>");
+  }
+
+  /* S5: Cash collections — daily average */
+  function s5() {
+    function days(mo) { const [y, m] = mo.split("-"); return new Date(+y, +m, 0).getDate(); }
+    const mLbls = months.map(moLabel);
+    const series = ENTS.map(e => ({ label: e.label, color: e.color, values: months.map(m => { const d = days(m); return d ? csv(e.key, m, "totalReceived") / d : null; }) }));
+    const grpVals = months.map(m => { const d = days(m); return d ? grpCs(m, "totalReceived") / d : null; });
+    series.push({ label: "Group", color: "#8E8E93", values: grpVals });
+    const cta = grpVals[grpVals.length - 1] || 0, ya = grpVals[0] || 0;
+    const yoy = momPct(cta, ya);
+    const buls = [
+      "Group daily avg: " + fm(cta) + " in " + moFull(cur) + ".",
+      yoy != null ? "Year-on-year: " + (yoy >= 0 ? "+" : "") + yoy.toFixed(1) + "%." : null,
+      "Daily averages remove month-length effects for a cleaner run-rate read.",
+    ];
+    return slide(slHdr("Cash collections — daily average", moLabel(months[0]) + " – " + moLabel(cur))
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
+      + cmtPanel("RUN-RATE", fm(cta), "Group daily avg " + moFull(cur), TEAL, buls) + "</div>");
+  }
+
+  /* S6: Cash collections — from new enrolments */
+  function s6() {
+    const mLbls = months.map(moLabel);
+    const series = ENTS.map(e => ({ label: e.label, color: e.color, values: months.map(m => csv(e.key, m, "newStudents")) }));
+    const grpVals = months.map(m => grpCs(m, "newStudents"));
+    series.push({ label: "Group", color: "#8E8E93", values: grpVals });
+    const ct = grpVals[grpVals.length - 1] || 0, pt = grpVals[grpVals.length - 2] || 0;
+    const mm = momPct(ct, pt);
+    const buls = [
+      "New-enrolment cash: " + fm(ct) + " in " + moFull(cur) + ".",
+      mm != null ? (mm >= 0 ? "Up +" : "Down ") + Math.abs(mm).toFixed(1) + "% on " + moLabel(prev) + "." : null,
+      "New-enrolment cash is a leading indicator — it lands before revenue is recognised.",
+    ];
+    return slide(slHdr("Cash collections — from new enrolments", moLabel(months[0]) + " – " + moLabel(cur))
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
+      + cmtPanel("PIPELINE SIGNAL", fm(ct), "New-enrolment cash " + moFull(cur), TEAL, buls) + "</div>");
+  }
+
+  /* S7–S9: Enrolments & collections per entity */
+  function sEnrol(entKey, entLabel, head) {
+    const rows = months.map((m, i) => {
+      const pm = months[i - 1];
+      const nc = csv(entKey, m, "newStudentCount"), ns = csv(entKey, m, "newStudents");
+      const os = csv(entKey, m, "ongoingStudents"), tt = csv(entKey, m, "totalReceived");
+      const pt = pm ? csv(entKey, pm, "totalReceived") : null;
+      const mm = pt ? momPct(tt, pt) : null;
+      const mmStr = mm != null ? "<span style='color:" + (mm >= 0 ? "#28CD41" : RED_NEG) + "'>" + (mm >= 0 ? "+" : "") + mm.toFixed(1) + "%</span>" : "";
+      return "<tr><td>" + moLabel(m) + "</td><td>" + (nc ? Math.round(nc) : "—") + "</td>"
+        + "<td>" + (ns ? fm(ns) : "—") + "</td><td>" + (os ? fm(os) : "—") + "</td>"
+        + "<td style='font-weight:600'>" + fm(tt) + "</td><td>" + mmStr + "</td></tr>";
+    }).join("");
+    const ct = csv(entKey, cur, "totalReceived"), ya = csv(entKey, months[0], "totalReceived");
+    const yoy = momPct(ct, ya), nc = csv(entKey, cur, "newStudentCount");
+    const buls = [
+      moFull(cur) + " collections: " + fm(ct) + ".",
+      yoy != null ? "Year-on-year: " + (yoy >= 0 ? "+" : "") + yoy.toFixed(1) + "%." : null,
+      nc ? Math.round(nc) + " new enrolments in " + moFull(cur) + "." : null,
+    ];
+    return slide(slHdr("Enrolments & collections — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
+      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
+      + "<div style='flex:1;overflow-x:auto'><table class='dt'><thead><tr><th>Month</th><th>New enrol.</th><th>New cash</th><th>Existing cash</th><th>Total received</th><th>MoM</th></tr></thead>"
+      + "<tbody>" + rows + "</tbody></table></div>"
+      + cmtPanel(head, fm(ct), "Collections " + moFull(cur), TEAL, buls) + "</div>");
+  }
+
+  /* S10–S12: Revenue by course */
+  function sRev(entKey, entLabel, head) {
+    const r = plM.find(x => x.rto === entKey && x.month === cur);
+    const items = (r?.lineItems || []).filter(li => li.category === "trading_income" || li.category === "other_income").sort((a, b) => b.amount - a.amount);
+    const total = plv(entKey, cur, "tradingIncome") + plv(entKey, cur, "otherIncome");
+    const top = items.slice(0, 13), rest = items.slice(13);
+    const disp = rest.length ? [...top, { account: "Other lines (" + rest.length + ")", amount: rest.reduce((s, x) => s + x.amount, 0) }] : top;
+    const barItems = disp.map(li => ({ label: li.account.length > 43 ? li.account.slice(0, 40) + "…" : li.account, value: li.amount, color: COVER_BG }));
+    const top1 = items[0];
+    const topPct = total ? Math.round((top1?.amount || 0) / total * 100) : 0;
+    const buls = [
+      "Trading income: " + fm(total) + ".",
+      top1 ? "Largest line: " + top1.account + " at " + fm(top1.amount) + " (" + topPct + "%)." : null,
+      items.length + " revenue line" + (items.length !== 1 ? "s" : "") + " this month.",
+    ];
+    return slide(slHdr("Revenue by course — " + entLabel, moFull(cur).toUpperCase())
+      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
+      + "<div style='flex:1;overflow-y:auto;max-height:470px'>" + svgHBar(barItems, { w: 580, barH: 15, gap: 6, lw: 240, rw: 85 }) + "</div>"
+      + cmtPanel(head, fm(total), "Trading income " + moFull(cur), TEAL, buls) + "</div>");
+  }
+
+  /* S13: Consolidated cost base — top 20 */
+  function s13() {
+    const expMap = {};
+    plM.filter(x => x.month === cur).forEach(r => {
+      (r.lineItems || []).filter(li => li.category === "expenses").forEach(li => {
+        expMap[li.account] = (expMap[li.account] || 0) + li.amount;
+      });
+    });
+    const items = Object.entries(expMap).sort((a, b) => b[1] - a[1]).slice(0, 20);
+    const top3 = items.slice(0, 3).reduce((s, [, v]) => s + v, 0);
+    const grpE = grpPl(cur, "totalExpenses");
+    const top3Pct = grpE ? Math.round(top3 / grpE * 100) : 0;
+    const barItems = items.map(([acc, amt]) => ({ label: acc.length > 43 ? acc.slice(0, 40) + "…" : acc, value: amt, color: COVER_BG }));
+    const top1 = items[0];
+    const buls = [
+      "Total operating expenses: " + fm(grpE) + ".",
+      top1 ? "Largest: " + top1[0] + " at " + fm(top1[1]) + "." : null,
+      "Top 3 expense lines: " + top3Pct + "% of total.",
+    ];
+    return slide(slHdr("Consolidated cost base — top 20 expenses", moFull(cur).toUpperCase() + " · ALL ENTITIES")
+      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
+      + "<div style='flex:1;overflow-y:auto;max-height:470px'>" + svgHBar(barItems, { w: 580, barH: 15, gap: 6, lw: 240, rw: 85 }) + "</div>"
+      + cmtPanel("COST BASE", fm(grpE), "Oper. expenses all entities", TEAL, buls) + "</div>");
+  }
+
+  /* S14/16/18: Profitability per entity */
+  function sProfit(entKey, entLabel, head) {
+    const mLbls = months.map(moLabel);
+    const series = [
+      { label: "Trading income",  color: COVER_BG, values: months.map(m => plv(entKey, m, "tradingIncome")) },
+      { label: "Oper. expenses",  color: "#5B4E8A", values: months.map(m => plv(entKey, m, "totalExpenses")) },
+      { label: "Net result",      color: TEAL,      values: months.map(m => plv(entKey, m, "netProfit")) },
+    ];
+    const cn = plv(entKey, cur, "netProfit");
+    const cumN = months.reduce((s, m) => s + plv(entKey, m, "netProfit"), 0);
+    const profMos = months.filter(m => plv(entKey, m, "netProfit") > 0).length;
+    const buls = [
+      "Net result " + moFull(cur) + ": " + fm(cn) + ".",
+      "Cumulative (" + months.length + " months): " + fm(cumN) + ".",
+      profMos + " of " + months.length + " months were profitable.",
+    ];
+    return slide(slHdr("Profitability — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
+      + cmtPanel(head, fm(cn), "Net result in month", cn < 0 ? "#FF8080" : TEAL, buls) + "</div>");
+  }
+
+  /* S15/17/19: Cost drivers per entity */
+  function sCostDrv(entKey, entLabel, head) {
+    function lineSum(rto, mo, kws) {
+      const r = plM.find(x => x.rto === rto && x.month === mo);
+      return r ? (r.lineItems || []).filter(li => li.category === "expenses" && kws.some(kw => li.account.toLowerCase().includes(kw))).reduce((s, li) => s + li.amount, 0) : 0;
+    }
+    const mLbls = months.map(moLabel);
+    const series = [
+      { label: "Agent commissions", color: COVER_BG, values: months.map(m => lineSum(entKey, m, ["commission", "agent"])) },
+      { label: "Rent",              color: "#5B4E8A", values: months.map(m => lineSum(entKey, m, ["rent"])) },
+      { label: "Wages & salaries",  color: TEAL,      values: months.map(m => lineSum(entKey, m, ["wage", "salary", "salaries"])) },
+    ];
+    const cc = lineSum(entKey, cur, ["commission", "agent"]);
+    const cr = lineSum(entKey, cur, ["rent"]);
+    const cw = lineSum(entKey, cur, ["wage", "salary", "salaries"]);
+    const ci = plv(entKey, cur, "tradingIncome");
+    const buls = [
+      cc ? "Agent commissions: " + fm(cc) + "." : null,
+      cr ? "Rent: " + fm(cr) + "." : null,
+      cw ? "Wages: " + fm(cw) + (ci ? " (" + Math.round(cw / ci * 100) + "% of trading income)." : ".") : null,
+    ];
+    return slide(slHdr("Cost drivers — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
+      + cmtPanel(head, fm(plv(entKey, cur, "totalExpenses")), "Oper. expenses " + moFull(cur), TEAL, buls) + "</div>"
+      + "<p style='font-size:9px;color:#8E8E93;margin-top:6px'>Wages and salaries combines direct wages, management-fee wage recharges and any on-costs. Rent combines rent and rent recharges.</p>");
+  }
+
+  /* CSS */
+  const css = "*{box-sizing:border-box;margin:0;padding:0}"
+    + "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F0F0F5}"
+    + ".slide{width:297mm;height:210mm;position:relative;overflow:hidden;padding:22px 28px 16px;display:flex;flex-direction:column;page-break-after:always;break-after:page}"
+    + ".sl-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:1px solid #E5E5EA;padding-bottom:9px}"
+    + ".sl-title{font-size:19px;font-weight:700;color:#1D1D1F;letter-spacing:-0.02em}"
+    + ".sl-sub{font-size:9.5px;color:#8E8E93;margin-top:2px;letter-spacing:0.04em}"
+    + ".mo-badge{background:#F5F5F7;border:1px solid #E5E5EA;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:700;color:#3A3A3C;white-space:nowrap}"
+    + ".kpi-row{display:flex;gap:9px;margin-bottom:11px}"
+    + ".kpi-card{flex:1;border:1px solid #E5E5EA;border-radius:7px;padding:9px 11px}"
+    + ".kpi-v{font-size:20px;font-weight:700;letter-spacing:-0.03em}"
+    + ".kpi-l{font-size:9.5px;color:#3A3A3C;font-weight:600;margin-top:3px}"
+    + ".kpi-s{font-size:7.5px;color:#8E8E93;margin-top:2px}"
+    + ".ent-row{display:flex;gap:7px}"
+    + ".ent-card{flex:1;border:1px solid #E5E5EA;border-radius:6px;padding:8px 9px}"
+    + ".ent-nm{font-size:8.5px;font-weight:700;letter-spacing:0.08em;color:#6E6E73;margin-bottom:3px}"
+    + ".cmt-panel{width:205px;flex-shrink:0;background:" + COVER_BG + ";color:#fff;border-radius:9px;padding:13px}"
+    + ".cp-head{font-size:7.5px;font-weight:700;letter-spacing:0.1em;color:rgba(255,255,255,0.55);margin-bottom:7px}"
+    + ".cp-kpi{font-size:24px;font-weight:700;letter-spacing:-0.03em}"
+    + ".cp-kpi-lbl{font-size:8.5px;color:rgba(255,255,255,0.7);margin-top:2px;margin-bottom:9px}"
+    + ".cp-buls{padding-left:12px;font-size:9px;line-height:1.6;color:rgba(255,255,255,0.85)}"
+    + ".cp-buls li{margin-bottom:3px}"
+    + ".dt{width:100%;border-collapse:collapse;font-size:11px}"
+    + ".dt th{background:#F5F5F7;padding:5px 7px;text-align:left;font-size:8.5px;color:#6E6E73;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid #E5E5EA}"
+    + ".dt td{padding:5px 7px;border-bottom:1px solid #F2F2F2}"
+    + ".pg-num{position:absolute;bottom:9px;right:26px;font-size:8px;color:#AEAEB2}"
+    + ".branding{position:absolute;bottom:9px;left:26px;font-size:8px;color:#AEAEB2}"
+    + "@media print{body{background:#fff}@page{size:A4 landscape;margin:0}.slide{width:100vw;height:100vh}}"
+    + "@media screen{.slide{margin:14px auto;box-shadow:0 4px 24px rgba(0,0,0,0.12)}}";
+
+  /* Assemble */
+  const slides = [
+    s1(), s2(), s3(), s4(), s5(), s6(),
+    sEnrol("NIET",    "NIET",           "NIET"),
+    sEnrol("CB",      "Charlton Brown",  "CHARLTON BROWN"),
+    sEnrol("Educare", "Educare",         "EDUCARE"),
+    sRev("NIET",    "NIET",           "NIET"),
+    sRev("CB",      "Charlton Brown",  "CHARLTON BROWN"),
+    sRev("Educare", "Educare",         "EDUCARE"),
+    s13(),
+    sProfit("NIET",    "NIET",           "NIET PROFITABILITY"),
+    sCostDrv("NIET",   "NIET",           "NIET COST DRIVERS"),
+    sProfit("CB",      "Charlton Brown",  "CB PROFITABILITY"),
+    sCostDrv("CB",     "Charlton Brown",  "CB COST DRIVERS"),
+    sProfit("Educare", "Educare",         "EDUCARE PROFITABILITY"),
+    sCostDrv("Educare","Educare",         "EDUCARE COST DRIVERS"),
+  ];
+
+  const slidesHtml = slides.map((s, i) =>
+    s.replace("</section>", "<div class='branding'>NIET Group · Finance Pack</div><div class='pg-num'>" + (i + 1) + " / " + slides.length + "</div></section>")
+  ).join("\n");
+
+  return "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+    + "<title>NIET Group Finance Pack — " + moFull(cur) + "</title>"
+    + "<style>" + css + "</style></head><body>"
+    + slidesHtml + "</body></html>";
 }
 
 /* ─────────────────────────────────────────────────────────────
