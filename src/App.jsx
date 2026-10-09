@@ -5052,6 +5052,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         {page === "reports" && (<>
           <Header title="OKR Reports" sub="Published reports visible to ALL teams across the company"
             right={<div style={{ display: "flex", gap: 8 }}>
+              <Btn small onClick={() => {
+                const html = generatePerformancePack({ state, plRecords, cashRecords, enrRecords });
+                const blob = new Blob([html], { type: "text/html" });
+                const url = URL.createObjectURL(blob);
+                const w = window.open(url, "_blank");
+                if (w) setTimeout(() => URL.revokeObjectURL(url), 10000);
+              }}>⬡ Generate Performance Pack</Btn>
               <Btn onClick={() => { setShowGenReport(v => !v); setGenPeriod({ label: "", from: "", to: "" }); }}>{showGenReport ? "Cancel" : "Generate for Period"}</Btn>
               <Btn primary onClick={() => {
                 if (state.monthlyReports.some(r => r.month === prevMonthDisplay())) {
@@ -9201,6 +9208,495 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
 
   return "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
     + "<title>NIET Group Finance Pack — " + moFull(cur) + "</title>"
+    + "<style>" + css + "</style></head><body>"
+    + slidesHtml + "</body></html>";
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PERFORMANCE PACK GENERATOR
+   ───────────────────────────────────────────────────────────── */
+function generatePerformancePack({ state, plRecords, cashRecords, enrRecords }) {
+  const { depts, memberData, okrSubmissions = [], projects = [], monthlyReports = [], users } = state;
+
+  // ── Month windows ─────────────────────────────────────────
+  // Current month = most recent month with any okrSubmission periodKey
+  const allOkrMonths = [...new Set(
+    okrSubmissions.filter(s => s.periodKey).map(s => s.periodKey.slice(0, 7))
+  )].sort();
+  const months13 = allOkrMonths.slice(-13);
+  const cur  = months13[months13.length - 1] || new Date().toISOString().slice(0, 7);
+  const prev = months13[months13.length - 2] || "";
+
+  // ── People helpers ────────────────────────────────────────
+  const members = users.filter(u => u.role === "member" || u.role === "manager");
+
+  function subsForMonth(mo) {
+    return okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === mo);
+  }
+
+  function memberRateForMonth(userId, mo) {
+    const kd = memberData[userId] || { krs: [] };
+    const subs = subsForMonth(mo);
+    if (!kd.krs.some(kr => subs.some(s => s.memberId === userId && s.krId === kr.id))) return null;
+    return calcMemberRate(userId, kd.krs, subs);
+  }
+
+  function deptRateForMonth(deptId, mo) {
+    const dm = members.filter(u => u.deptId === deptId && !u.excludeFromRate);
+    const rates = dm.map(u => memberRateForMonth(u.id, mo)).filter(r => r != null);
+    return rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
+  }
+
+  // OKR yes-rate across whole group for a month (used in trend)
+  function groupYesRate(mo) {
+    const subs = subsForMonth(mo);
+    return subs.length ? Math.round(subs.filter(s => s.answer === "yes").length / subs.length * 1000) / 10 : null;
+  }
+
+  // ── Financial helpers (same normalise as Finance Pack) ────
+  const COVER_BG = "#2D1B69";
+  const TEAL     = "#2ECAD5";
+  const RED_NEG  = "#E54B4B";
+
+  function normRto(rto) {
+    if (!rto) return "Unknown";
+    if (rto === "CB" || rto === "Charlton Brown") return "CB";
+    if (rto.startsWith("Educare")) return "Educare";
+    return rto;
+  }
+  function mergeByKey(recs, fields) {
+    const map = {};
+    for (const r of recs) {
+      const rto = normRto(r.rto), k = rto + "|" + r.month;
+      if (!map[k]) { map[k] = { rto, month: r.month }; fields.forEach(f => { map[k][f] = 0; }); }
+      fields.forEach(f => { map[k][f] += (r[f] || 0); });
+    }
+    return Object.values(map);
+  }
+  const plM = mergeByKey(plRecords, ["tradingIncome","otherIncome","totalExpenses","netProfit"]);
+  const FIN_ENTS = ["NIET","CB","Rhodes","Educare"];
+  const finMonths = [...new Set(plM.map(r => r.month))].sort();
+  const finCur = finMonths[finMonths.length - 1] || "";
+  function plv(rto, mo, f) { const r = plM.find(x => x.rto === rto && x.month === mo); return r ? (r[f] || 0) : 0; }
+  function grpPlv(mo, f) { return FIN_ENTS.reduce((s, k) => s + plv(k, mo, f), 0); }
+
+  // ── Formatters ────────────────────────────────────────────
+  function fm(v) {
+    if (v == null || isNaN(v)) return "—";
+    const neg = v < 0, a = Math.abs(v);
+    const s = a >= 1e6 ? "$" + (a/1e6).toFixed(2) + "m" : a >= 1000 ? "$" + Math.round(a/1000) + "k" : "$" + Math.round(a);
+    return neg ? "(" + s + ")" : s;
+  }
+  function fmPct(v) { return v == null ? "—" : Math.round(v) + "%"; }
+  function fmColor(v) { return v < 0 ? RED_NEG : "#1D1D1F"; }
+  function statusColor(s) { return s === "green" ? "#28CD41" : s === "yellow" ? "#FF9F0A" : s === "red" ? RED_NEG : "#8E8E93"; }
+  function statusDot(s) { return "<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:" + statusColor(s) + ";margin-right:5px'></span>"; }
+  function moLabel(mo) {
+    if (!mo) return "";
+    const [y, m] = mo.split("-");
+    return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1] + "-" + y.slice(2);
+  }
+  function moFull(mo) {
+    if (!mo) return "";
+    const [y, m] = mo.split("-");
+    return ["January","February","March","April","May","June","July","August","September","October","November","December"][+m-1] + " " + y;
+  }
+  function momDelta(c, p) { return p != null && c != null && p !== 0 ? (c - p) / Math.abs(p) * 100 : null; }
+  function esc(s) { return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+  // ── SVG: Line Chart ──────────────────────────────────────
+  function svgLine(series, labels, { w = 640, h = 280 } = {}) {
+    const PL = 58, PR = 20, PT = 16, PB = 52;
+    const cW = w - PL - PR, cH = h - PT - PB, n = labels.length;
+    if (!n) return "<svg width='" + w + "' height='" + h + "'></svg>";
+    const allV = series.flatMap(s => s.values.filter(v => v != null));
+    if (!allV.length) return "<svg width='" + w + "' height='" + h + "'></svg>";
+    const lo = Math.min(...allV), hi = Math.max(...allV);
+    const pad = (hi - lo) * 0.1 || 5;
+    const vLo = Math.max(0, lo - pad), vHi = hi + pad, vR = vHi - vLo || 1;
+    const px = i => PL + (n > 1 ? i / (n - 1) * cW : cW / 2);
+    const py = v => PT + cH - (v - vLo) / vR * cH;
+    const grid = Array.from({ length: 6 }, (_, i) => {
+      const tv = vLo + (vHi - vLo) * i / 5, ty = py(tv);
+      return "<line x1='" + PL + "' y1='" + ty + "' x2='" + (PL + cW) + "' y2='" + ty + "' stroke='#E5E5EA' stroke-width='1'/>"
+        + "<text x='" + (PL - 5) + "' y='" + (ty + 4) + "' text-anchor='end' font-size='10' fill='#8E8E93'>" + Math.round(tv) + "%</text>";
+    }).join("");
+    const xax = labels.map((l, i) => {
+      const lx = px(i);
+      return "<text x='" + lx + "' y='" + (PT + cH + 14) + "' text-anchor='middle' font-size='9' fill='#8E8E93' transform='rotate(-30," + lx + "," + (PT + cH + 14) + ")'>" + l + "</text>";
+    }).join("");
+    const lines = series.map(s => {
+      const pts = s.values.map((v, i) => v != null ? px(i) + "," + py(v) : null).filter(Boolean).join(" ");
+      const dots = s.values.map((v, i) => v != null ? "<circle cx='" + px(i) + "' cy='" + py(v) + "' r='3' fill='" + s.color + "'/>" : "").join("");
+      const lv = s.values[s.values.length - 1];
+      const lbl = lv != null ? "<text x='" + (px(s.values.length - 1) + 5) + "' y='" + (py(lv) + 4) + "' font-size='9' fill='" + s.color + "' font-weight='600'>" + Math.round(lv) + "%</text>" : "";
+      return "<polyline points='" + pts + "' fill='none' stroke='" + s.color + "' stroke-width='2.5' stroke-linejoin='round'/>" + dots + lbl;
+    }).join("");
+    const leg = series.map((s, i) => {
+      const lx = PL + i * 150;
+      return "<rect x='" + lx + "' y='" + (PT + cH + 36) + "' width='10' height='3' fill='" + s.color + "' rx='1'/>"
+        + "<text x='" + (lx + 14) + "' y='" + (PT + cH + 40) + "' font-size='10' fill='#3A3A3C'>" + s.label + "</text>";
+    }).join("");
+    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">"
+      + grid + "<line x1='" + PL + "' y1='" + PT + "' x2='" + PL + "' y2='" + (PT + cH) + "' stroke='#C7C7CC'/>"
+      + xax + lines + leg + "</svg>";
+  }
+
+  // ── SVG: Horizontal Bar (rate %) ─────────────────────────
+  function svgHBarPct(items, { w = 540, barH = 18, gap = 8, lw = 180 } = {}) {
+    const h = items.length * (barH + gap) + 24;
+    const chartW = w - lw - 60;
+    const bars = items.map((item, i) => {
+      const y = 10 + i * (barH + gap);
+      const bw = Math.max(1, (item.value / 100) * chartW);
+      const col = item.value >= TP ? "#28CD41" : item.value >= 60 ? "#FF9F0A" : RED_NEG;
+      return "<text x='" + (lw - 6) + "' y='" + (y + barH * 0.75) + "' text-anchor='end' font-size='11' fill='#3A3A3C'>" + esc(item.label) + "</text>"
+        + "<rect x='" + lw + "' y='" + (y + 2) + "' width='" + chartW + "' height='" + (barH - 4) + "' fill='#F5F5F7' rx='2'/>"
+        + "<rect x='" + lw + "' y='" + (y + 2) + "' width='" + bw + "' height='" + (barH - 4) + "' fill='" + col + "' rx='2'/>"
+        + "<text x='" + (lw + chartW + 6) + "' y='" + (y + barH * 0.75) + "' font-size='11' fill='#3A3A3C' font-weight='600'>" + Math.round(item.value) + "%</text>";
+    }).join("");
+    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">" + bars + "</svg>";
+  }
+
+  // ── SVG: Horizontal Bar (money) ──────────────────────────
+  function svgHBarMoney(items, { w = 560, barH = 15, gap = 6, lw = 140, rw = 80 } = {}) {
+    const h = items.length * (barH + gap) + 24;
+    const chartW = w - lw - rw;
+    const maxV = Math.max(...items.map(x => Math.abs(x.value)), 1);
+    const bars = items.map((item, i) => {
+      const y = 10 + i * (barH + gap);
+      const bw = Math.max(1, Math.abs(item.value) / maxV * chartW);
+      return "<text x='" + (lw - 6) + "' y='" + (y + barH * 0.75) + "' text-anchor='end' font-size='11' fill='#3A3A3C'>" + esc(item.label) + "</text>"
+        + "<rect x='" + lw + "' y='" + y + "' width='" + bw + "' height='" + barH + "' fill='" + (item.color || COVER_BG) + "' rx='2'/>"
+        + "<text x='" + (lw + bw + 6) + "' y='" + (y + barH * 0.75) + "' font-size='11' fill='" + fmColor(item.value) + "' font-weight='600'>" + fm(item.value) + "</text>";
+    }).join("");
+    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">" + bars + "</svg>";
+  }
+
+  // ── Layout helpers ────────────────────────────────────────
+  function slide(content, dark) {
+    return "<section class='slide'" + (dark ? " style='background:" + COVER_BG + ";color:#fff'" : "") + ">" + content + "</section>";
+  }
+  function slHdr(title, sub) {
+    return "<div class='sl-hdr'><div><h2 class='sl-title'>" + esc(title) + "</h2><p class='sl-sub'>" + esc(sub) + "</p></div>"
+      + "<div class='mo-badge'>" + moLabel(cur).toUpperCase() + "</div></div>";
+  }
+  function cmtPanel(head, val, valLbl, valCol, bullets) {
+    const buls = bullets.filter(Boolean).map(b => "<li>" + b + "</li>").join("");
+    return "<div class='cmt-panel'><div class='cp-head'>" + esc(head) + "</div>"
+      + "<div class='cp-kpi' style='color:" + (valCol || "#fff") + "'>" + esc(val) + "</div>"
+      + "<div class='cp-kpi-lbl'>" + esc(valLbl) + "</div>"
+      + "<ul class='cp-buls'>" + buls + "</ul></div>";
+  }
+  function kpiCard(lbl, val, sub, col) {
+    return "<div class='kpi-card'><div class='kpi-v' style='color:" + (col || "#1D1D1F") + "'>" + esc(val) + "</div>"
+      + "<div class='kpi-l'>" + esc(lbl) + "</div>"
+      + (sub ? "<div class='kpi-s'>" + esc(sub) + "</div>" : "") + "</div>";
+  }
+
+  // ── Pre-compute OKR stats ─────────────────────────────────
+  const curSubs  = subsForMonth(cur);
+  const prevSubs = subsForMonth(prev);
+
+  // Member stats for current month
+  const memberStats = members.map(u => {
+    const kd = memberData[u.id] || { krs: [] };
+    const hasKrs = kd.krs.some(kr => kr.type !== "tracker");
+    const rate = memberRateForMonth(u.id, cur);
+    const dept = depts.find(d => d.id === u.deptId);
+    const answered = curSubs.some(s => s.memberId === u.id && s.answer !== null);
+    const pending  = curSubs.some(s => s.memberId === u.id && s.answer === null);
+    const lastLogin = u.lastLoginAt;
+    const lastOkrSub = okrSubmissions
+      .filter(s => s.memberId === u.id && s.answer !== null)
+      .sort((a, b) => (b.answeredAt || b.sentAt || "").localeCompare(a.answeredAt || a.sentAt || ""))[0];
+    return { ...u, deptName: dept?.name || "—", hasKrs, rate, answered, pending, lastLogin, lastOkrSub, status: getStatus(rate) };
+  }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+
+  // Dept stats for current month
+  const deptStats = depts.map(d => {
+    const dm = members.filter(u => u.deptId === d.id && !u.excludeFromRate);
+    const rates = dm.map(u => memberRateForMonth(u.id, cur)).filter(r => r != null);
+    const prevRates = dm.map(u => memberRateForMonth(u.id, prev)).filter(r => r != null);
+    const rate    = rates.length    ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
+    const prevRate = prevRates.length ? prevRates.reduce((a, b) => a + b, 0) / prevRates.length : null;
+    const answered = dm.filter(u => curSubs.some(s => s.memberId === u.id)).length;
+    const lastReport = [...monthlyReports].filter(r => r.deptId === d.id).sort((a, b) => b.month.localeCompare(a.month))[0];
+    const membersList = dm.map(u => {
+      const r = memberRateForMonth(u.id, cur);
+      return { ...u, rate: r, status: getStatus(r), answered: curSubs.some(s => s.memberId === u.id && s.answer !== null) };
+    }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+    return { ...d, rate, prevRate, answered, total: dm.length, status: getStatus(rate), lastReport, members: membersList };
+  }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+
+  // ── Slides ────────────────────────────────────────────────
+
+  /* S1: Cover */
+  function s1() {
+    const [y, m] = (cur || "2026-01").split("-"), mn = +m;
+    const fy = mn >= 7 ? +y + 1 : +y, fyMo = mn >= 7 ? mn - 6 : mn + 6;
+    return slide(
+      "<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;padding:40px'>"
+      + "<div style='font-size:48px;font-weight:300;letter-spacing:0.18em;color:#fff'>NIET GROUP</div>"
+      + "<div style='font-size:13px;letter-spacing:0.32em;color:rgba(255,255,255,0.65)'>GROUP PERFORMANCE REPORT</div>"
+      + "<div style='width:56px;height:1px;background:" + TEAL + ";margin:4px 0'></div>"
+      + "<div style='font-size:11px;letter-spacing:0.2em;color:rgba(255,255,255,0.5)'>OKR · KPI · ENGAGEMENT · FINANCIAL OVERVIEW</div>"
+      + "<div style='font-size:15px;letter-spacing:0.14em;color:" + TEAL + ";font-weight:600'>" + moFull(cur).toUpperCase() + " · MONTH " + fyMo + ", FY" + fy + "</div>"
+      + "</div>", true);
+  }
+
+  /* S2: Executive Summary */
+  function s2() {
+    const activeMembers = memberStats.filter(m => m.answered || m.pending).length;
+    const grpRate = deptStats.filter(d => d.rate != null).length
+      ? Math.round(deptStats.filter(d => d.rate != null).reduce((s, d) => s + d.rate, 0) / deptStats.filter(d => d.rate != null).length)
+      : null;
+    const prevGrpRate = deptStats.filter(d => d.prevRate != null).length
+      ? Math.round(deptStats.filter(d => d.prevRate != null).reduce((s, d) => s + d.prevRate, 0) / deptStats.filter(d => d.prevRate != null).length)
+      : null;
+    const activeProjCount = (projects || []).filter(p => p.status === "active").length;
+    const grpI = grpPlv(finCur, "tradingIncome"), grpN = grpPlv(finCur, "netProfit");
+    const kpis = "<div class='kpi-row'>"
+      + kpiCard("Active members this month", String(activeMembers), "with OKR activity", "#1D1D1F")
+      + kpiCard("Group OKR rate", grpRate != null ? grpRate + "%" : "—", prev ? (prevGrpRate != null ? "from " + prevGrpRate + "% in " + moLabel(prev) : "") : "", grpRate != null ? statusColor(getStatus(grpRate)) : "#8E8E93")
+      + kpiCard("Active projects", String(activeProjCount), "", "#1D1D1F")
+      + kpiCard("Trading income", fm(grpI), "all entities " + moLabel(finCur), grpI > 0 ? "#1D1D1F" : RED_NEG)
+      + "</div>";
+    const topPerformers = memberStats.filter(m => m.hasKrs && m.rate != null).slice(0, 3);
+    const redFlags = memberStats.filter(m => m.hasKrs && m.status === "red");
+    const delta = grpRate != null && prevGrpRate != null ? grpRate - prevGrpRate : null;
+    const buls = [
+      delta != null ? "Group OKR rate " + (delta >= 0 ? "up +" : "down ") + Math.abs(Math.round(delta)) + "pp on " + moLabel(prev) + "." : null,
+      topPerformers.length ? "Top performers: " + topPerformers.map(m => m.name + " (" + Math.round(m.rate) + "%)").join(", ") + "." : null,
+      redFlags.length ? redFlags.length + " member" + (redFlags.length > 1 ? "s" : "") + " below target: " + redFlags.map(m => m.name).join(", ") + "." : null,
+      "Net result (group, " + moLabel(finCur) + "): " + fm(grpN) + ".",
+    ];
+    return slide(slHdr("Executive Summary", "GROUP POSITION — " + moFull(cur).toUpperCase())
+      + kpis
+      + "<div class='ent-row'>"
+      + "<div class='ent-card' style='flex:2;border-top:3px solid " + TEAL + "'><div class='ent-nm'>TOP PERFORMERS</div>"
+      + "<div style='font-size:11px;line-height:1.8'>"
+      + (topPerformers.length ? topPerformers.map(m => statusDot("green") + esc(m.name) + " — " + esc(m.deptName) + " · " + Math.round(m.rate) + "%").join("<br>") : "No data yet")
+      + "</div></div>"
+      + "<div class='ent-card' style='flex:2;border-top:3px solid " + RED_NEG + "'><div class='ent-nm'>NEEDS ATTENTION</div>"
+      + "<div style='font-size:11px;line-height:1.8'>"
+      + (redFlags.length ? redFlags.slice(0,5).map(m => statusDot("red") + esc(m.name) + " — " + esc(m.deptName) + " · " + Math.round(m.rate) + "%").join("<br>") : "All members on track ✓")
+      + "</div></div>"
+      + cmtPanel("GROUP READ", grpRate != null ? grpRate + "%" : "—", "Group OKR rate, " + moFull(cur), grpRate != null ? (delta != null && delta < 0 ? "#FF8080" : TEAL) : TEAL, buls)
+      + "</div>");
+  }
+
+  /* S3: OKR completion by department */
+  function s3() {
+    const activeDepts = deptStats.filter(d => d.rate != null);
+    const items = activeDepts.map(d => ({ label: d.name, value: d.rate }));
+    if (!items.length) return slide(slHdr("OKR Completion by Department", moFull(cur).toUpperCase()) + "<p style='padding:40px;color:#8E8E93'>No OKR data for this month.</p>");
+    const chart = svgHBarPct(items, { w: 560, barH: 20, gap: 8, lw: 200 });
+    const best = activeDepts[0], worst = activeDepts[activeDepts.length - 1];
+    const buls = [
+      best ? "Highest: " + best.name + " at " + Math.round(best.rate) + "%." : null,
+      worst && worst.name !== best?.name ? "Lowest: " + worst.name + " at " + Math.round(worst.rate) + "%." : null,
+      "Target threshold: " + Math.round(TP) + "%. Green = above target.",
+      activeDepts.filter(d => d.rate >= TP).length + " of " + activeDepts.length + " departments above target.",
+    ];
+    return slide(slHdr("OKR Completion by Department", moFull(cur).toUpperCase())
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + chart + "</div>"
+      + cmtPanel("DEPT RANKINGS", Math.round(activeDepts.filter(d => d.rate >= TP).length / activeDepts.length * 100) + "%", "depts above target", TEAL, buls) + "</div>");
+  }
+
+  /* S4: OKR Trend — 13 months */
+  function s4() {
+    const mLbls = months13.map(moLabel);
+    const grpVals = months13.map(m => groupYesRate(m));
+    const series = [{ label: "Group yes-rate", color: TEAL, values: grpVals }];
+    // Add per-dept if ≤4 depts
+    if (depts.length <= 4) {
+      depts.forEach((d, i) => {
+        const colors = [COVER_BG, "#5B4E8A", "#FF9F0A", "#FF6B6B"];
+        series.push({ label: d.name, color: colors[i] || "#8E8E93", values: months13.map(m => deptRateForMonth(d.id, m)) });
+      });
+    }
+    const chart = svgLine(series, mLbls, { w: 640, h: 275 });
+    const cv = grpVals[grpVals.length - 1], pv = grpVals[grpVals.length - 2];
+    const delta = cv != null && pv != null ? cv - pv : null;
+    const best = months13.reduce((b, m) => { const v = groupYesRate(m); return v != null && (b == null || v > groupYesRate(b)) ? m : b; }, null);
+    const buls = [
+      cv != null ? "Group yes-rate this month: " + Math.round(cv) + "%." : null,
+      delta != null ? (delta >= 0 ? "Up +" : "Down ") + Math.abs(Math.round(delta)) + "pp on " + moLabel(prev) + "." : null,
+      best ? "Peak month: " + moLabel(best) + " at " + Math.round(groupYesRate(best)) + "%." : null,
+    ];
+    return slide(slHdr("OKR Trend — 13 months", moLabel(months13[0]) + " – " + moLabel(cur))
+      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + chart + "</div>"
+      + cmtPanel("TREND", cv != null ? Math.round(cv) + "%" : "—", "Group yes-rate " + moFull(cur), TEAL, buls) + "</div>");
+  }
+
+  /* S5: Member Engagement */
+  function s5() {
+    const now = Date.now();
+    const rows = memberStats.map(m => {
+      const ll = m.lastLogin ? new Date(m.lastLogin) : null;
+      const llDays = ll ? Math.floor((now - ll.getTime()) / 86400000) : null;
+      const llStr = ll ? moLabel(m.lastLogin.slice(0, 7)) + " (" + llDays + "d ago)" : "Never";
+      const okrCell = m.rate != null
+        ? statusDot(m.status) + Math.round(m.rate) + "%"
+        : m.answered ? "Answered" : m.pending ? "Pending" : "—";
+      return "<tr><td>" + esc(m.name) + "</td><td style='color:#6E6E73;font-size:10px'>" + esc(m.deptName) + "</td>"
+        + "<td style='color:#6E6E73;font-size:10px'>" + esc(m.role) + "</td>"
+        + "<td>" + okrCell + "</td>"
+        + "<td style='color:" + (llDays != null && llDays > 30 ? RED_NEG : "#3A3A3C") + "'>" + llStr + "</td></tr>";
+    }).join("");
+    return slide(slHdr("Member Engagement", moFull(cur).toUpperCase() + " — ALL MEMBERS")
+      + "<div style='overflow-y:auto;max-height:490px'><table class='dt'><thead>"
+      + "<tr><th>Name</th><th>Department</th><th>Role</th><th>OKR this month</th><th>Last login</th></tr>"
+      + "</thead><tbody>" + rows + "</tbody></table></div>");
+  }
+
+  /* S6: Projects Overview */
+  function s6() {
+    const activeProjs = (projects || []).filter(p => p.status === "active" || p.status === "complete").sort((a, b) => (a.status === "active" ? -1 : 1));
+    if (!activeProjs.length) return slide(slHdr("Projects Overview", "ALL ACTIVE PROJECTS") + "<p style='padding:40px;color:#8E8E93'>No projects recorded.</p>");
+    const rows = activeProjs.map(p => {
+      const mgr = users.find(u => u.id === p.managerId || u.id === p.createdBy);
+      const statusBadge = "<span style='background:" + (p.status === "active" ? "#E8F8EE" : "#F5F5F7") + ";color:" + (p.status === "active" ? "#28CD41" : "#8E8E93") + ";padding:2px 7px;border-radius:4px;font-size:9px;font-weight:700'>" + (p.status || "—").toUpperCase() + "</span>";
+      return "<tr><td style='font-weight:600'>" + esc(p.name) + "</td>"
+        + "<td>" + statusBadge + "</td>"
+        + "<td>" + (p.income ? fm(parseFloat(p.income)) : "—") + "</td>"
+        + "<td>" + (p.margin ? p.margin + "%" : "—") + "</td>"
+        + "<td style='color:#6E6E73;font-size:10px'>" + esc(p.due || "—") + "</td>"
+        + "<td style='color:#6E6E73;font-size:10px'>" + esc(mgr?.name || "—") + "</td></tr>";
+    }).join("");
+    const totalIncome = activeProjs.reduce((s, p) => s + (parseFloat(p.income) || 0), 0);
+    return slide(slHdr("Projects Overview", "ALL ACTIVE PROJECTS")
+      + "<div style='overflow-y:auto;max-height:470px'><table class='dt'><thead>"
+      + "<tr><th>Project</th><th>Status</th><th>Expected income</th><th>Margin</th><th>Due</th><th>Manager</th></tr>"
+      + "</thead><tbody>" + rows + "</tbody></table></div>"
+      + "<p style='font-size:10px;color:#8E8E93;margin-top:8px'>Total expected income (active): " + fm(totalIncome) + "</p>");
+  }
+
+  /* S7: Financial Snapshot */
+  function s7() {
+    const grpI = grpPlv(finCur, "tradingIncome"), grpE = grpPlv(finCur, "totalExpenses"), grpN = grpPlv(finCur, "netProfit");
+    const cir = grpI > 0 ? Math.round(grpE / grpI * 100) : null;
+    const kpis = "<div class='kpi-row'>"
+      + kpiCard("Trading income", fm(grpI), "all entities", "#1D1D1F")
+      + kpiCard("Operating expenses", fm(grpE), "", "#1D1D1F")
+      + kpiCard("Net result", fm(grpN), moLabel(finCur), fmColor(grpN))
+      + kpiCard("Cost-to-income", cir != null ? cir + "%" : "—", cir != null && cir > 100 ? "above 100% = loss" : "", cir != null && cir > 100 ? RED_NEG : "#1D1D1F")
+      + "</div>";
+    const entItems = FIN_ENTS.map(k => ({ label: k === "CB" ? "Charlton Brown" : k, value: plv(k, finCur, "netProfit"), color: COVER_BG }));
+    const chart = svgHBarMoney(entItems, { w: 580, barH: 16, gap: 8, lw: 150, rw: 90 });
+    const buls = [
+      "Group trading income: " + fm(grpI) + " (" + moLabel(finCur) + ").",
+      "Net result: " + fm(grpN) + ".",
+      cir != null ? "Cost-to-income ratio: " + cir + "%." : null,
+      "See Finance Pack for full detail.",
+    ];
+    return slide(slHdr("Financial Snapshot", "GROUP P&L SUMMARY — " + moFull(finCur).toUpperCase())
+      + kpis
+      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
+      + "<div style='flex:1'><div style='font-size:10px;color:#8E8E93;margin-bottom:8px;font-weight:700;letter-spacing:0.06em'>NET RESULT BY ENTITY — " + moLabel(finCur).toUpperCase() + "</div>" + chart + "</div>"
+      + cmtPanel("FINANCIAL READ", fm(grpN), "Group net result " + moLabel(finCur), grpN < 0 ? "#FF8080" : TEAL, buls) + "</div>");
+  }
+
+  /* S8–N: Per department — summary + member table */
+  function sDeptSummary(dept) {
+    const rate = dept.rate;
+    const prevRate = dept.prevRate;
+    const delta = rate != null && prevRate != null ? rate - prevRate : null;
+    const answered = dept.answered, total = dept.total;
+    const report = dept.lastReport;
+    const reportSnippet = report?.notes ? (report.notes.length > 200 ? report.notes.slice(0, 197) + "…" : report.notes) : null;
+    const top3 = dept.members.filter(m => m.rate != null).slice(0, 3);
+    const red = dept.members.filter(m => m.status === "red");
+    const buls = [
+      delta != null ? (delta >= 0 ? "Up +" : "Down ") + Math.abs(Math.round(delta)) + "pp on " + moLabel(prev) + "." : null,
+      total > 0 ? answered + " of " + total + " members have OKR data this month." : null,
+      top3.length ? "Top: " + top3.map(m => m.name + " " + Math.round(m.rate) + "%").join(", ") + "." : null,
+      red.length ? red.length + " below target: " + red.map(m => m.name).join(", ") + "." : null,
+    ];
+    return slide(slHdr(dept.name, "DEPARTMENT OKR SUMMARY — " + moFull(cur).toUpperCase())
+      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
+      + "<div style='flex:1'>"
+      + "<div class='kpi-row'>"
+      + kpiCard("OKR completion rate", rate != null ? Math.round(rate) + "%" : "No data", delta != null ? (delta >= 0 ? "▲ " : "▼ ") + Math.abs(Math.round(delta)) + "pp" : "", rate != null ? statusColor(getStatus(rate)) : "#8E8E93")
+      + kpiCard("Members with data", answered + " / " + total, "this month", "#1D1D1F")
+      + kpiCard("Top performer", top3[0] ? top3[0].name : "—", top3[0] ? Math.round(top3[0].rate) + "%" : "", "#28CD41")
+      + kpiCard("Needs attention", String(red.length), red.length ? red.map(m => m.name).join(", ") : "All on track", red.length ? RED_NEG : "#28CD41")
+      + "</div>"
+      + (reportSnippet ? "<div style='margin-top:12px;padding:12px 14px;background:#F5F5F7;border-radius:7px;border-left:3px solid " + TEAL + "'><div style='font-size:9px;font-weight:700;color:#8E8E93;letter-spacing:0.06em;margin-bottom:5px'>LATEST REPORT — " + esc(report.month) + "</div><div style='font-size:11px;color:#3A3A3C;line-height:1.6'>" + esc(reportSnippet) + "</div></div>" : "")
+      + "</div>"
+      + cmtPanel(dept.name.toUpperCase(), rate != null ? Math.round(rate) + "%" : "—", "OKR rate " + moFull(cur), rate != null ? (delta != null && delta < 0 ? "#FF8080" : TEAL) : TEAL, buls)
+      + "</div>");
+  }
+
+  function sDeptMembers(dept) {
+    const rows = dept.members.map(m => {
+      const ll = m.lastLoginAt ? new Date(m.lastLoginAt) : null;
+      const llDays = ll ? Math.floor((Date.now() - ll.getTime()) / 86400000) : null;
+      const llStr = ll ? moLabel(m.lastLoginAt.slice(0, 7)) + " (" + llDays + "d)" : "Never";
+      const rateBadge = m.rate != null
+        ? "<span style='background:" + statusColor(m.status) + "22;color:" + statusColor(m.status) + ";padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700'>" + Math.round(m.rate) + "%</span>"
+        : "<span style='color:#AEAEB2'>—</span>";
+      const okrCell = m.answered ? "<span style='color:#28CD41;font-weight:600'>✓ Answered</span>"
+        : "<span style='color:#FF9F0A'>Pending</span>";
+      return "<tr><td style='font-weight:600'>" + esc(m.name) + "</td>"
+        + "<td style='color:#6E6E73;font-size:10px'>" + esc(m.role) + "</td>"
+        + "<td>" + rateBadge + "</td>"
+        + "<td>" + okrCell + "</td>"
+        + "<td style='color:" + (llDays != null && llDays > 30 ? RED_NEG : "#3A3A3C") + ";font-size:11px'>" + llStr + "</td></tr>";
+    }).join("");
+    return slide(slHdr(dept.name + " — Member Detail", moFull(cur).toUpperCase())
+      + "<div style='overflow-y:auto;max-height:490px'><table class='dt'><thead>"
+      + "<tr><th>Name</th><th>Role</th><th>OKR rate</th><th>This month</th><th>Last login</th></tr>"
+      + "</thead><tbody>" + rows + "</tbody></table></div>"
+      + (dept.members.length === 0 ? "<p style='padding:20px;color:#8E8E93'>No members in this department.</p>" : ""));
+  }
+
+  // ── CSS ──────────────────────────────────────────────────
+  const css = "*{box-sizing:border-box;margin:0;padding:0}"
+    + "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F0F0F5}"
+    + ".slide{width:297mm;height:210mm;position:relative;overflow:hidden;padding:22px 28px 16px;display:flex;flex-direction:column;page-break-after:always;break-after:page}"
+    + ".sl-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:1px solid #E5E5EA;padding-bottom:9px}"
+    + ".sl-title{font-size:19px;font-weight:700;color:#1D1D1F;letter-spacing:-0.02em}"
+    + ".sl-sub{font-size:9.5px;color:#8E8E93;margin-top:2px;letter-spacing:0.04em}"
+    + ".mo-badge{background:#F5F5F7;border:1px solid #E5E5EA;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:700;color:#3A3A3C;white-space:nowrap}"
+    + ".kpi-row{display:flex;gap:9px;margin-bottom:11px}"
+    + ".kpi-card{flex:1;border:1px solid #E5E5EA;border-radius:7px;padding:9px 11px}"
+    + ".kpi-v{font-size:20px;font-weight:700;letter-spacing:-0.03em}"
+    + ".kpi-l{font-size:9.5px;color:#3A3A3C;font-weight:600;margin-top:3px}"
+    + ".kpi-s{font-size:7.5px;color:#8E8E93;margin-top:2px}"
+    + ".ent-row{display:flex;gap:7px}"
+    + ".ent-card{flex:1;border:1px solid #E5E5EA;border-radius:6px;padding:8px 9px}"
+    + ".ent-nm{font-size:8.5px;font-weight:700;letter-spacing:0.08em;color:#6E6E73;margin-bottom:3px}"
+    + ".cmt-panel{width:205px;flex-shrink:0;background:" + COVER_BG + ";color:#fff;border-radius:9px;padding:13px}"
+    + ".cp-head{font-size:7.5px;font-weight:700;letter-spacing:0.1em;color:rgba(255,255,255,0.55);margin-bottom:7px}"
+    + ".cp-kpi{font-size:24px;font-weight:700;letter-spacing:-0.03em}"
+    + ".cp-kpi-lbl{font-size:8.5px;color:rgba(255,255,255,0.7);margin-top:2px;margin-bottom:9px}"
+    + ".cp-buls{padding-left:12px;font-size:9px;line-height:1.6;color:rgba(255,255,255,0.85)}"
+    + ".cp-buls li{margin-bottom:3px}"
+    + ".dt{width:100%;border-collapse:collapse;font-size:11px}"
+    + ".dt th{background:#F5F5F7;padding:5px 7px;text-align:left;font-size:8.5px;color:#6E6E73;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid #E5E5EA}"
+    + ".dt td{padding:5px 7px;border-bottom:1px solid #F2F2F2}"
+    + ".pg-num{position:absolute;bottom:9px;right:26px;font-size:8px;color:#AEAEB2}"
+    + ".branding{position:absolute;bottom:9px;left:26px;font-size:8px;color:#AEAEB2}"
+    + "@media print{body{background:#fff}@page{size:A4 landscape;margin:0}.slide{width:100vw;height:100vh}}"
+    + "@media screen{.slide{margin:14px auto;box-shadow:0 4px 24px rgba(0,0,0,0.12)}}";
+
+  // ── Assemble ─────────────────────────────────────────────
+  const slides = [s1(), s2(), s3(), s4(), s5(), s6(), s7()];
+  depts.forEach(d => {
+    const ds = deptStats.find(x => x.id === d.id) || { ...d, rate: null, prevRate: null, answered: 0, total: 0, members: [], lastReport: null };
+    slides.push(sDeptSummary(ds));
+    slides.push(sDeptMembers(ds));
+  });
+
+  const slidesHtml = slides.map((s, i) =>
+    s.replace("</section>", "<div class='branding'>NIET Group · Performance Report</div><div class='pg-num'>" + (i + 1) + " / " + slides.length + "</div></section>")
+  ).join("\n");
+
+  const moTitle = moFull(cur);
+  return "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+    + "<title>NIET Group Performance Report — " + moTitle + "</title>"
     + "<style>" + css + "</style></head><body>"
     + slidesHtml + "</body></html>";
 }
