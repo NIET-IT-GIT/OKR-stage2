@@ -26,3 +26,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Azure Functions local settings (may contain secrets)
+local.settings.json

@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useRef, Fragment, Component, createContext, useContext } from "react";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
-import { loginRequest } from "./authConfig";
+import { apiFetch, loginRequest } from "./authConfig";
 import { createClient } from "@supabase/supabase-js";
 
 const T = {
@@ -45,98 +45,6 @@ const APPROVAL = {
   rejected: { bg: T.badDim,   border: T.badBorder,   color: T.bad,   label: "Rejected"          },
   review:   { bg: T.brandDim, border: T.brandBorder, color: T.brand, label: "Pending Approval"  },
 };
-
-/* ─── MOCK DATA ─── */
-const INIT_USERS = [
-  { id: "sysadmin", name: "System Admin",    email: "__admin__",                           role: "admin",   av: "SA", title: "System Administrator" },
-  { id: "admin1",   name: "Troy Yue",        email: "troy.yue@niet.edu.au",                role: "admin",   av: "TY", title: "CEO" },
-  { id: "mgr1",     name: "Florence Fan",    email: "florence.fan@niet.edu.au",            role: "manager", av: "FF", title: "Head of Admissions",  deptId: "admissions", teamIds: ["domestic","international"] },
-  { id: "mgr2",     name: "Olivia An",       email: "olivia.an@niet.edu.au",               role: "manager", av: "OA", title: "Head of Marketing",   deptId: "marketing",  teamIds: ["digital"] },
-  { id: "mem1",     name: "Grace He",        email: "gracie.he@charltonbrown.edu.au",      role: "member",  av: "GH", title: "Admissions Officer",  teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem2",     name: "Mary Joy Caraig", email: "mary.joy.caraig@charltonbrown.edu.au",role: "member",  av: "MJ", title: "Admissions Officer",  teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem3",     name: "Tom Walker",      email: "tom@niet.edu.au",                     role: "member",  av: "TW", title: "Junior Officer",       teamId: "domestic",      deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem4",     name: "Amy Zhang",       email: "amy@niet.edu.au",                     role: "member",  av: "AZ", title: "Intl Officer",         teamId: "international", deptId: "admissions", mgrId: "mgr1" },
-  { id: "mem5",     name: "Emma Wilson",     email: "emma@charltonbrown.edu.au",           role: "member",  av: "EW", title: "Digital Specialist",   teamId: "digital",       deptId: "marketing",  mgrId: "mgr2" },
-  { id: "sam",      name: "Samuel Zhong",    email: "samuel.zhong@niet.edu.au",            role: "admin",   av: "SZ", title: "IT Administrator" },
-];
-
-const INIT_DEPTS = [
-  { id: "admissions", name: "Admissions", head: "Florence Fan", college: "NIET",
-    obj: "Drive enrolment targets for FY26 Q1",
-    krs: [
-      { id: "AKR1", label: "New domestic enrolments",     target: 120, actual: 95 },
-      { id: "AKR2", label: "New international enrolments", target: 80,  actual: 62 },
-      { id: "AKR3", label: "Conversion rate (%)",          target: 45,  actual: 38 },
-    ],
-    teams: [
-      { id: "domestic", name: "Domestic Team", lead: "Florence Fan", obj: "Hit domestic enrolment KPIs",
-        krs: [{ id: "DTK1", label: "Domestic enrolments closed", target: 60, actual: 52 }, { id: "DTK2", label: "Weekly follow-ups", target: 25, actual: 22 }],
-        members: ["mem1","mem2","mem3"] },
-      { id: "international", name: "International Team", lead: "Amy Zhang", obj: "Hit intl enrolment KPIs",
-        krs: [{ id: "ITK1", label: "International enrolments", target: 40, actual: 31 }, { id: "ITK2", label: "Agent meetings/mo", target: 12, actual: 10 }],
-        members: ["mem4"] },
-    ] },
-  { id: "marketing", name: "Marketing", head: "Olivia An", college: "NIET",
-    obj: "Build brand awareness & lead generation",
-    krs: [
-      { id: "MKR1", label: "Qualified leads",       target: 500, actual: 420 },
-      { id: "MKR2", label: "Social engagement (%)", target: 5,   actual: 4.2 },
-    ],
-    teams: [
-      { id: "digital", name: "Digital Marketing", lead: "Nick Egan", obj: "Drive online leads",
-        krs: [{ id: "DMK1", label: "Monthly digital leads", target: 200, actual: 175 }],
-        members: ["mem5"] },
-    ] },
-  { id: "services", name: "Student Services", head: "Mark Thompson", college: "Rhodes",
-    obj: "Maximise satisfaction & retention",
-    krs: [{ id: "SKR1", label: "Student NPS", target: 80, actual: 74 }, { id: "SKR2", label: "Ticket resolution <24h (%)", target: 90, actual: 82 }],
-    teams: [] },
-  { id: "it", name: "IT & Systems", head: "Samuel Zhong", college: "NIET Group",
-    obj: "Deliver OKR platform & system excellence",
-    krs: [{ id: "IKR1", label: "OKR system delivery (%)", target: 100, actual: 65 }, { id: "IKR2", label: "System uptime (%)", target: 99.5, actual: 99.2 }],
-    teams: [] },
-];
-
-const INIT_MEMBER_DATA = {
-  mem1: { krs: [{ id: "GH1", label: "Monthly enrolments",      target: 8,   actual: 7   }, { id: "GH2", label: "Callback rate (%)",     target: 100, actual: 95  }, { id: "GH3", label: "Lead response <2h (%)", target: 95, actual: 88 }] },
-  mem2: { krs: [{ id: "MJ1", label: "Monthly enrolments",      target: 8,   actual: 9   }, { id: "MJ2", label: "Callback rate (%)",     target: 100, actual: 100 }, { id: "MJ3", label: "Lead response <2h (%)", target: 95, actual: 97 }] },
-  mem3: { krs: [{ id: "TW1", label: "Monthly enrolments",      target: 6,   actual: 3   }, { id: "TW2", label: "Callback rate (%)",     target: 100, actual: 72  }, { id: "TW3", label: "Lead response <2h (%)", target: 95, actual: 65 }] },
-  mem4: { krs: [{ id: "AZ1", label: "Monthly intl enrolments", target: 5,   actual: 4   }, { id: "AZ2", label: "Visa success rate (%)", target: 90,  actual: 88  }] },
-  mem5: { krs: [{ id: "EW1", label: "Campaign leads/mo",       target: 50,  actual: 48  }, { id: "EW2", label: "Ad spend ROI (%)",      target: 300, actual: 280 }] },
-};
-
-const INIT_WEEKLY_SUBS = [
-  { id: "ws1", memberId: "mem1", week: "Wk 15 · Apr 13-19", items: "Closed 2 enrolments, 18 follow-up calls, updated CRM for 12 leads, attended open day",    date: "2026-04-14", approval: "approved", mgrNote: "Good work, keep push on callback rate." },
-  { id: "ws2", memberId: "mem1", week: "Wk 14 · Apr 6-12",  items: "Closed 1 enrolment, 15 follow-ups, prepared open day materials",                           date: "2026-04-07", approval: "approved", mgrNote: "" },
-  { id: "ws3", memberId: "mem2", week: "Wk 15 · Apr 13-19", items: "Closed 3 enrolments, launched referral campaign, 22 follow-ups, trained new agent partner", date: "2026-04-14", approval: "approved", mgrNote: "Excellent — top performer this week." },
-  { id: "ws4", memberId: "mem3", week: "Wk 15 · Apr 13-19", items: "8 follow-up calls, attended product training, updated 5 lead records",                     date: "2026-04-15", approval: "pending",  mgrNote: "" },
-  { id: "ws5", memberId: "mem4", week: "Wk 15 · Apr 13-19", items: "Processed 3 visa applications, met with 2 agents, follow-up with 10 prospective students",  date: "2026-04-14", approval: "pending",  mgrNote: "" },
-  { id: "ws6", memberId: "mem5", week: "Wk 15 · Apr 13-19", items: "Launched 2 Google Ads campaigns, published 3 blog posts, social content for Instagram",     date: "2026-04-14", approval: "pending",  mgrNote: "" },
-];
-
-const INIT_MGR_SPRINTS = [
-  { id: "ms1", mgrId: "mgr1", week: "Wk 15 · Apr 13-19", summary: "Domestic team: 5 enrolments closed (target pace). International pipeline growing but visa delays affecting 3 applicants. Open day was a success — 40 attendees, 12 qualified leads. Tom Walker underperforming; scheduled 1-on-1 for Monday.", date: "2026-04-14", status: "submitted" },
-  { id: "ms2", mgrId: "mgr1", week: "Wk 14 · Apr 6-12",  summary: "Domestic: 3 enrolments, callback rate improving. Started new referral program with Mary leading. International: agent meeting in Southport went well.", date: "2026-04-07", status: "submitted" },
-];
-
-const INIT_PROJECTS = [
-  { id: "p1", mgrId: "mgr1", name: "2026 Open Day Campaign",     status: "active", due: "2026-05-30", progress: 45 },
-  { id: "p2", mgrId: "mgr1", name: "Agent Partnership Expansion", status: "active", due: "2026-06-15", progress: 20 },
-];
-
-const INIT_MONTHLY_REPORTS = [
-  { id: "mr1", month: "March 2026", publishedDate: "2026-04-01", publishedBy: "admin1", data: {
-    companyRate: 72.8,
-    deptRanks: [
-      { name: "Marketing",        rate: 81.2, status: "green"  },
-      { name: "Admissions",       rate: 76.5, status: "yellow" },
-      { name: "Student Services", rate: 71.3, status: "yellow" },
-      { name: "IT & Systems",     rate: 62.1, status: "yellow" },
-    ],
-    topPerformers: ["Mary Joy Caraig — 100%", "Grace He — 93.3%", "Emma Wilson — 92.7%"],
-    redFlags: ["Tom Walker — 46.7% (action plan required)", "IT System Delivery — 65% (behind schedule)"],
-  }},
-];
 
 /* ─── HELPERS ─── */
 function krCompletion(kr) {
@@ -226,6 +134,10 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
       // Use most recent answered submission snapshot; prefer approved over pending
       const approved = answered.filter(s => s.approval === "approved").sort((a, b) => (b.answeredAt || "").localeCompare(a.answeredAt || ""));
       const best = approved.length ? approved[0] : answered.slice().sort((a, b) => (b.answeredAt || "").localeCompare(a.answeredAt || ""))[0];
+      if (best.approval === "rejected") {
+        scores.push(best.reviewerActual != null ? (submissionCompletion({ ...best, answer: "no", actualValue: best.reviewerActual }) ?? 0) : 0);
+        continue;
+      }
       scores.push(submissionCompletion(best) ?? 0);
       continue;
     }
@@ -235,6 +147,12 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
   }
   if (!scores.length) return null;
   return scores.reduce((a, b) => a + b, 0) / scores.length;
+}
+// A blank number field means "no value given", never 0.
+function numOrNull(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 function getStatus(r) { if (r == null) return "none"; return r >= TP ? "green" : r >= 60 ? "yellow" : "red"; }
 function memberHasRateKrs(krs) { return (krs || []).some(kr => kr.type !== "tracker" && kr.type !== "project_profit"); }
@@ -257,31 +175,24 @@ function currentFYHalf() {
 }
 function currentPeriodKey(period) {
   const d = new Date();
-  if (period === "daily") return d.toISOString().slice(0, 10);
+  if (period === "daily") return localDateKey(d);
   if (period === "weekly") return currentFYWeek();
   if (period === "monthly") return currentFYMonthKey();
   if (period === "quarterly") return currentFYQuarter();
   if (period === "biannual") return currentFYHalf();
   if (period === "annual") return String(d.getFullYear());
-  return d.toISOString().slice(0, 10);
+  return localDateKey(d);
 }
 function periodDisplayLabel(period, key) {
   if (!key) return "—";
   if (period === "monthly") { const [y, m] = key.split("-"); return new Date(+y, +m - 1).toLocaleString("en", { month: "short", year: "numeric" }); }
-  if (period === "annual") return `FY ${key}`;
+  if (period === "annual") return key;
   return key;
 }
 function calcSubmissionRate(okrSubs, memberId, monthKey) {
   const relevant = okrSubs.filter(s => s.memberId === memberId && s.answer !== null && !s.managerFilled && (s.periodKey || "").slice(0, 7) === monthKey);
   if (!relevant.length) return null;
   return (relevant.filter(s => s.answer === "yes").length / relevant.length) * 100;
-}
-function currentWeekLabel() {
-  const d = new Date();
-  const w = Math.ceil(((d - new Date(d.getFullYear(), 0, 1)) / 86400000 + 1) / 7);
-  const mon = new Date(d); mon.setDate(d.getDate() - d.getDay() + 1);
-  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-  return `Wk ${w} · ${mon.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}-${sun.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}`;
 }
 function currentMonth() {
   return new Date().toLocaleDateString("en-AU", { month: "long", year: "numeric" });
@@ -291,34 +202,59 @@ function prevMonthDisplay() {
   d.setMonth(d.getMonth() - 1);
   return d.toLocaleDateString("en-AU", { month: "long", year: "numeric" });
 }
-function getFYWeeks() {
-  const now = new Date();
-  const m = now.getMonth() + 1;
-  const y = now.getFullYear();
-  const fy = m >= 7 ? y : y - 1;
-  const fyStart = new Date(fy, 6, 1);
-  const day = fyStart.getDay();
-  fyStart.setDate(fyStart.getDate() + (day === 0 ? 1 : day === 1 ? 0 : 8 - day));
-  const weeks = [];
-  for (let i = 0; i < 52; i++) {
-    const mon = new Date(fyStart); mon.setDate(fyStart.getDate() + i * 7);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    weeks.push(`Wk ${i + 1} · ${mon.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}-${sun.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}`);
+// Dates are handled as local calendar days. The FY week calendar starts on the first Monday of July.
+function localDateKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+// A due date counts as overdue from the day after it, in local time.
+function isPastDue(due) {
+  if (!due || due === "TBD") return false;
+  if (/^\d{4}-\d{2}-\d{2}/.test(due)) return due.slice(0, 10) < localDateKey();
+  const dt = new Date(due);
+  return !isNaN(dt) && dt < new Date();
+}
+function dayNumber(d) { return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000); }
+function fyWeekStart(fyStartYear) {
+  const d = new Date(fyStartYear, 6, 1);
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? 1 : day === 1 ? 0 : 8 - day));
+  return d;
+}
+function fyStartYearFor(date) {
+  const y = date.getMonth() >= 6 ? date.getFullYear() : date.getFullYear() - 1;
+  return dayNumber(date) < dayNumber(fyWeekStart(y)) ? y - 1 : y;
+}
+function fyWeekLabel(fyStartYear, idx) {
+  const mon = fyWeekStart(fyStartYear); mon.setDate(mon.getDate() + idx * 7);
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return `Wk ${idx + 1} · ${mon.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}-${sun.toLocaleDateString("en-AU", { month: "short", day: "numeric" })}`;
+}
+function fyWeekKeyFor(date) {
+  const fy = fyStartYearFor(date);
+  return fyWeekLabel(fy, Math.floor((dayNumber(date) - dayNumber(fyWeekStart(fy))) / 7));
+}
+// The calendar month a check-in reports on (not when it was sent). periodKey formats differ by period:
+// daily/monthly "YYYY-MM…", weekly "Wk N · …" (FY week, sent after the week ends), "FY26 Q1", "FY26 H1", "2026".
+// Quarter, half-year and annual check-ins belong to the last month of their period.
+function subPeriodMonth(s) {
+  const pk = String(s.periodKey || "");
+  if (/^\d{4}-\d{2}/.test(pk)) return pk.slice(0, 7);
+  const ym = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const wk = pk.match(/^Wk\s*(\d+)/);
+  if (wk) {
+    const ref = s.sentAt ? new Date(s.sentAt) : new Date();
+    ref.setDate(ref.getDate() - 7);
+    const mon = fyWeekStart(fyStartYearFor(ref)); mon.setDate(mon.getDate() + (+wk[1] - 1) * 7);
+    return ym(mon);
   }
-  return weeks;
+  const q = pk.match(/^FY(\d{2})\s*Q([1-4])/);
+  if (q) { const fy = 2000 + +q[1], endM = [9, 12, 3, 6][+q[2] - 1]; return `${endM >= 7 ? fy - 1 : fy}-${String(endM).padStart(2, "0")}`; }
+  const h = pk.match(/^FY(\d{2})\s*H([12])/);
+  if (h) { const fy = 2000 + +h[1]; return h[2] === "1" ? `${fy - 1}-12` : `${fy}-06`; }
+  if (/^\d{4}$/.test(pk)) return `${pk}-12`;
+  return s.sentAt ? ym(new Date(s.sentAt)) : null;
 }
-function currentFYWeek() {
-  const weeks = getFYWeeks();
-  const now = new Date();
-  const m = now.getMonth() + 1;
-  const y = now.getFullYear();
-  const fy = m >= 7 ? y : y - 1;
-  const fyStart = new Date(fy, 6, 1);
-  const day = fyStart.getDay();
-  fyStart.setDate(fyStart.getDate() + (day === 0 ? 1 : day === 1 ? 0 : 8 - day));
-  const idx = Math.floor((now - fyStart) / (7 * 86400000));
-  return weeks[Math.max(0, Math.min(idx, 51))];
-}
+function currentFYWeek() { return fyWeekKeyFor(new Date()); }
 function getFYMonths() {
   const now = new Date();
   const m = now.getMonth() + 1;
@@ -332,24 +268,12 @@ function getFYMonths() {
 }
 function currentFYMonthKey() {
   const n = new Date();
-  const key = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
-  const fyKeys = getFYMonths().map(m => m.key);
-  // If current calendar month is outside the active FY (e.g. June transition), use first FY month
-  return fyKeys.includes(key) ? key : fyKeys[0];
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
 }
 function prevPeriodKey(period) {
   const now = new Date();
-  if (period === "daily") return new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
-  if (period === "weekly") {
-    const weeks = getFYWeeks();
-    const m = now.getMonth() + 1, y = now.getFullYear();
-    const fy = m >= 7 ? y : y - 1;
-    const fyStart = new Date(fy, 6, 1);
-    const d = fyStart.getDay();
-    fyStart.setDate(fyStart.getDate() + (d === 0 ? 1 : d === 1 ? 0 : 8 - d));
-    const idx = Math.floor((now - fyStart) / (7 * 86400000));
-    return weeks[Math.max(0, idx - 1)];
-  }
+  if (period === "daily") { const d = new Date(now); d.setDate(d.getDate() - 1); return localDateKey(d); }
+  if (period === "weekly") { const d = new Date(now); d.setDate(d.getDate() - 7); return fyWeekKeyFor(d); }
   if (period === "monthly") {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -376,11 +300,7 @@ function periodDateRange(period, periodKey) {
   if (period === "weekly") {
     const wm = periodKey.match(/Wk\s*(\d+)/); if (!wm) return periodKey;
     const wk = parseInt(wm[1]);
-    const now2 = new Date(), mo = now2.getMonth() + 1, yr = now2.getFullYear();
-    const fy = mo >= 7 ? yr : yr - 1;
-    const fyS = new Date(fy, 6, 1); const dw = fyS.getDay();
-    fyS.setDate(fyS.getDate() + (dw === 0 ? 1 : dw === 1 ? 0 : 8 - dw));
-    const mon = new Date(fyS); mon.setDate(fyS.getDate() + (wk - 1) * 7);
+    const mon = fyWeekStart(fyStartYearFor(new Date())); mon.setDate(mon.getDate() + (wk - 1) * 7);
     const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
     return `${fmt(mon)} – ${fmt(sun)}`;
   }
@@ -412,20 +332,24 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-async function dbGet() {
-  const result = { users: [], depts: [], memberData: [], weeklySubs: [], mgrSprints: [], projects: [], monthlyReports: [], okrSubmissions: [], emailLogs: [], settings: [] };
+// Pages need a stable sort order, otherwise rows can be skipped or repeated across pages.
+async function dbFetchCollections(collections) {
+  const result = Object.fromEntries(collections.map(c => [c, []]));
   const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.from("app_data").select("collection, id, doc").in("collection", Object.keys(result)).range(offset, offset + PAGE - 1);
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
+      .in("collection", collections)
+      .order("collection").order("id")
+      .range(offset, offset + PAGE - 1);
     if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    for (const row of data) {
-      if (result[row.collection]) result[row.collection].push(row.doc);
-    }
-    if (data.length < PAGE) break;
-    offset += PAGE;
+    for (const row of data || []) result[row.collection]?.push(row.doc);
+    if (!data || data.length < PAGE) break;
   }
+  return result;
+}
+
+async function dbGet() {
+  const result = await dbFetchCollections(["users", "depts", "memberData", "weeklySubs", "mgrSprints", "projects", "monthlyReports", "okrSubmissions", "emailLogs", "settings"]);
   console.log(`[DB] loaded ${Object.values(result).flat().length} rows`);
   return result;
 }
@@ -469,90 +393,11 @@ async function dbGetLoginLogs(limit = 500) {
   return (data || []).map(r => r.doc);
 }
 
-async function dbGetEnrolments() {
-  const result = { enrolment_records: [], enrolment_batches: [] };
-  const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
-      .in("collection", ["enrolment_records", "enrolment_batches"])
-      .range(offset, offset + PAGE - 1);
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
-    if (data.length < PAGE) break;
-    offset += PAGE;
-  }
-  return result;
-}
-
-async function dbGetCoeData() {
-  const result = { coe_records: [], coe_batches: [] };
-  const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
-      .in("collection", ["coe_records", "coe_batches"])
-      .range(offset, offset + PAGE - 1);
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
-    if (data.length < PAGE) break;
-    offset += PAGE;
-  }
-  return result;
-}
-
-async function dbGetPlData() {
-  const result = { pl_records: [] };
-  const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
-      .in("collection", ["pl_records"])
-      .range(offset, offset + PAGE - 1);
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
-    if (data.length < PAGE) break;
-    offset += PAGE;
-  }
-  return result;
-}
-
-async function dbGetCashData() {
-  const result = { cash_records: [] };
-  const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
-      .in("collection", ["cash_records"])
-      .range(offset, offset + PAGE - 1);
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
-    if (data.length < PAGE) break;
-    offset += PAGE;
-  }
-  return result;
-}
-
-async function dbGetGoogleReviews() {
-  const result = { google_reviews: [] };
-  const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.from("app_data").select("collection, id, doc")
-      .in("collection", ["google_reviews"])
-      .range(offset, offset + PAGE - 1);
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    for (const row of data) { if (result[row.collection]) result[row.collection].push(row.doc); }
-    if (data.length < PAGE) break;
-    offset += PAGE;
-  }
-  return result;
-}
+const dbGetEnrolments    = () => dbFetchCollections(["enrolment_records", "enrolment_batches"]);
+const dbGetCoeData       = () => dbFetchCollections(["coe_records", "coe_batches"]);
+const dbGetPlData        = () => dbFetchCollections(["pl_records"]);
+const dbGetCashData      = () => dbFetchCollections(["cash_records"]);
+const dbGetGoogleReviews = () => dbFetchCollections(["google_reviews"]);
 
 async function dbBulkInsert(collection, items) {
   const CHUNK = 200;
@@ -568,41 +413,66 @@ async function dbDeleteCollection(collection) {
   if (error) throw new Error(`dbDeleteCollection(${collection}): ${error.message}`);
 }
 
-async function dbSeed(data) {
-  const rows = [];
-  for (const [collection, items] of Object.entries(data)) {
-    for (const item of items) rows.push({ collection, id: item.id, doc: item });
-  }
-  const { error } = await supabase.from("app_data").upsert(rows);
-  if (error) throw new Error(error.message);
+// Writes to the same record run one at a time, in order. A write that is still queued when a newer
+// one arrives is skipped, so fast typing sends only the latest value and an older value can never land last.
+const writeChains = new Map();
+const latestWrite = new Map();
+let writeSeq = 0;
+function queueWrite(collection, id, doc) {
+  const key = collection + "/" + id;
+  const seq = ++writeSeq;
+  latestWrite.set(key, seq);
+  const run = () => {
+    if (latestWrite.get(key) !== seq) return;
+    return doc === null ? dbDelete(collection, id) : dbUpsert(collection, doc);
+  };
+  const p = (writeChains.get(key) || Promise.resolve()).catch(() => {}).then(run);
+  writeChains.set(key, p);
+  p.catch(() => {}).finally(() => {
+    if (writeChains.get(key) === p) writeChains.delete(key);
+    if (latestWrite.get(key) === seq) latestWrite.delete(key);
+  });
+  return p;
 }
+async function flushWrites() {
+  while (writeChains.size) await Promise.allSettled([...writeChains.values()]);
+}
+function currentWriteSeq() { return writeSeq; }
 
 // Diffs prev vs next state and syncs only changed items to Supabase.
 async function syncChanges(prev, next) {
   const tasks = [];
   if (JSON.stringify(prev.settings) !== JSON.stringify(next.settings)) {
-    tasks.push(dbUpsert("settings", next.settings));
+    tasks.push(queueWrite("settings", next.settings.id, next.settings));
   }
   for (const col of ["users", "depts", "weeklySubs", "mgrSprints", "projects", "monthlyReports", "okrSubmissions", "emailLogs"]) {
     const prevArr = prev[col] || [];
     const nextArr = next[col] || [];
+    if (prevArr === nextArr) continue;
+    const prevById = new Map(prevArr.map(x => [x.id, x]));
+    const nextIds = new Set();
     for (const item of nextArr) {
-      const old = prevArr.find(x => x.id === item.id);
-      if (!old || JSON.stringify(old) !== JSON.stringify(item)) tasks.push(dbUpsert(col, item));
+      nextIds.add(item.id);
+      const old = prevById.get(item.id);
+      if (old === item) continue;
+      if (!old || JSON.stringify(old) !== JSON.stringify(item)) tasks.push(queueWrite(col, item.id, item));
     }
     for (const item of prevArr) {
-      if (!nextArr.find(x => x.id === item.id)) tasks.push(dbDelete(col, item.id));
+      if (!nextIds.has(item.id)) tasks.push(queueWrite(col, item.id, null));
     }
   }
   // memberData is keyed by memberId in state
   const prevMd = prev.memberData || {};
   const nextMd = next.memberData || {};
-  for (const [id, data] of Object.entries(nextMd)) {
-    const old = prevMd[id];
-    if (!old || JSON.stringify(old) !== JSON.stringify(data)) tasks.push(dbUpsert("memberData", { id, ...data }));
-  }
-  for (const id of Object.keys(prevMd)) {
-    if (!nextMd[id]) tasks.push(dbDelete("memberData", id));
+  if (prevMd !== nextMd) {
+    for (const [id, data] of Object.entries(nextMd)) {
+      const old = prevMd[id];
+      if (old === data) continue;
+      if (!old || JSON.stringify(old) !== JSON.stringify(data)) tasks.push(queueWrite("memberData", id, { id, ...data }));
+    }
+    for (const id of Object.keys(prevMd)) {
+      if (!nextMd[id]) tasks.push(queueWrite("memberData", id, null));
+    }
   }
   await Promise.all(tasks);
 }
@@ -951,13 +821,14 @@ class FinErrorBoundary extends Component {
 /* ─────────────────────────────────────────────────────────────
    LOADING SCREEN
    ───────────────────────────────────────────────────────────── */
-function LoadingScreen({ error }) {
+function LoadingScreen({ error, onRetry }) {
   return (
     <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: F.body, flexDirection: "column", gap: 14 }}>
       {error ? (
         <>
           <span style={{ fontSize: 26, color: T.bad }}>⚠</span>
           <div style={{ fontSize: 15, color: T.bad, textAlign: "center", maxWidth: 320 }}>{error}</div>
+          {onRetry && <Btn primary onClick={onRetry}>Try again</Btn>}
         </>
       ) : (
         <>
@@ -973,7 +844,7 @@ function LoadingScreen({ error }) {
 /* ─────────────────────────────────────────────────────────────
    LOGIN PAGE
    ───────────────────────────────────────────────────────────── */
-function LoginPage({ onLogin, users, msalErr, onDismissErr }) {
+function LoginPage({ msalErr, onDismissErr }) {
   const { instance } = useMsal();
   const [show, setShow] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
@@ -2331,7 +2202,7 @@ function ActionReviewCard({ action, submissions, onConfirm, onCancel }) {
 // ── Enrolment helpers ────────────────────────────────────────────────────────
 function enrSortWeeksDesc(weeks) {
   return [...weeks].sort((a, b) => {
-    const p = w => { const m = w.match(/(\d{4})[_\-]?W(\d+)/i); return m ? parseInt(m[1]) * 1000 + parseInt(m[2]) : 0; };
+    const p = w => { const m = String(w || "").match(/(\d{4})[_\-]?W(\d+)/i); return m ? parseInt(m[1]) * 1000 + parseInt(m[2]) : 0; };
     return p(b) - p(a);
   });
 }
@@ -2891,7 +2762,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       const parts = (p.updatedDate || "").split("/");
       return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
     };
-    const today = now.toISOString().slice(0, 10);
+    const today = localDateKey(now);
     const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
     // Match Company Overview monthly view: submissions sent in current calendar month, period in daily/weekly/monthly
     const monthlyTypes = ["daily", "weekly", "monthly"];
@@ -2941,13 +2812,13 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         const hasPartialRate = yearProjects.some(p => p.contributeRate != null && p.contributeRate < 100);
         return `    Proj Profit KR — ${kr.label}: $${actual.toLocaleString()} of $${(kr.target || 0).toLocaleString()} (${pct}%)${missing > 0 ? ` [⚠ ${missing} project(s) missing income/margin]` : ""}${hasPartialRate ? " [⚡ partial rates applied]" : ""} · Year ${kr.krYear || "?"}`;
       });
-      return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines, krLines, ppLines };
+      return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, excludeFromRate: !!u.excludeFromRate, trackerLines, krLines, ppLines };
     });
 
     // Dept rates = average of eligible member rates (same as Company Overview deptRanks)
     const deptStats = depts.map(d => {
       const dm = memberStats.filter(m => members.find(u => u.id === m.id)?.deptId === d.id);
-      const eligible = dm.filter(m => m.hasEligible);
+      const eligible = dm.filter(m => m.hasEligible && !m.excludeFromRate);
       const rate = eligible.length ? eligible.reduce((s, m) => s + m.rate, 0) / eligible.length : null;
       return { name: d.name, rate, status: rate !== null ? getStatus(rate) : "no data", total: dm.length, eligible: eligible.length };
     }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
@@ -3055,7 +2926,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       const mgr = users.find(u => u.id === p.mgrId);
       const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
       const mgrName = mgr?.name || "—";
-      const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
+      const overdue = isPastDue(p.due) && p.status === "active" ? " [OVERDUE]" : "";
       let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
       if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
       if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)${p.contributeRate != null && p.contributeRate < 100 ? ` [Owner's KR share: ${p.contributeRate}%]` : ""}`;
@@ -3282,7 +3153,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     setChatLoading(true);
     const customPrompt = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
     try {
-      const res = await fetch("/api/chat", {
+      const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext(), lang: "en" }),
@@ -3357,7 +3228,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         const krs = subs.map(s => ({ id: s.krId, label: s.krLabel, target: s.krTarget, unit: s.krUnit, type: s.krType, operator: s.krOperator, isMonthly: s.krIsMonthly }));
         payload = { to: recipient.email, name: recipient.name, period: p, periodKey: log.periodKey, dateRange: log.dateRange, krs, template };
       }
-      const res = await fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res = await apiFetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
       dispatch({ type: "UPDATE_EMAIL_LOG_RECIPIENT", logId: log.id, email: recipient.email, success: data.ok, reason: data.ok ? null : (data.error || `HTTP ${res.status}`) });
     } catch (err) {
@@ -3428,20 +3299,23 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       if (!hasEligible) return null;
       return calcMemberRate(u.id, krs, ovSubs);
     }).filter(r => r !== null);
-    const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+    const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
     return { ...d, rate, status: getStatus(rate) };
-  }).sort((a, b) => b.rate - a.rate);
-  const compRate = deptRanks.length ? deptRanks.reduce((a, d) => a + d.rate, 0) / deptRanks.length : 0;
+  }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+  const rankedDepts = deptRanks.filter(d => d.rate != null);
+  const compRate = rankedDepts.length ? rankedDepts.reduce((a, d) => a + d.rate, 0) / rankedDepts.length : null;
   const _rptD = new Date(); _rptD.setMonth(_rptD.getMonth() - 1);
   const rptMonthKey = `${_rptD.getFullYear()}-${String(_rptD.getMonth()+1).padStart(2,"0")}`;
-  const rptSubs = okrSubmissions.filter(s => s.answer !== null && (s.periodKey || "").slice(0, 7) === rptMonthKey);
-  const rptSubRate = rptSubs.length > 0 ? Math.round((rptSubs.filter(s => s.answer === "yes").length / rptSubs.length) * 1000) / 10 : 0;
+  const rptSubs = okrSubmissions.filter(s => subPeriodMonth(s) === rptMonthKey);
+  const rptAnswered = rptSubs.filter(s => s.answer !== null);
+  const rptSubRate = rptAnswered.length > 0 ? Math.round((rptAnswered.filter(s => s.answer === "yes").length / rptAnswered.length) * 1000) / 10 : 0;
   const rptDeptRanks = depts.map(d => {
     const dMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
     const dMemberRates = dMembers.map(u => {
       const kd = memberData[u.id] || { krs: [] };
       if (!kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
       const mr = calcMemberRate(u.id, kd.krs, rptSubs);
+      if (mr == null) return null;
       return { id: u.id, name: u.name, rate: mr, status: getStatus(mr) };
     }).filter(r => r !== null).sort((a, b) => b.rate - a.rate);
     const hasData = dMemberRates.length > 0;
@@ -3454,10 +3328,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
       const kd = memberData[u.id] || { krs: [] };
-      const hasData = kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id));
-      const rate = hasData ? calcMemberRate(u.id, kd.krs, rptSubs) : 0;
-      return { ...u, rate, hasData, status: getStatus(rate) };
-    }).sort((a, b) => b.rate - a.rate);
+      const rate = kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id)) ? calcMemberRate(u.id, kd.krs, rptSubs) : null;
+      return { ...u, rate, hasData: rate != null, status: getStatus(rate) };
+    }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
   const allMembers = users
     .filter(u => u.role === "member" || u.role === "manager")
     .map(u => {
@@ -3659,7 +3532,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           .map(s => ({ krLabel: s.krLabel, period: s.period, dateRange: s.dateRange, periodKey: s.periodKey }));
         const totalKrCount = emailSections.reduce((n, sec) => n + sec.krs.length, 0);
         emailPromises.push(
-          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, sections: emailSections, template, overdueSubs: userOverdue }) })
+          apiFetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: u.email, name: u.name, sections: emailSections, template, overdueSubs: userOverdue }) })
             .then(res => res.ok
               ? { name: u.name, email: u.email, krCount: totalKrCount, success: true }
               : { name: u.name, email: u.email, krCount: totalKrCount, success: false, reason: `HTTP ${res.status}` })
@@ -3841,7 +3714,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             </div>
             {overviewView !== "financial" && (<>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label={overviewView === "weekly" ? "Weekly Completion" : overviewView === "annual" ? "Annual Completion" : "Monthly Completion"} value={`${compRate.toFixed(1)}%`} status={getStatus(compRate)} sub={`Target pace: ${TP}%`} />
+              <Metric label={overviewView === "weekly" ? "Weekly Completion" : overviewView === "annual" ? "Annual Completion" : "Monthly Completion"} value={compRate != null ? `${compRate.toFixed(1)}%` : "—"} status={getStatus(compRate)} sub={`Target pace: ${TP}%`} />
               <Metric label="Departments" value={depts.length} />
               <Metric label="Teams" value={depts.reduce((a, d) => a + d.teams.length, 0)} />
               <Metric label="Staff Tracked" value={allMembers.length} />
@@ -3860,10 +3733,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     <Card key={d.id} style={{ marginBottom: 8, overflow: "hidden" }}>
                       <div style={{ overflowX: "auto" }}>
                       <div onClick={() => setOvExpandedDept(p => p === d.id ? null : d.id)} style={{ padding: "16px 20px", cursor: "pointer", display: "grid", gridTemplateColumns: "36px 1fr 60px 180px 80px 24px", alignItems: "center", gap: 14, minWidth: 480 }}>
-                        <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: i === 0 ? T.ok : i === deptRanks.length - 1 ? T.bad : T.textMuted }}>#{i + 1}</span>
+                        <span style={{ fontSize: 18, fontWeight: 900, fontFamily: F.mono, color: d.rate == null ? T.textDim : i === 0 ? T.ok : i === rankedDepts.length - 1 ? T.bad : T.textMuted }}>{d.rate == null ? "—" : `#${i + 1}`}</span>
                         <div><div style={{ fontSize: 16, fontWeight: 700 }}>{d.name}</div><div style={{ fontSize: 12, color: T.textMuted }}>{d.college} · {d.head} · {d.teams.length} teams</div></div>
-                        <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate.toFixed(1)}%</span>
-                        <Bar value={d.rate} status={d.status} h={7} />
+                        <span style={{ textAlign: "right", fontSize: 18, fontWeight: 800, fontFamily: F.mono, color: STATUS_THEME[d.status].color }}>{d.rate != null ? `${d.rate.toFixed(1)}%` : "No data"}</span>
+                        <Bar value={d.rate ?? 0} status={d.status} h={7} />
                         <div style={{ display: "flex", justifyContent: "flex-end" }}><Tag type={d.status} /></div>
                         <span style={{ fontSize: 11, color: T.textMuted, textAlign: "right" }}>{isExpanded ? "▲" : "▼"}</span>
                       </div>
@@ -4919,7 +4792,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                 </div>
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
-                                  <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(rejectOkr.actual) || 0 }); setRejectOkr(null); }}>Confirm Reject</Btn>
+                                  <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: numOrNull(rejectOkr.actual) }); setRejectOkr(null); }}>Confirm Reject</Btn>
                                 </div>
                               </div>
                             )}
@@ -4977,7 +4850,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                 )}
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
-                                  <Btn primary small disabled={s.krType !== "tracker" && s.krType !== "progress" && editingApproved.actual !== "" && editingApproved.answer && ((editingApproved.answer === "yes" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === false) || (editingApproved.answer === "no" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === true))} onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0, answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
+                                  <Btn primary small disabled={s.krType !== "tracker" && s.krType !== "progress" && editingApproved.actual !== "" && editingApproved.answer && ((editingApproved.answer === "yes" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === false) || (editingApproved.answer === "no" && meetsTarget(editingApproved.actual, s.krOperator, s.krTarget) === true))} onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: numOrNull(editingApproved.actual), answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
                                 </div>
                               </div>
                             )}
@@ -5063,7 +4936,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 if (state.monthlyReports.some(r => r.month === prevMonthDisplay())) {
                   if (!window.confirm(`A report for ${prevMonthDisplay()} already exists. Publish another?`)) return;
                 }
-                const report = { id: `mr${Date.now()}`, month: prevMonthDisplay(), publishedDate: new Date().toISOString().slice(0, 10), publishedBy: user.id,
+                const report = { id: `mr${Date.now()}`, month: prevMonthDisplay(), publishedDate: localDateKey(), publishedBy: user.id,
                   reportType: "monthly",
                   notes: "",
                   submissionRate: rptSubRate,
@@ -5097,19 +4970,22 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     if (state.monthlyReports.some(r => r.month === label)) {
                       if (!window.confirm(`A report labelled "${label}" already exists. Publish another?`)) return;
                     }
-                    const allAnswered = (state.okrSubmissions || []).filter(s => {
-                      if (s.answer === null) return false;
-                      if (genPeriod.from && s.sentAt && s.sentAt.slice(0, 10) < genPeriod.from) return false;
-                      if (genPeriod.to && s.sentAt && s.sentAt.slice(0, 10) > genPeriod.to) return false;
+                    // Every check-in sent in the range, answered or not, so non-responders count as 0%
+                    const periodSubs = (state.okrSubmissions || []).filter(s => {
+                      const sent = s.sentAt ? localDateKey(new Date(s.sentAt)) : null;
+                      if (genPeriod.from && sent && sent < genPeriod.from) return false;
+                      if (genPeriod.to && sent && sent > genPeriod.to) return false;
                       return true;
                     });
-                    const gSubRate = allAnswered.length > 0 ? Math.round((allAnswered.filter(s => s.answer === "yes").length / allAnswered.length) * 1000) / 10 : 0;
+                    const periodAnswered = periodSubs.filter(s => s.answer !== null);
+                    const gSubRate = periodAnswered.length > 0 ? Math.round((periodAnswered.filter(s => s.answer === "yes").length / periodAnswered.length) * 1000) / 10 : 0;
                     const gDeptRanks = depts.map(d => {
                       const gdMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
                       const gdMemberRates = gdMembers.map(u => {
                         const kd = memberData[u.id] || { krs: [] };
-                        if (!kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
-                        const gr = calcMemberRate(u.id, kd.krs, allAnswered);
+                        if (!kd.krs.some(kr => periodSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
+                        const gr = calcMemberRate(u.id, kd.krs, periodSubs);
+                        if (gr == null) return null;
                         return { id: u.id, name: u.name, rate: gr, status: getStatus(gr) };
                       }).filter(r => r !== null).sort((a, b) => b.rate - a.rate);
                       const hasData = gdMemberRates.length > 0;
@@ -5120,15 +4996,14 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     const gCompRate = gActiveDepts.length ? Math.round(gActiveDepts.reduce((a, d) => a + d.rate, 0) / gActiveDepts.length * 10) / 10 : 0;
                     const gMembers = users.filter(u => u.role === "member" || u.role === "manager").map(u => {
                       const kd = memberData[u.id] || { krs: [] };
-                      const hasData = kd.krs.some(kr => allAnswered.some(s => s.memberId === u.id && s.krId === kr.id));
-                      const rate = hasData ? calcMemberRate(u.id, kd.krs, allAnswered) : 0;
-                      return { ...u, rate, hasData, status: getStatus(rate) };
-                    }).sort((a, b) => b.rate - a.rate);
+                      const rate = kd.krs.some(kr => periodSubs.some(s => s.memberId === u.id && s.krId === kr.id)) ? calcMemberRate(u.id, kd.krs, periodSubs) : null;
+                      return { ...u, rate, hasData: rate != null, status: getStatus(rate) };
+                    }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
                     const report = {
                       id: `mr${Date.now()}`,
                       month: label,
                       reportType: "monthly",
-                      publishedDate: new Date().toISOString().slice(0, 10),
+                      publishedDate: localDateKey(),
                       publishedBy: user.id,
                       periodFrom: genPeriod.from || null,
                       periodTo: genPeriod.to || null,
@@ -5151,16 +5026,16 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             <Card style={{ padding: "14px 18px", background: T.brandDim, border: `1px solid ${T.brandBorder}`, marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>Current Data Preview — what will be published</div>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-                <div><span style={{ color: T.textMuted }}>Yes-answer rate ({prevMonthDisplay()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptSubs.length} answered)</span></div>
+                <div><span style={{ color: T.textMuted }}>Yes-answer rate ({prevMonthDisplay()}): </span><strong style={{ color: STATUS_THEME[getStatus(rptSubRate)].color }}>{rptSubRate}%</strong><span style={{ color: T.textMuted, fontSize: 11, marginLeft: 6 }}>({rptAnswered.length} answered)</span></div>
                 <div><span style={{ color: T.textMuted }}>Top performers: </span>{rptMembers.filter(m => m.hasData).slice(0, 3).map(m => m.name).join(", ") || "—"}</div>
                 <div><span style={{ color: T.textMuted }}>Needs attention: </span>{rptMembers.filter(m => m.hasData && m.status === "red").map(m => m.name).join(", ") || "None"}</div>
               </div>
             </Card>
             {(() => {
-              const visibleReports = state.monthlyReports;
+              const visibleReports = [...state.monthlyReports].sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || "") || String(b.id).localeCompare(String(a.id)));
               if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
               const rPersonStr = p => typeof p === "string" ? p : `${p.name} — ${Number(p.rate).toFixed(1)}%`;
-              const sparkData = [...visibleReports].reverse().slice(0, 6).reverse();
+              const sparkData = visibleReports.slice(0, 6).reverse();
               const sparkW = 280, sparkH = 44;
               const sMin = Math.min(...sparkData.map(r => r.data.companyRate));
               const sMax = Math.max(...sparkData.map(r => r.data.companyRate));
@@ -5337,7 +5212,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   const dt = new Date(d);
                   return isNaN(dt) ? d : dt.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
                 };
-                const isOD = p => { if (!p.due || p.due === "TBD") return false; const dt = new Date(p.due); return !isNaN(dt) && dt < now; };
+                const isOD = p => isPastDue(p.due);
                 const overdueCount = projs.filter(isOD).length;
                 const rows = projs.map(p => {
                   const od = isOD(p);
@@ -5390,7 +5265,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 let sent = 0, errors = 0;
                 await Promise.all(sendable.map(async ({ mgr, email, projs }) => {
                   try {
-                    const res = await fetch("/api/project-reminder", {
+                    const res = await apiFetch("/api/project-reminder", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
@@ -5427,7 +5302,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                         )}
                         {sendable.map(({ mgr, email, projs }) => {
                           const now = new Date();
-                          const overdueCount = projs.filter(p => p.due && p.due !== "TBD" && new Date(p.due) < now).length;
+                          const overdueCount = projs.filter(p => isPastDue(p.due)).length;
                           const rowKey = mgr?.id || email;
                           const isPreviewing = projReminderPreviewId === rowKey;
                           return (
@@ -5696,8 +5571,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             </div>
           );
           const openEdit = p => { setEditPursuitId(p.id); setEditPursuitForm({ name: p.name, stage: p.stage || "opportunity", outcome: p.outcome || "active", estimatedValue: p.estimatedValue != null ? String(p.estimatedValue) : "", probability: p.probability != null ? String(p.probability) : "", deadline: p.deadline || "", nextAction: p.nextAction || "", notes: p.notes || "" }); };
-          const saveEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitForm.name.trim() || p.name, stage: editPursuitForm.stage, outcome: editPursuitForm.outcome, estimatedValue: editPursuitForm.estimatedValue !== "" ? Number(editPursuitForm.estimatedValue) : null, probability: editPursuitForm.probability !== "" ? Number(editPursuitForm.probability) : null, deadline: editPursuitForm.deadline, nextAction: editPursuitForm.nextAction.trim(), notes: editPursuitForm.notes.trim(), updatedDate: new Date().toISOString().slice(0, 10) } }); setEditPursuitId(null); };
-          const convertToProject = p => { if (!window.confirm(`Convert "${p.name}" to a Project? It will appear in the Projects page with income set to $${(p.estimatedValue || 0).toLocaleString()}.`)) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: p.mgrId, name: p.name, status: "active", startDate: new Date().toISOString().slice(0, 10), due: p.deadline || "TBD", progress: 0, income: p.estimatedValue || null, margin: null } }); dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); };
+          const saveEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitForm.name.trim() || p.name, stage: editPursuitForm.stage, outcome: editPursuitForm.outcome, estimatedValue: editPursuitForm.estimatedValue !== "" ? Number(editPursuitForm.estimatedValue) : null, probability: editPursuitForm.probability !== "" ? Number(editPursuitForm.probability) : null, deadline: editPursuitForm.deadline, nextAction: editPursuitForm.nextAction.trim(), notes: editPursuitForm.notes.trim(), updatedDate: localDateKey() } }); setEditPursuitId(null); };
+          const convertToProject = p => { if (!window.confirm(`Convert "${p.name}" to a Project? It will appear in the Projects page with income set to $${(p.estimatedValue || 0).toLocaleString()}.`)) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: p.mgrId, name: p.name, status: "active", startDate: localDateKey(), due: p.deadline || "TBD", progress: 0, income: p.estimatedValue || null, margin: null } }); dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); };
           const PursuitCard = ({ p, showStage = false }) => {
             const mgr = users.find(u => u.id === p.mgrId);
             const dept = depts.find(d => d.id === mgr?.deptId);
@@ -5988,6 +5863,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               };
               const doImport = async () => {
                 if (!enrParsed) return;
+                if (!enrParsed.week) { setEnrError("No week number was found in this file. Add the week to the file name (for example 2026-W40) and upload it again."); return; }
                 setEnrImporting(true);
                 try {
                   const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -6130,7 +6006,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 if (enrFilterMarketer !== "all" && r.marketerName !== enrFilterMarketer) return false;
                 if (enrFilterRto !== "all" && r.rto !== enrFilterRto) return false;
                 return true;
-              }).sort((a, b) => b.week.localeCompare(a.week) || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
+              }).sort((a, b) => (b.week || "").localeCompare(a.week || "") || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
               const exportCSV = () => {
                 const hdr = ["Week","Marketer","RTO","Count"];
                 const rows = filtered.map(r => [r.week, r.marketerName, r.rto, r.count]);
@@ -6386,6 +6262,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 };
                 const doNietImport = async () => {
                   if (!coeParsed) return;
+                  if (!coeParsed.week) { setCoeError("No week number was found in this file. Add the week to the file name (for example 2026-W40) and upload it again."); return; }
                   setCoeImporting(true);
                   try {
                     const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -6416,6 +6293,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 };
                 const doEducareImport = async () => {
                   if (!educareParsed) return;
+                  if (!educareParsed.week) { setCoeError("No week number was found in this file. Add the week to the file name (for example 2026-W40) and upload it again."); return; }
                   setEducareImporting(true);
                   try {
                     const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -6517,7 +6395,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   if (coeFilterRto !== "all" && r.rto !== coeFilterRto) return false;
                   if (coeFilterType !== "all" && r.type !== coeFilterType) return false;
                   return true;
-                }).sort((a, b) => b.week.localeCompare(a.week) || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
+                }).sort((a, b) => (b.week || "").localeCompare(a.week || "") || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
                 const exportCSV = () => {
                   const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"];
                   const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.createdBy, r.onshoreOffshore, r.pathway]);
@@ -6616,12 +6494,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             setPlError(null);
             try {
               const id = `pl_${plParsed.month}_${plParsed.rto}`;
-              await supabase.from("app_data").delete().eq("collection", "pl_records").eq("id", id);
               const rec = { id, month: plParsed.month, rto: plParsed.rto, lineItems: plParsed.lineItems,
                 tradingIncome: plParsed.tradingIncome, otherIncome: plParsed.otherIncome,
                 totalExpenses: plParsed.totalExpenses, netProfit: plParsed.netProfit,
                 fileName: plParsed.fileName, uploadedAt: new Date().toISOString() };
-              await dbBulkInsert("pl_records", [rec]);
+              await dbUpsert("pl_records", rec);
               setPlRecords(prev => { const rest = prev.filter(r => r.id !== id); return [...rest, rec]; });
               setPlParsed(null);
             } catch (err) { setPlError(`Import failed: ${err.message}`); }
@@ -6801,7 +6678,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                   <Btn small danger onClick={async () => {
                                     if (!window.confirm(`Delete ${rec.rto} ${rec.month}?`)) return;
                                     try {
-                                      await supabase.from("app_data").delete().eq("collection","pl_records").eq("id", rec.id);
+                                      await dbDelete("pl_records", rec.id);
                                       setPlRecords(prev => prev.filter(r => r.id !== rec.id));
                                     } catch (e) { setPlError(`Delete failed: ${e.message}`); }
                                   }}>Delete</Btn>
@@ -6876,11 +6753,16 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
             if (!cashParsed?.records?.length) return;
             setCashImporting(true);
             setCashError(null);
+            const ids = cashParsed.records.map(r => r.id);
+            const dupes = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+            if (dupes.length) {
+              const which = dupes.map(id => { const r = cashParsed.records.find(x => x.id === id); return `${r.rto} ${r.month}`; }).join(", ");
+              setCashError(`More than one file was detected as ${which}. Nothing was imported. Import these files one at a time, or check that each file name contains the right RTO.`);
+              setCashImporting(false);
+              return;
+            }
             try {
-              for (const rec of cashParsed.records) {
-                await supabase.from("app_data").delete().eq("collection","cash_records").eq("id", rec.id);
-              }
-              await dbBulkInsert("cash_records", cashParsed.records);
+              for (const rec of cashParsed.records) await dbUpsert("cash_records", rec);
               setCashRecords(prev => { const ids = new Set(cashParsed.records.map(r => r.id)); return [...prev.filter(r => !ids.has(r.id)), ...cashParsed.records]; });
               setCashParsed(null);
             } catch (err) { setCashError(`Import failed: ${err.message}`); }
@@ -7044,7 +6926,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                               <Btn small danger onClick={async () => {
                                 if (!window.confirm(`Delete ${rec.rto} ${rec.month}? This cannot be undone.`)) return;
                                 try {
-                                  await supabase.from("app_data").delete().eq("collection","cash_records").eq("id", rec.id);
+                                  await dbDelete("cash_records", rec.id);
                                   setCashRecords(prev => prev.filter(r => r.id !== rec.id));
                                 } catch (e) { setCashError(`Delete failed: ${e.message}`); }
                               }}>Delete</Btn>
@@ -7590,7 +7472,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                     setTestEmailState({ status: "sending", msg: "" });
                     const period = tmplPeriod === "default" ? "monthly" : tmplPeriod;
                     try {
-                      const res = await fetch("/api/send-email", {
+                      const res = await apiFetch("/api/send-email", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -8228,29 +8110,49 @@ async function plParseFile(file) {
       }
     }
   }
-  // Parse line items by section header
+  // Xero cells can be numbers or text such as "(1,234.50)" or "$5,000"
+  const toNum = v => {
+    if (typeof v === "number") return v;
+    if (typeof v !== "string") return null;
+    const t = v.trim();
+    const neg = /^\(.*\)$/.test(t);
+    const n = parseFloat(t.replace(/[()$,\s]/g, ""));
+    return isNaN(n) ? null : (neg ? -n : n);
+  };
+  // Parse line items by section header. Cost of Sales lines count as expenses so net profit is right.
   let section = null;
+  let fileNetProfit = null;
   const lineItems = [];
   for (const row of rows) {
     const label = String(row[0] || "").trim();
-    const rawVal = row[1];
-    if (label === "Trading Income") { section = "trading_income"; continue; }
-    if (label === "Other Income") { section = "other_income"; continue; }
-    if (label === "Operating Expenses") { section = "expenses"; continue; }
+    const heading = label.toLowerCase().replace(/^less\s+/, "");
+    if (/^(trading income|income|revenue)$/.test(heading)) { section = "trading_income"; continue; }
+    if (/^(cost of sales|cost of goods sold|direct costs)$/.test(heading)) { section = "cost_of_sales"; continue; }
+    if (heading === "other income") { section = "other_income"; continue; }
+    if (/^(operating expenses|expenses|overheads)$/.test(heading)) { section = "expenses"; continue; }
+    if (/^net (profit|loss)/.test(heading)) { const v = toNum(row[1]); if (v != null) fileNetProfit = v; continue; }
     if (!section) continue;
     // Account rows: start with digit-dash-digit pattern, e.g. "4-1103 - ..."
-    if (/^\d+-\d+/.test(label) && typeof rawVal === "number" && rawVal !== 0) {
-      lineItems.push({ account: label, amount: rawVal, category: section });
+    const amount = toNum(row[1]);
+    if (/^\d+-\d+/.test(label) && amount) {
+      lineItems.push(section === "cost_of_sales"
+        ? { account: label, amount, category: "expenses", group: "Cost of Sales" }
+        : { account: label, amount, category: section });
     }
   }
   const tradingIncome = lineItems.filter(i => i.category === "trading_income").reduce((s, i) => s + i.amount, 0);
   const otherIncome   = lineItems.filter(i => i.category === "other_income").reduce((s, i) => s + i.amount, 0);
   const totalExpenses = lineItems.filter(i => i.category === "expenses").reduce((s, i) => s + i.amount, 0);
   const netProfit     = tradingIncome + otherIncome - totalExpenses;
+  const mismatch = fileNetProfit != null && Math.abs(fileNetProfit - netProfit) > 1;
+  const fmtAud = v => (v < 0 ? "-$" : "$") + Math.abs(Math.round(v)).toLocaleString();
   return {
     rto, month, lineItems, tradingIncome, otherIncome, totalExpenses, netProfit,
     fileName: file.name, fileSize: file.size,
-    error: !rto ? "Could not detect RTO from company name" : (!month ? "Could not detect month from file" : null),
+    error: !rto ? "Could not detect RTO from company name"
+      : !month ? "Could not detect month from file"
+      : mismatch ? `The account lines in this file add up to a net profit of ${fmtAud(netProfit)}, but the file's Net Profit row says ${fmtAud(fileNetProfit)}. Nothing was imported. Check that the file is a standard Xero Profit & Loss export.`
+      : null,
   };
 }
 
@@ -8361,7 +8263,10 @@ async function cashParseFiles(fileSheets) {
       if (idx == null || idx < 0) return 0;
       const val = totalRow[idx];
       if (typeof val === "number") return val;
-      if (typeof val === "string") return parseFloat(val.replace(/[$,]/g, "")) || 0;
+      if (typeof val === "string") {
+        const n = parseFloat(val.replace(/[()$,\s]/g, "")) || 0;
+        return /^\s*\(.*\)\s*$/.test(val) ? -n : n;
+      }
       return 0;
     };
 
@@ -8389,7 +8294,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     const parts = (p.updatedDate || "").split("/");
     return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
   };
-  const today = now.toISOString().slice(0, 10);
+  const today = localDateKey(now);
   const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
   const monthlyTypes = ["daily", "weekly", "monthly"];
   const monthSubs = okrSubmissions.filter(s => {
@@ -8435,11 +8340,11 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
       const hasPartialRate = yearProjects.some(p => p.contributeRate != null && p.contributeRate < 100);
       return `    Proj Profit KR — ${kr.label}: $${actual.toLocaleString()} of $${(kr.target || 0).toLocaleString()} (${pct}%)${missing > 0 ? ` [⚠ ${missing} project(s) missing income/margin]` : ""}${hasPartialRate ? " [⚡ partial rates applied]" : ""} · Year ${kr.krYear || "?"}`;
     });
-    return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, trackerLines, krLines, ppLines };
+    return { id: u.id, name: u.name, dept, role: u.role, rate, status, answered, pending, hasEligible, excludeFromRate: !!u.excludeFromRate, trackerLines, krLines, ppLines };
   });
   const deptStats = depts.map(d => {
     const dm = memberStats.filter(m => members.find(u => u.id === m.id)?.deptId === d.id);
-    const eligible = dm.filter(m => m.hasEligible);
+    const eligible = dm.filter(m => m.hasEligible && !m.excludeFromRate);
     const rate = eligible.length ? eligible.reduce((s, m) => s + m.rate, 0) / eligible.length : null;
     return { name: d.name, rate, status: rate !== null ? getStatus(rate) : "no data", total: dm.length, eligible: eligible.length };
   }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
@@ -8535,7 +8440,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     const mgr = users.find(u => u.id === p.mgrId);
     const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
     const mgrName = mgr?.name || "—";
-    const overdue = p.due && p.due !== "TBD" && new Date(p.due) < now && p.status === "active" ? " [OVERDUE]" : "";
+    const overdue = isPastDue(p.due) && p.status === "active" ? " [OVERDUE]" : "";
     let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
     if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
     if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)${p.contributeRate != null && p.contributeRate < 100 ? ` [Owner's KR share: ${p.contributeRate}%]` : ""}`;
@@ -9243,14 +9148,6 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
     const [y, m] = mo.split("-");
     return ["January","February","March","April","May","June","July","August","September","October","November","December"][+m - 1] + " " + y;
   }
-  // periodKey is not always YYYY-MM (weekly "Wk 1 · …", quarterly "FY26 Q1"), so bucket by the send date
-  function subMonth(s) {
-    const d = (s.sentAt || s.answeredAt || "").slice(0, 7);
-    if (MO_RE.test(d)) return d;
-    const pk = (s.periodKey || "").slice(0, 7);
-    return MO_RE.test(pk) ? pk : null;
-  }
-
   // ── Formatters ────────────────────────────────────────────
   function fm(v) {
     if (v == null || isNaN(v)) return "—";
@@ -9303,7 +9200,7 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
   const members = users.filter(u => u.role === "member" || u.role === "manager");
   const subsByMonth = {};
   for (const s of okrSubmissions) {
-    const mo = subMonth(s);
+    const mo = subPeriodMonth(s);
     if (!mo) continue;
     (subsByMonth[mo] = subsByMonth[mo] || []).push(s);
   }
@@ -9312,13 +9209,13 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
   const okrPrev = addMonths(okrCur, -1);
   const okrWin  = window13(okrCur);
 
-  // Mirrors the OKR Reports page: rate from answered submissions in the month
+  // Mirrors the OKR Reports page: every check-in about the month counts, so non-responders score 0%
   const rateCache = {};
   function memberRate(u, mo) {
     const k = u.id + "|" + mo;
     if (k in rateCache) return rateCache[k];
     const kd = memberData[u.id] || { krs: [] };
-    const subs = answeredIn(mo);
+    const subs = subsByMonth[mo] || [];
     const has = (kd.krs || []).some(kr => subs.some(s => s.memberId === u.id && s.krId === kr.id));
     return (rateCache[k] = has ? calcMemberRate(u.id, kd.krs, subs) : null);
   }
@@ -9934,12 +9831,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   }, [mgrGrvLoaded]);
 
   const [pilotResponse, setPilotResponse] = useState(null);
+  const [expandedRptDepts, setExpandedRptDepts] = useState({});
   const [pilotLoading, setPilotLoading] = useState(false);
   const [pilotRefresh, setPilotRefresh] = useState(0);
   const PILOT_DAILY_LIMIT = 5;
-  const pilotUsageCount = (() => { try { return parseInt(localStorage.getItem(`pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`) || "0", 10); } catch { return 0; } })();
+  const pilotUsageCount = (() => { try { return parseInt(localStorage.getItem(`pilot_usage_${user.id}_${localDateKey()}`) || "0", 10); } catch { return 0; } })();
   async function sendPilotQuestion(question) {
-    const todayKey = new Date().toISOString().slice(0, 10);
+    const todayKey = localDateKey();
     const storageKey = `pilot_usage_${user.id}_${todayKey}`;
     const currentCount = parseInt(localStorage.getItem(storageKey) || "0", 10);
     if (currentCount >= PILOT_DAILY_LIMIT || pilotLoading) return;
@@ -9947,7 +9845,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotResponse({ question, answer: null });
     try {
       const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords, cashRecords: mgrCashRecords, grvData: mgrGrvData });
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
+      const res = await apiFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
       const answer = data.answer || data.error || "No response.";
@@ -10357,7 +10255,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           )}
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
-                            <Btn primary small disabled={yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
+                            <Btn primary small disabled={yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: numOrNull(yesConfirm.actual) }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
                           </div>
                         </div>
                       )}
@@ -10378,7 +10276,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
                             <Btn small onClick={() => setNoReason(null)}>Cancel</Btn>
-                            <Btn danger small disabled={noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: Number(noReason.actual) || 0 }); setNoReason(null); }}>Submit No</Btn>
+                            <Btn danger small disabled={noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: numOrNull(noReason.actual) }); setNoReason(null); }}>Submit No</Btn>
                           </div>
                         </div>
                       )}
@@ -10523,7 +10421,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     </div>
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setRejectOkr(null)}>Cancel</Btn>
-                                      <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(rejectOkr.actual) || 0 }); setRejectOkr(null); }}>Confirm Reject</Btn>
+                                      <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: numOrNull(rejectOkr.actual) }); setRejectOkr(null); }}>Confirm Reject</Btn>
                                     </div>
                                   </div>
                                 )}
@@ -10573,7 +10471,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                                     </div>
                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                       <Btn small onClick={() => setEditingApproved(null)}>Cancel</Btn>
-                                      <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: Number(editingApproved.actual) || 0, answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
+                                      <Btn primary small onClick={() => { dispatch({ type: "EDIT_APPROVED_SUBMISSION", id: s.id, actualValue: numOrNull(editingApproved.actual), answer: editingApproved.answer }); setEditingApproved(null); }}>Save</Btn>
                                     </div>
                                   </div>
                                 )}
@@ -10835,9 +10733,9 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           const stageInfo = id => PURSUIT_STAGES.find(s => s.id === id) || PURSUIT_STAGES[0];
           const byStage = PURSUIT_STAGES.map(st => ({ ...st, items: activePursuits.filter(p => (p.stage || "opportunity") === st.id) })).filter(st => st.items.length > 0);
           const openEdit = p => { setEditPursuitId(p.id); setEditPursuitForm({ name: p.name, stage: p.stage || "opportunity", outcome: p.outcome || "active", estimatedValue: p.estimatedValue != null ? String(p.estimatedValue) : "", probability: p.probability != null ? String(p.probability) : "", deadline: p.deadline || "", nextAction: p.nextAction || "", notes: p.notes || "" }); };
-          const saveEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitForm.name.trim() || p.name, stage: editPursuitForm.stage, outcome: editPursuitForm.outcome, estimatedValue: editPursuitForm.estimatedValue !== "" ? Number(editPursuitForm.estimatedValue) : null, probability: editPursuitForm.probability !== "" ? Number(editPursuitForm.probability) : null, deadline: editPursuitForm.deadline, nextAction: editPursuitForm.nextAction.trim(), notes: editPursuitForm.notes.trim(), updatedDate: new Date().toISOString().slice(0, 10) } }); setEditPursuitId(null); };
-          const convertToProject = p => { if (!window.confirm(`Convert "${p.name}" to a Project? It will appear in the Projects page with income set to $${(p.estimatedValue || 0).toLocaleString()}.`)) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: p.mgrId, name: p.name, status: "active", startDate: new Date().toISOString().slice(0, 10), due: p.deadline || "TBD", progress: 0, income: p.estimatedValue || null, margin: null } }); dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); };
-          const createPursuit = () => { if (!newPursuit.name.trim()) return; dispatch({ type: "ADD_PROJECT", project: { id: `pursuit_${Date.now()}`, type: "pursuit", mgrId: user.id, name: newPursuit.name.trim(), stage: "opportunity", outcome: "active", estimatedValue: newPursuit.estimatedValue !== "" ? Number(newPursuit.estimatedValue) : null, probability: newPursuit.probability !== "" ? Number(newPursuit.probability) : null, deadline: newPursuit.deadline, nextAction: newPursuit.nextAction.trim(), notes: "", startDate: new Date().toISOString().slice(0, 10), updatedDate: "" } }); setShowNewPursuit(false); setNewPursuit({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); };
+          const saveEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitForm.name.trim() || p.name, stage: editPursuitForm.stage, outcome: editPursuitForm.outcome, estimatedValue: editPursuitForm.estimatedValue !== "" ? Number(editPursuitForm.estimatedValue) : null, probability: editPursuitForm.probability !== "" ? Number(editPursuitForm.probability) : null, deadline: editPursuitForm.deadline, nextAction: editPursuitForm.nextAction.trim(), notes: editPursuitForm.notes.trim(), updatedDate: localDateKey() } }); setEditPursuitId(null); };
+          const convertToProject = p => { if (!window.confirm(`Convert "${p.name}" to a Project? It will appear in the Projects page with income set to $${(p.estimatedValue || 0).toLocaleString()}.`)) return; dispatch({ type: "ADD_PROJECT", project: { id: `p${Date.now()}`, mgrId: p.mgrId, name: p.name, status: "active", startDate: localDateKey(), due: p.deadline || "TBD", progress: 0, income: p.estimatedValue || null, margin: null } }); dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); };
+          const createPursuit = () => { if (!newPursuit.name.trim()) return; dispatch({ type: "ADD_PROJECT", project: { id: `pursuit_${Date.now()}`, type: "pursuit", mgrId: user.id, name: newPursuit.name.trim(), stage: "opportunity", outcome: "active", estimatedValue: newPursuit.estimatedValue !== "" ? Number(newPursuit.estimatedValue) : null, probability: newPursuit.probability !== "" ? Number(newPursuit.probability) : null, deadline: newPursuit.deadline, nextAction: newPursuit.nextAction.trim(), notes: "", startDate: localDateKey(), updatedDate: "" } }); setShowNewPursuit(false); setNewPursuit({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); };
           const PursuitEditForm = ({ p }) => (
             <div style={{ marginTop: 12, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
@@ -11349,10 +11247,10 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           <Header title="OKR Reports" sub="Published company-wide reports — visible to all teams" />
           <Pane>
             {(() => {
-              const visibleReports = monthlyReports;
+              const visibleReports = [...monthlyReports].sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || "") || String(b.id).localeCompare(String(a.id)));
               if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
               const rPersonStr = p => typeof p === "string" ? p : `${p.name} — ${Number(p.rate).toFixed(1)}%`;
-              const sparkData = [...visibleReports].reverse().slice(0, 6).reverse();
+              const sparkData = visibleReports.slice(0, 6).reverse();
               const sparkW = 280, sparkH = 44;
               const sMin = Math.min(...sparkData.map(r => r.data.companyRate));
               const sMax = Math.max(...sparkData.map(r => r.data.companyRate));
@@ -11590,7 +11488,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 if (enrFilterMarketer !== "all" && r.marketerName !== enrFilterMarketer) return false;
                 if (enrFilterRto !== "all" && r.rto !== enrFilterRto) return false;
                 return true;
-              }).sort((a, b) => b.week.localeCompare(a.week) || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
+              }).sort((a, b) => (b.week || "").localeCompare(a.week || "") || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
               const exportCSV = () => { const hdr = ["Week","Marketer","RTO","Count"]; const rows = filtered.map(r => [r.week, r.marketerName, r.rto, r.count]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "applications.csv" }); a.click(); URL.revokeObjectURL(a.href); };
               const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
               const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
@@ -11719,7 +11617,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                   if (coeFilterRto !== "all" && r.rto !== coeFilterRto) return false;
                   if (coeFilterType !== "all" && r.type !== coeFilterType) return false;
                   return true;
-                }).sort((a, b) => b.week.localeCompare(a.week) || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
+                }).sort((a, b) => (b.week || "").localeCompare(a.week || "") || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
                 const exportCSV = () => { const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"]; const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.createdBy, r.onshoreOffshore, r.pathway]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "coe_records.csv" }); a.click(); URL.revokeObjectURL(a.href); };
                 const colHdr = ["Student ID","RTO","Type","Week","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"];
                 return (<>
@@ -11959,12 +11857,13 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   }, [memGrvLoaded]);
 
   const [pilotResponse, setPilotResponse] = useState(null);
+  const [expandedRptDepts, setExpandedRptDepts] = useState({});
   const [pilotLoading, setPilotLoading] = useState(false);
   const [pilotRefresh, setPilotRefresh] = useState(0);
   const PILOT_DAILY_LIMIT = 5;
-  const pilotUsageCount = (() => { try { return parseInt(localStorage.getItem(`pilot_usage_${user.id}_${new Date().toISOString().slice(0,10)}`) || "0", 10); } catch { return 0; } })();
+  const pilotUsageCount = (() => { try { return parseInt(localStorage.getItem(`pilot_usage_${user.id}_${localDateKey()}`) || "0", 10); } catch { return 0; } })();
   async function sendPilotQuestion(question) {
-    const todayKey = new Date().toISOString().slice(0, 10);
+    const todayKey = localDateKey();
     const storageKey = `pilot_usage_${user.id}_${todayKey}`;
     const currentCount = parseInt(localStorage.getItem(storageKey) || "0", 10);
     if (currentCount >= PILOT_DAILY_LIMIT || pilotLoading) return;
@@ -11972,7 +11871,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotResponse({ question, answer: null });
     try {
       const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [], grvData: memGrvData });
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
+      const res = await apiFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
       const answer = data.answer || data.error || "No response.";
@@ -12624,7 +12523,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           )}
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Btn small onClick={() => setYesConfirm(null)}>Cancel</Btn>
-                            <Btn primary small disabled={yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: Number(yesConfirm.actual) || 0 }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
+                            <Btn primary small disabled={yesConfirm.actual !== "" && meetsTarget(yesConfirm.actual, s.krOperator, s.krTarget) === false} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "yes", actualValue: numOrNull(yesConfirm.actual) }); setYesConfirm(null); }}>✓ Submit Yes</Btn>
                           </div>
                         </div>
                       )}
@@ -12645,7 +12544,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           </div>
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
                             <Btn small onClick={() => setNoReason(null)}>Cancel</Btn>
-                            <Btn danger small disabled={noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: Number(noReason.actual) || 0 }); setNoReason(null); }}>Submit No</Btn>
+                            <Btn danger small disabled={noReason.actual !== "" && meetsTarget(noReason.actual, s.krOperator, s.krTarget) === true} onClick={() => { dispatch({ type: "ANSWER_OKR_SUBMISSION", id: s.id, answer: "no", reason: noReason.reason.trim() || null, actualValue: numOrNull(noReason.actual) }); setNoReason(null); }}>Submit No</Btn>
                           </div>
                         </div>
                       )}
@@ -12768,7 +12667,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                 </div>
                                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                   <Btn small onClick={() => setDesignatedRejectOkr(null)}>Cancel</Btn>
-                                  <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: Number(designatedRejectOkr.actual) || 0 }); setDesignatedRejectOkr(null); }}>Confirm Reject</Btn>
+                                  <Btn danger small onClick={() => { dispatch({ type: "APPROVE_OKR_SUBMISSION", id: s.id, status: "rejected", approvedBy: user.id, actualValue: numOrNull(designatedRejectOkr.actual) }); setDesignatedRejectOkr(null); }}>Confirm Reject</Btn>
                                 </div>
                               </div>
                             )}
@@ -13109,10 +13008,10 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           <Header title="OKR Reports" sub="Company-wide reports — published at end of each period" />
           <Pane>
             {(() => {
-              const visibleReports = monthlyReports;
+              const visibleReports = [...monthlyReports].sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || "") || String(b.id).localeCompare(String(a.id)));
               if (visibleReports.length === 0) return <EmptyState text="No OKR reports published yet." />;
               const rPersonStr = p => typeof p === "string" ? p : `${p.name} — ${Number(p.rate).toFixed(1)}%`;
-              const sparkData = [...visibleReports].reverse().slice(0, 6).reverse();
+              const sparkData = visibleReports.slice(0, 6).reverse();
               const sparkW = 280, sparkH = 44;
               const sMin = Math.min(...sparkData.map(r => r.data.companyRate));
               const sMax = Math.max(...sparkData.map(r => r.data.companyRate));
@@ -13220,8 +13119,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           const stageInfo = id => PURSUIT_STAGES.find(s => s.id === id) || PURSUIT_STAGES[0];
           const byStage = PURSUIT_STAGES.map(st => ({ ...st, items: activePursuits.filter(p => (p.stage || "opportunity") === st.id) })).filter(st => st.items.length > 0);
           const openMemEdit = p => { setEditPursuitMemId(p.id); setEditPursuitMemForm({ name: p.name, stage: p.stage || "opportunity", outcome: p.outcome || "active", estimatedValue: p.estimatedValue != null ? String(p.estimatedValue) : "", probability: p.probability != null ? String(p.probability) : "", deadline: p.deadline || "", nextAction: p.nextAction || "", notes: p.notes || "" }); };
-          const saveMemEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitMemForm.name.trim() || p.name, stage: editPursuitMemForm.stage, outcome: editPursuitMemForm.outcome, estimatedValue: editPursuitMemForm.estimatedValue !== "" ? Number(editPursuitMemForm.estimatedValue) : null, probability: editPursuitMemForm.probability !== "" ? Number(editPursuitMemForm.probability) : null, deadline: editPursuitMemForm.deadline, nextAction: editPursuitMemForm.nextAction.trim(), notes: editPursuitMemForm.notes.trim(), updatedDate: new Date().toISOString().slice(0, 10) } }); setEditPursuitMemId(null); };
-          const createMemPursuit = () => { if (!newPursuitMem.name.trim()) return; dispatch({ type: "ADD_PROJECT", project: { id: `pursuit_${Date.now()}`, type: "pursuit", mgrId: user.id, name: newPursuitMem.name.trim(), stage: "opportunity", outcome: "active", estimatedValue: newPursuitMem.estimatedValue !== "" ? Number(newPursuitMem.estimatedValue) : null, probability: newPursuitMem.probability !== "" ? Number(newPursuitMem.probability) : null, deadline: newPursuitMem.deadline, nextAction: newPursuitMem.nextAction.trim(), notes: "", startDate: new Date().toISOString().slice(0, 10), updatedDate: "" } }); setShowNewPursuitMem(false); setNewPursuitMem({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); };
+          const saveMemEdit = p => { dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { name: editPursuitMemForm.name.trim() || p.name, stage: editPursuitMemForm.stage, outcome: editPursuitMemForm.outcome, estimatedValue: editPursuitMemForm.estimatedValue !== "" ? Number(editPursuitMemForm.estimatedValue) : null, probability: editPursuitMemForm.probability !== "" ? Number(editPursuitMemForm.probability) : null, deadline: editPursuitMemForm.deadline, nextAction: editPursuitMemForm.nextAction.trim(), notes: editPursuitMemForm.notes.trim(), updatedDate: localDateKey() } }); setEditPursuitMemId(null); };
+          const createMemPursuit = () => { if (!newPursuitMem.name.trim()) return; dispatch({ type: "ADD_PROJECT", project: { id: `pursuit_${Date.now()}`, type: "pursuit", mgrId: user.id, name: newPursuitMem.name.trim(), stage: "opportunity", outcome: "active", estimatedValue: newPursuitMem.estimatedValue !== "" ? Number(newPursuitMem.estimatedValue) : null, probability: newPursuitMem.probability !== "" ? Number(newPursuitMem.probability) : null, deadline: newPursuitMem.deadline, nextAction: newPursuitMem.nextAction.trim(), notes: "", startDate: localDateKey(), updatedDate: "" } }); setShowNewPursuitMem(false); setNewPursuitMem({ name: "", estimatedValue: "", probability: "", deadline: "", nextAction: "" }); };
           const MemEditForm = ({ p }) => (
             <div style={{ marginTop: 12, padding: "12px 14px", background: T.raised, borderRadius: 8, border: `1px solid ${T.border}` }}>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 10 }}>
@@ -13479,7 +13378,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 if (enrFilterMarketer !== "all" && r.marketerName !== enrFilterMarketer) return false;
                 if (enrFilterRto !== "all" && r.rto !== enrFilterRto) return false;
                 return true;
-              }).sort((a, b) => b.week.localeCompare(a.week) || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
+              }).sort((a, b) => (b.week || "").localeCompare(a.week || "") || a.marketerName.localeCompare(b.marketerName) || a.rto.localeCompare(b.rto));
               const exportCSV = () => { const hdr = ["Week","Marketer","RTO","Count"]; const rows = filtered.map(r => [r.week, r.marketerName, r.rto, r.count]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "applications.csv" }); a.click(); URL.revokeObjectURL(a.href); };
               const selCss = { padding: "7px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 13, fontFamily: F.body };
               const thCss = { padding: "8px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
@@ -13608,7 +13507,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                   if (coeFilterRto !== "all" && r.rto !== coeFilterRto) return false;
                   if (coeFilterType !== "all" && r.type !== coeFilterType) return false;
                   return true;
-                }).sort((a, b) => b.week.localeCompare(a.week) || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
+                }).sort((a, b) => (b.week || "").localeCompare(a.week || "") || a.rto.localeCompare(b.rto) || a.type.localeCompare(b.type));
                 const exportCSV = () => { const hdr = ["Student ID","RTO","Type","Week","Period","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"]; const rows = filtered.map(r => [r.studentId, r.rto, r.type, r.week, r.period, r.courseName, r.intakeDate, r.agent, r.marketer, r.createdBy, r.onshoreOffshore, r.pathway]); const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n"); const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "coe_records.csv" }); a.click(); URL.revokeObjectURL(a.href); };
                 const colHdr = ["Student ID","RTO","Type","Week","Course Name","Intake Date","Agent","Marketer","Created By","Onshore/Offshore","Pathway"];
                 return (<>
@@ -13957,7 +13856,10 @@ function appReducer(state, action) {
       return { ...state, okrSubmissions: newAutoSubs, memberData: autoMemberData, depts: autoDepts };
     }
     case "APPROVE_OKR_SUBMISSION": {
-      const newSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, approval: action.status, approvedBy: action.approvedBy } : s);
+      const newSubs = (state.okrSubmissions || []).map(s => s.id !== action.id ? s : {
+        ...s, approval: action.status, approvedBy: action.approvedBy,
+        ...(action.status === "rejected" ? { reviewerActual: action.actualValue ?? null } : {}),
+      });
       const sub = (state.okrSubmissions || []).find(s => s.id === action.id);
       if (!sub) return { ...state, okrSubmissions: newSubs };
       const actualToWrite = action.status === "approved"
@@ -14016,8 +13918,10 @@ function appReducer(state, action) {
     case "EDIT_APPROVED_SUBMISSION": {
       const sub = (state.okrSubmissions || []).find(s => s.id === action.id);
       if (!sub) return state;
-      const newActual = action.actualValue;
-      const newSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, actualValue: newActual, ...(action.answer !== undefined ? { answer: action.answer } : {}) } : s);
+      const subActual = action.actualValue ?? sub.actualValue ?? null;
+      const newAnswer = action.answer !== undefined ? action.answer : sub.answer;
+      const newActual = subActual ?? (newAnswer === "yes" ? sub.krTarget : null);
+      const newSubs = (state.okrSubmissions || []).map(s => s.id === action.id ? { ...s, actualValue: subActual, answer: newAnswer } : s);
       if (sub.approval !== "approved") return { ...state, okrSubmissions: newSubs };
       const md = state.memberData[sub.memberId];
       if (!md) return { ...state, okrSubmissions: newSubs };
@@ -14055,11 +13959,12 @@ function appReducer(state, action) {
       if (!sub || sub.approval !== "approved") return { ...state, okrSubmissions: remaining };
       const isMonthly = !!(state.memberData[sub.memberId]?.krs?.find(k => k.id === sub.krId)?.monthlyTargets);
       const mk = (sub.periodKey || "").slice(0, 7);
-      // Revert member's personal KR to last remaining approved value, or null (no submission)
-      const memberOtherApproved = remaining.filter(s => s.memberId === sub.memberId && s.krId === sub.krId && s.approval === "approved");
-      const memberNewActual = memberOtherApproved.length > 0
-        ? (memberOtherApproved[memberOtherApproved.length - 1].actualValue ?? memberOtherApproved[memberOtherApproved.length - 1].krTarget ?? null)
-        : null;
+      // Revert member's personal KR to the latest remaining approved value (same month for monthly KRs), or null
+      const memberLastApproved = remaining
+        .filter(s => s.memberId === sub.memberId && s.krId === sub.krId && s.approval === "approved" && (!isMonthly || (s.periodKey || "").slice(0, 7) === mk))
+        .sort((a, b) => (a.answeredAt || "").localeCompare(b.answeredAt || ""))
+        .pop();
+      const memberNewActual = memberLastApproved ? (memberLastApproved.actualValue ?? memberLastApproved.krTarget ?? null) : null;
       const md = state.memberData[sub.memberId];
       let newMemberData = state.memberData;
       if (md) {
@@ -14234,22 +14139,18 @@ export default function App({ redirectAccount = null }) {
   const syncErrTimer = useRef(null);
   const { instance, accounts } = useMsal();
   const [state, rawDispatch] = useState({
-    users: INIT_USERS,
-    depts: INIT_DEPTS,
-    memberData: INIT_MEMBER_DATA,
-    weeklySubs: INIT_WEEKLY_SUBS,
-    okrSubmissions: [],
-    emailLogs: [],
-    mgrSprints: INIT_MGR_SPRINTS,
-    projects: INIT_PROJECTS,
-    monthlyReports: INIT_MONTHLY_REPORTS,
+    users: [], depts: [], memberData: {}, weeklySubs: [], okrSubmissions: [], emailLogs: [],
+    mgrSprints: [], projects: [], monthlyReports: [],
     settings: { id: "settings", colOrder: ["id", "label", "operator", "period", "target", "actual", "unit", "dataSource"] },
   });
+  // Nothing may be written until real data has loaded, or the empty initial state would be diffed against the DB.
+  const dbLoadedRef = useRef(false);
 
-  // Dispatch updates local state immediately (optimistic), then syncs to Cosmos DB in background.
+  // Dispatch updates local state immediately (optimistic), then syncs to Supabase in background.
   const dispatch = useCallback((action) => {
     rawDispatch(prev => {
       const next = appReducer(prev, action);
+      if (!dbLoadedRef.current) return next;
       syncChanges(prev, next).catch(err => {
         console.error("[DB sync error]", err.message);
         setSyncErr("Changes could not be saved — check your connection and try again.");
@@ -14276,6 +14177,7 @@ export default function App({ redirectAccount = null }) {
     const fixedMemberData = Object.fromEntries(
       (data.memberData || []).map(m => [m.id, { krs: fixActuals(m.krs || []) }])
     );
+    dbLoadedRef.current = true;
     rawDispatch(() => ({
       users: data.users,
       depts: fixedDepts,
@@ -14290,39 +14192,32 @@ export default function App({ redirectAccount = null }) {
     }));
   }, []); // eslint-disable-line
 
+  // Waits for in-flight writes first, and discards the result if the user edited something while it loaded,
+  // so a reload can never roll back a change that hasn't reached the database yet.
   const reloadState = useCallback(async () => {
     try {
+      await flushWrites();
+      const seq = currentWriteSeq();
       const data = await dbGet();
+      if (currentWriteSeq() !== seq) return;
       if (data.users?.length) applyLoadedData(data);
     } catch (err) {
       console.error("Reload failed:", err);
     }
   }, [applyLoadedData]);
 
-  // On mount: load all data from Supabase. Seed the DB with initial data if it is empty.
+  // On mount: load all data from Supabase. There is no offline mode: without real data nobody can sign in
+  // and nothing is written.
   useEffect(() => {
     dbGet()
       .then(data => {
-        if (data.users?.length) {
-          applyLoadedData(data);
-        } else {
-          // First run — seed the database with the built-in initial data.
-          dbSeed({
-            users: INIT_USERS,
-            depts: INIT_DEPTS,
-            memberData: Object.entries(INIT_MEMBER_DATA).map(([id, d]) => ({ id, ...d })),
-            weeklySubs: INIT_WEEKLY_SUBS,
-            mgrSprints: INIT_MGR_SPRINTS,
-            projects: INIT_PROJECTS,
-            monthlyReports: INIT_MONTHLY_REPORTS,
-          }).catch(console.error);
-        }
+        if (!data.users?.length) throw new Error("the database returned no users");
+        applyLoadedData(data);
         setDbReady(true);
       })
       .catch(err => {
-        console.error("DB load failed, falling back to in-memory data:", err);
-        setDbError("Could not connect to database. Running in offline mode — changes will not be saved.");
-        setDbReady(true);
+        console.error("DB load failed:", err);
+        setDbError("Could not load data from the database. Check your connection and try again.");
       });
   }, []); // eslint-disable-line
 
@@ -14335,6 +14230,7 @@ export default function App({ redirectAccount = null }) {
   const routeByEmail = useCallback((email) => {
     if (!email) return;
     pendingEmailRef.current = email;
+    if (!dbLoadedRef.current) return;
     const lc = email.trim().toLowerCase();
     const matched = usersRef.current.find(u => u.email.trim().toLowerCase() === lc);
     if (matched) {
@@ -14378,9 +14274,9 @@ export default function App({ redirectAccount = null }) {
     if (dbReady && pendingEmailRef.current && !user) routeByEmail(pendingEmailRef.current);
   }, [dbReady]); // eslint-disable-line
 
-  if (!dbReady) return <LoadingScreen error={dbError || null} />;
+  if (!dbReady) return <LoadingScreen error={dbError || null} onRetry={() => window.location.reload()} />;
 
-  if (!user) return <LoginPage onLogin={setUser} users={state.users} msalErr={msalErr} onDismissErr={() => { setMsalErr(""); try { instance.clearCache(); } catch (_) {} }} />;
+  if (!user) return <LoginPage msalErr={msalErr} onDismissErr={() => { setMsalErr(""); try { instance.clearCache(); } catch (_) {} }} />;
   const logout = () => {
     setUser(null);
     setOriginalAdmin(null);
@@ -14391,18 +14287,10 @@ export default function App({ redirectAccount = null }) {
   const onExitImpersonate = () => { setUser(originalAdmin); setOriginalAdmin(null); };
 
   // Always derive the active user from state.users so admin edits (role, title, dept, etc.) are reflected immediately.
-  // Email fallback handles the case where INIT_USERS matched by email before the DB loaded, but the DB user has a different ID.
-  const activeUser = state.users.find(u => u.id === user.id)
-    || state.users.find(u => u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase())
-    || user;
+  const activeUser = state.users.find(u => u.id === user.id) || user;
 
-  const offlineBanner = dbError ? (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: T.badDim, borderTop: `1px solid ${T.badBorder}`, color: T.bad, fontSize: 13, padding: "8px 20px", textAlign: "center", zIndex: 9999 }}>
-      ⚠ {dbError}
-    </div>
-  ) : null;
   const syncErrToast = syncErr ? (
-    <div style={{ position: "fixed", bottom: dbError ? 40 : 24, right: 24, background: T.bad, color: "#fff", borderRadius: 12, padding: "12px 18px", zIndex: 9999, fontSize: 13, fontWeight: 600, maxWidth: 340, boxShadow: "0 4px 18px rgba(0,0,0,0.22)", display: "flex", alignItems: "center", gap: 10 }}>
+    <div style={{ position: "fixed", bottom: 24, right: 24, background: T.bad, color: "#fff", borderRadius: 12, padding: "12px 18px", zIndex: 9999, fontSize: 13, fontWeight: 600, maxWidth: 340, boxShadow: "0 4px 18px rgba(0,0,0,0.22)", display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ fontSize: 18 }}>⚠</span>
       <span>{syncErr}</span>
     </div>
@@ -14416,7 +14304,7 @@ export default function App({ redirectAccount = null }) {
     </div>
   ) : null;
 
-  if (activeUser.role === "admin")   return <>{offlineBanner}{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} onImpersonate={onImpersonate} /></>;
-  if (activeUser.role === "manager") return <>{offlineBanner}{syncErrToast}{impersonationBanner}<ManagerPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
-  return <>{offlineBanner}{syncErrToast}{impersonationBanner}<MemberPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
+  if (activeUser.role === "admin")   return <>{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} onImpersonate={onImpersonate} /></>;
+  if (activeUser.role === "manager") return <>{syncErrToast}{impersonationBanner}<ManagerPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
+  return <>{syncErrToast}{impersonationBanner}<MemberPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
 }

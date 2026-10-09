@@ -1,9 +1,11 @@
 import nodemailer from "nodemailer";
+import { requireUser, sendAuthError, esc } from "./_lib/auth.js";
 
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://okr.nietgroup.com.au",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Vary": "Origin",
 };
 
 export default async function handler(req, res) {
@@ -11,11 +13,14 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 
+  try { await requireUser(req, { roles: ["admin"] }); } catch (err) { return sendAuthError(res, err); }
+
   const { to, name, period, periodKey, dateRange, krs, sections, template = {}, overdueSubs = [] } = req.body || {};
+  if (typeof to !== "string") { res.status(400).json({ error: "Send to one recipient per request." }); return; }
 
   // Restrict recipients to known org domains — prevents open relay abuse
   const ALLOWED_DOMAINS = ["niet.edu.au", "charltonbrown.edu.au", "educare.edu.au", "rhodes.edu.au"];
-  const toAddresses = Array.isArray(to) ? to : [to];
+  const toAddresses = [to];
   const invalidRecipient = toAddresses.some(addr => {
     const domain = (typeof addr === "string" ? addr : "").split("@")[1]?.toLowerCase();
     return !domain || !ALLOWED_DOMAINS.includes(domain);
@@ -62,22 +67,22 @@ export default async function handler(req, res) {
       .replace(/\{periodKey\}/g, firstSection.periodKey || "");
   };
 
-  const fromName   = template.fromName || "NIET Group OKRs";
+  const fromName   = String(template.fromName || "NIET Group OKRs").replace(/["\r\n<>]/g, "").slice(0, 80);
   const subject    = isMultiPeriod
     ? `Action Required: ${periodLabel} KPI Check-In`
     : resolveTmpl("subject", `Action Required: ${periodLabel} KPI Check-In — ${firstSection.dateRange || firstSection.periodKey || ""}`);
   const bodyText   = resolveTmpl("body", `Here are your ${periodLower} KPI targets.\nPlease log in to the portal and mark whether you have met each target.`);
-  const ctaText    = template.ctaText  || "Submit My Check-In →";
-  const footerText = (template.footer || "You are receiving this because you have KPI targets in the NIET Group OKRs system.\nPlease do not reply to this email.").replace(/\n/g, "<br/>");
+  const ctaText    = esc(template.ctaText || "Submit My Check-In →");
+  const footerText = esc(template.footer ||"You are receiving this because you have KPI targets in the NIET Group OKRs system.\nPlease do not reply to this email.").replace(/\n/g, "<br/>");
 
-  const opHtml = op => op === ">=" ? "&ge;" : op === "<=" ? "&le;" : op === ">" ? "&gt;" : op === "<" ? "&lt;" : op || "&ge;";
+  const opHtml = op => op === ">=" ? "&ge;" : op === "<=" ? "&le;" : op === ">" ? "&gt;" : op === "<" ? "&lt;" : esc(op || "") || "&ge;";
   const buildKrRows = (krs) => krs.map(kr => `
     <tr>
-      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:14px">${kr.label || "—"}${kr.type === "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Tracker</span>' : ""}${kr.type === "progress" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0071e3;background:#e8f0fe;border:1px solid #93c5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Progress</span>' : ""}${kr.isMonthly && kr.type !== "tracker" && kr.type !== "progress" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Monthly</span>' : ""}</td>
+      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:14px">${esc(kr.label || "—")}${kr.type === "tracker" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Tracker</span>' : ""}${kr.type === "progress" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0071e3;background:#e8f0fe;border:1px solid #93c5fd;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Progress</span>' : ""}${kr.isMonthly && kr.type !== "tracker" && kr.type !== "progress" ? ' <span style="display:inline-block;font-size:10px;font-weight:700;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:middle">Monthly</span>' : ""}</td>
       <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:14px;font-family:monospace">
-        ${kr.type === "tracker" ? '<em style="color:#7c3aed;font-style:italic;font-family:sans-serif">Record numbers only</em>' : kr.type === "progress" ? `<em style="color:#0071e3;font-style:italic;font-family:sans-serif">Record cumulative progress toward ${kr.target != null ? kr.target : "—"}${kr.unit ? " " + kr.unit : ""}</em>` : (kr.target != null ? `${opHtml(kr.operator)} ${kr.target}` : "—")}
+        ${kr.type === "tracker" ? '<em style="color:#7c3aed;font-style:italic;font-family:sans-serif">Record numbers only</em>' : kr.type === "progress" ? `<em style="color:#0071e3;font-style:italic;font-family:sans-serif">Record cumulative progress toward ${kr.target != null ? esc(kr.target) : "—"}${kr.unit ? " " + esc(kr.unit) : ""}</em>` : (kr.target != null ? `${opHtml(kr.operator)} ${esc(kr.target)}` : "—")}
       </td>
-      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6e6e73">${kr.type === "progress" ? "—" : (kr.unit || "—")}</td>
+      <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6e6e73">${kr.type === "progress" ? "—" : esc(kr.unit || "—")}</td>
     </tr>`).join("");
 
   const TABLE_HEADER = `
@@ -95,7 +100,7 @@ export default async function handler(req, res) {
       const secLabel = PERIOD_LABELS[sec.period] || sec.period;
       return `
       <div style="margin-bottom:24px">
-        <div style="font-size:11px;font-weight:700;color:#0071e3;text-transform:uppercase;letter-spacing:0.07em;padding:7px 14px;background:#f0f7ff;border-left:3px solid #0071e3;border-radius:0 4px 4px 0;margin-bottom:6px">${secLabel} Check-In${sec.dateRange ? ` · <span style="font-weight:400;color:#444">${sec.dateRange}</span>` : ""}</div>
+        <div style="font-size:11px;font-weight:700;color:#0071e3;text-transform:uppercase;letter-spacing:0.07em;padding:7px 14px;background:#f0f7ff;border-left:3px solid #0071e3;border-radius:0 4px 4px 0;margin-bottom:6px">${esc(secLabel)} Check-In${sec.dateRange ? ` · <span style="font-weight:400;color:#444">${esc(sec.dateRange)}</span>` : ""}</div>
         <table style="width:100%;border-collapse:collapse">
           ${TABLE_HEADER}
           <tbody>${buildKrRows(sec.krs)}</tbody>
@@ -104,7 +109,7 @@ export default async function handler(req, res) {
     }).join("");
   } else {
     krContent = `
-      ${firstSection.dateRange ? `<div style="background:#f0f7ff;border-left:4px solid #0071e3;padding:10px 14px;border-radius:4px;margin:0 0 20px;font-size:13px;color:#1d1d1f"><strong>Review period:</strong> ${firstSection.dateRange}</div>` : ""}
+      ${firstSection.dateRange ? `<div style="background:#f0f7ff;border-left:4px solid #0071e3;padding:10px 14px;border-radius:4px;margin:0 0 20px;font-size:13px;color:#1d1d1f"><strong>Review period:</strong> ${esc(firstSection.dateRange)}</div>` : ""}
       <table style="width:100%;border-collapse:collapse;margin:0 0 24px">
         ${TABLE_HEADER}
         <tbody>${buildKrRows(firstSection.krs)}</tbody>
@@ -119,8 +124,8 @@ export default async function handler(req, res) {
       <div style="font-size:13px;color:#6e6e73;margin-bottom:10px">You also have unanswered check-ins from previous periods:</div>
       <table style="width:100%;border-collapse:collapse">
         ${overdueSubs.map(s => `<tr>
-          <td style="padding:5px 0;font-size:13px;color:#1d1d1f;border-bottom:1px solid #fed7aa">${s.krLabel || "—"}</td>
-          <td style="padding:5px 0;font-size:12px;color:#b45309;text-align:right;white-space:nowrap;border-bottom:1px solid #fed7aa">${(PERIOD_LABELS[s.period] || s.period) + (s.dateRange ? " · " + s.dateRange : "")}</td>
+          <td style="padding:5px 0;font-size:13px;color:#1d1d1f;border-bottom:1px solid #fed7aa">${esc(s.krLabel || "—")}</td>
+          <td style="padding:5px 0;font-size:12px;color:#b45309;text-align:right;white-space:nowrap;border-bottom:1px solid #fed7aa">${esc((PERIOD_LABELS[s.period] || s.period) + (s.dateRange ? " · " + s.dateRange : ""))}</td>
         </tr>`).join("")}
       </table>
     </div>` : "";
@@ -131,10 +136,10 @@ export default async function handler(req, res) {
   <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
     <div style="background-color:#0071e3;background:linear-gradient(135deg,#0071e3,#6b47dc);padding:28px 32px">
       <div style="color:#fff;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.8;margin-bottom:6px">NIET Group OKRs System</div>
-      <div style="color:#fff;font-size:22px;font-weight:700">${periodLabel} KPI Check-In</div>
+      <div style="color:#fff;font-size:22px;font-weight:700">${esc(periodLabel)} KPI Check-In</div>
     </div>
     <div style="padding:28px 32px">
-      <p style="margin:0 0 18px;font-size:15px;color:#1d1d1f">Hi ${name || "there"},</p>
+      <p style="margin:0 0 18px;font-size:15px;color:#1d1d1f">Hi ${esc(name || "there")},</p>
       <p style="margin:0 0 18px;font-size:14px;color:#6e6e73;line-height:1.6">${bodyText.replace(/\n/g, "<br/>")}</p>
       ${krContent}
       ${overdueBlock}
@@ -185,6 +190,6 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true });
   } catch (err) {
     console.error("Email send error:", err.message, err.code, err.response);
-    res.status(500).json({ error: err.message, code: err.code, response: err.response });
+    res.status(502).json({ error: "The email could not be sent. Try again shortly." });
   }
 }

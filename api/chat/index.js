@@ -1,4 +1,9 @@
 import https from "https";
+import { requireUser, sendAuthError } from "../_lib/auth.js";
+
+const MAX_QUESTION = 4000;
+const MAX_SYSTEM = 20000;
+const MAX_CONTEXT = 800000;
 
 const TOOLS = [{
   name: "propose_bulk_action",
@@ -37,26 +42,33 @@ export default async function handler(req, res) {
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Vary", "Origin");
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  try { await requireUser(req); } catch (err) { return sendAuthError(res, err); }
 
   let parsed = req.body;
   if (typeof parsed === "string") { try { parsed = JSON.parse(parsed); } catch { parsed = {}; } }
   if (!parsed || typeof parsed !== "object") parsed = {};
   const { question, systemPrompt, contextData } = parsed;
 
-  if (!question) return res.status(400).json({ error: "missing question" });
+  if (!question || typeof question !== "string") return res.status(400).json({ error: "missing question" });
+  if (question.length > MAX_QUESTION) return res.status(413).json({ error: "Your question is too long. Shorten it and try again." });
+  if ((systemPrompt && String(systemPrompt).length > MAX_SYSTEM) || (contextData && String(contextData).length > MAX_CONTEXT)) {
+    return res.status(413).json({ error: "Too much data was sent with this question." });
+  }
 
   const apiKey = process.env.CLAUDE_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "CLAUDE_API_KEY not configured" });
+  if (!apiKey) { console.error("[chat] CLAUDE_API_KEY not configured"); return res.status(500).json({ error: "The assistant is not configured." }); }
 
   try {
     const result = await callClaude(apiKey, systemPrompt, contextData, question);
     res.status(200).json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("[chat] Claude API error:", err.message);
+    res.status(502).json({ error: "The assistant could not answer right now. Try again shortly." });
   }
 }
 
@@ -66,7 +78,7 @@ function callClaude(apiKey, systemPrompt, contextData, question) {
 
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      model: "claude-opus-4-5",
+      model: "claude-opus-5-5",
       max_tokens: 2048,
       system,
       tools: TOOLS,
