@@ -2455,7 +2455,53 @@ Campus review data is included under "GOOGLE REVIEWS SUMMARY". When asked about 
 ACTIONS:
 When the user asks to approve or reject OKR submissions (e.g. "approve all pending IT submissions", "reject Sarah's check-in"), call the propose_bulk_action tool with appropriate filter criteria. Never describe or confirm the action in text — always use the tool. The frontend will show the admin a full submission review card with all details before any action is executed.`;
 
+// Loads Google Reviews once per portal. waitForData() resolves to the current data, or null when loading
+// failed or took over 5 seconds, so the Pilot never mistakes "not loaded" for "nothing imported".
+function useGoogleReviews() {
+  const [data, setDataState] = useState({});
+  const [status, setStatus] = useState("loading");
+  const [error, setError] = useState(null);
+  const dataRef = useRef({});
+  const promiseRef = useRef(null);
+  const setData = useCallback(updater => {
+    setDataState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      dataRef.current = next;
+      return next;
+    });
+  }, []);
+  const load = useCallback(() => {
+    if (!promiseRef.current) {
+      setStatus("loading");
+      promiseRef.current = dbGetGoogleReviews().then(r => {
+        const bySlug = {};
+        for (const doc of r.google_reviews) bySlug[doc.campusSlug] = doc;
+        dataRef.current = bySlug;
+        setDataState(bySlug);
+        setError(null);
+        setStatus("ready");
+        return true;
+      }).catch(err => {
+        console.error("[google reviews] load failed:", err.message);
+        promiseRef.current = null;
+        setError(err.message);
+        setStatus("error");
+        return false;
+      });
+    }
+    return promiseRef.current;
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const waitForData = useCallback(async () => {
+    const ok = await Promise.race([load(), new Promise(r => setTimeout(() => r(false), 5000))]);
+    return ok ? dataRef.current : null;
+  }, [load]);
+  return { data, setData, status, error, waitForData };
+}
+
+// grvData === null means the data couldn't be loaded, which is different from nothing having been imported.
 function buildGrvContextStr(grvData = {}) {
+  if (grvData === null) return "GOOGLE REVIEWS: The review data could not be loaded for this question. Do NOT say that no reviews have been imported. Tell the user the review data is temporarily unavailable and to ask again in a moment.";
   const GRV_CAMPUSES = [
     { slug: "charlton-brown-brisbane-cbd", label: "Charlton Brown Brisbane CBD" },
     { slug: "charlton-brown-southport",    label: "Charlton Brown Southport"    },
@@ -2492,6 +2538,22 @@ function buildGrvContextStr(grvData = {}) {
       }).join("\n")
     : "\nRECENT NEGATIVE REVIEWS (1-2★, last 90 days): None found.";
   return `GOOGLE REVIEWS SUMMARY (Outscraper import, campuses sorted as listed):\n${summaryLines}${negSection}`;
+}
+
+// Saved Pilot conversations keep only question/answer pairs: a trailing question whose answer
+// hasn't arrived yet is left out, so a saved conversation never shows a question without a reply.
+function completedPilotMessages(history) {
+  const msgs = (history || []).filter(m => m.role === "user" || m.role === "ai");
+  while (msgs.length && msgs[msgs.length - 1].role === "user") msgs.pop();
+  return msgs;
+}
+function readPilotDraft() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("niet_pilot_draft") || "null");
+    if (Array.isArray(raw)) return { id: Date.now(), messages: completedPilotMessages(raw) };
+    if (raw && Array.isArray(raw.messages)) return { id: raw.id || Date.now(), messages: completedPilotMessages(raw.messages) };
+  } catch { /* corrupt or blocked storage: start a new conversation */ }
+  return { id: Date.now(), messages: [] };
 }
 
 const PURSUIT_STAGES = [
@@ -2682,7 +2744,10 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [adminOkrPeriod, setAdminOkrPeriod] = useState("all");
   const [expandedLog, setExpandedLog] = useState(null);
   const [resendingEmail, setResendingEmail] = useState(null); // `${logId}:${email}`
-  const [chatHistory, setChatHistory] = useState([]);
+  const [initialPilotDraft] = useState(readPilotDraft);
+  const [chatHistory, setChatHistory] = useState(initialPilotDraft.messages);
+  // One id per conversation, so saving it again updates the same Recent Conversations entry
+  const chatSessionIdRef = useRef(initialPilotDraft.id);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatPromptOpen, setChatPromptOpen] = useState(false);
@@ -2690,10 +2755,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   const [pilotSetExpanded, setPilotSetExpanded] = useState(null);
   const [pilotNewSetName, setPilotNewSetName] = useState("");
   const [pilotNewQ, setPilotNewQ] = useState({});
-  const [grvLoaded, setGrvLoaded] = useState(false);
-  const [grvLoading, setGrvLoading] = useState(false);
-  const [grvError, setGrvError] = useState(null);
-  const [grvData, setGrvData] = useState({});
+  const { data: grvData, setData: setGrvData, status: grvStatus, error: grvError, waitForData: waitForGrv } = useGoogleReviews();
   const [grvCampus, setGrvCampus] = useState("charlton-brown-brisbane-cbd");
   const [grvStarFilter, setGrvStarFilter] = useState(0);
   const [grvSearch, setGrvSearch] = useState("");
@@ -2716,18 +2778,6 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       setLoginLogsError(null);
     }).catch(e => { setLoginLogsError(e.message); setLoginLogsLoading(false); setLoginLogsLoaded(true); });
   }, [page, loginLogsLoaded, loginLogsLoading]);
-  useEffect(() => {
-    if (page !== "google-reviews") return;
-    if (grvLoaded || grvLoading) return;
-    setGrvLoading(true);
-    dbGetGoogleReviews().then(r => {
-      const bySlug = {};
-      for (const doc of r.google_reviews) bySlug[doc.campusSlug] = doc;
-      setGrvData(bySlug);
-      setGrvLoaded(true);
-      setGrvLoading(false);
-    }).catch(e => { setGrvError(e.message); setGrvLoaded(true); setGrvLoading(false); });
-  }, [page, grvLoaded, grvLoading]);
   const chatEndRef = useRef(null);
   const chatHistoryRef = useRef([]);
   const pilotPrevPageRef = useRef(null);
@@ -2735,26 +2785,32 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     try { return JSON.parse(localStorage.getItem("niet_pilot_sessions") || "[]"); } catch { return []; }
   });
 
-  function archivePilotSession(history) {
-    const msgs = history.filter(m => m.role === "user" || m.role === "ai");
-    if (msgs.length === 0) return;
+  function archivePilotSession(history, { onlyIfSaved = false } = {}) {
+    const msgs = completedPilotMessages(history);
     const firstUser = msgs.find(m => m.role === "user");
     if (!firstUser) return;
-    const session = {
-      id: Date.now(),
-      date: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
-      preview: firstUser.text.slice(0, 80),
-      messages: msgs,
-    };
+    const id = chatSessionIdRef.current;
     setPilotSessions(prev => {
-      if (prev[0] && prev[0].preview === session.preview && prev[0].messages.length === msgs.length) return prev;
-      const next = [session, ...prev].slice(0, 5);
-      localStorage.setItem("niet_pilot_sessions", JSON.stringify(next));
+      const existing = prev.find(x => x.id === id);
+      if (onlyIfSaved && !existing) return prev;
+      if (existing && JSON.stringify(existing.messages) === JSON.stringify(msgs)) return prev;
+      const session = {
+        id,
+        date: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+        preview: firstUser.text.slice(0, 80),
+        messages: msgs,
+      };
+      const next = [session, ...prev.filter(x => x.id !== id)].slice(0, 5);
+      try { localStorage.setItem("niet_pilot_sessions", JSON.stringify(next)); } catch { /* storage full or blocked */ }
       return next;
     });
   }
+  function startNewPilotConversation(messages = [], id = Date.now()) {
+    chatSessionIdRef.current = id;
+    setChatHistory(messages);
+  }
 
-  function buildChatContext() {
+  function buildChatContext(grv = grvData) {
     const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
     const now = new Date();
     const getCompletedYear = p => {
@@ -3112,7 +3168,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       `\n${projectSection}`,
       `\n${enrolmentSection}`,
       `\n${coeSection}`,
-      `\n${buildGrvContextStr(grvData)}`,
+      `\n${buildGrvContextStr(grv)}`,
     ].join("\n");
   }
 
@@ -3153,10 +3209,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     setChatLoading(true);
     const customPrompt = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
     try {
+      const grv = await waitForGrv();
       const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext(), lang: "en" }),
+        body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext(grv), lang: "en" }),
       });
       const text = await res.text();
       let data;
@@ -3179,20 +3236,17 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   // Keep ref in sync so page-change effect can read latest chatHistory without stale closure
   useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
 
-  // Auto-save draft on every message — survives browser refresh
+  // Auto-save the conversation (restored on refresh through the chatHistory initial state). If it is already
+  // listed under Recent Conversations, keep that entry current too — e.g. an answer that arrives after
+  // the user has left the Pilot page.
   useEffect(() => {
-    const msgs = chatHistory.filter(m => m.role === "user" || m.role === "ai");
-    if (msgs.length > 0) localStorage.setItem("niet_pilot_draft", JSON.stringify(msgs));
-    else localStorage.removeItem("niet_pilot_draft");
-  }, [chatHistory]);
-
-  // Restore draft on mount (recover from refresh)
-  useEffect(() => {
+    const msgs = completedPilotMessages(chatHistory);
     try {
-      const draft = JSON.parse(localStorage.getItem("niet_pilot_draft") || "null");
-      if (Array.isArray(draft) && draft.length > 0) setChatHistory(draft);
-    } catch {}
-  }, []);
+      if (msgs.length > 0) localStorage.setItem("niet_pilot_draft", JSON.stringify({ id: chatSessionIdRef.current, messages: msgs }));
+      else localStorage.removeItem("niet_pilot_draft");
+    } catch { /* storage full or blocked */ }
+    archivePilotSession(chatHistory, { onlyIfSaved: true });
+  }, [chatHistory]); // eslint-disable-line
 
   // Archive session when navigating away from Pilot page
   useEffect(() => {
@@ -7548,7 +7602,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {chatHistory.length > 0 && <button onClick={() => { archivePilotSession(chatHistory); localStorage.removeItem("niet_pilot_draft"); setChatHistory([]); }} style={{ background: "none", border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 12, color: T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>Clear chat</button>}
+                  {chatHistory.length > 0 && <button onClick={() => { archivePilotSession(chatHistory); startNewPilotConversation(); }} style={{ background: "none", border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 12, color: T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>Clear chat</button>}
                   <button onClick={() => { setChatPromptOpen(o => !o); setQSetsOpen(false); }} style={{ background: chatPromptOpen ? T.brandDim : "none", border: `1px solid ${chatPromptOpen ? T.brandBorder : T.border}`, cursor: "pointer", fontSize: 12, color: chatPromptOpen ? T.brand : T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>⚙ System Prompt</button>
                   <button onClick={() => { setQSetsOpen(o => !o); setChatPromptOpen(false); }} style={{ background: qSetsOpen ? "#fce7f3" : "none", border: `1px solid ${qSetsOpen ? "#f9a8d4" : T.border}`, cursor: "pointer", fontSize: 12, color: qSetsOpen ? "#9d174d" : T.textMuted, fontFamily: F.body, padding: "5px 12px", borderRadius: 8 }}>✈ Question Sets</button>
                 </div>
@@ -7644,7 +7698,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       <div style={{ marginBottom: 32 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Recent Conversations</div>
                         {pilotSessions.map(s => (
-                          <button key={s.id} onClick={() => setChatHistory(s.messages)}
+                          <button key={s.id} onClick={() => startNewPilotConversation(completedPilotMessages(s.messages), s.id)}
                             style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "11px 16px", marginBottom: 8, cursor: "pointer", fontFamily: F.body, textAlign: "left" }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = T.brandBorder; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.brandDim}`; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "none"; }}>
@@ -7821,9 +7875,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   <div style={{ padding: "10px 16px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 8, color: T.warn, fontSize: 13, marginBottom: 16 }}>Load error: {grvError}</div>
                 )}
 
-                {grvLoading && <div style={{ color: T.textMuted, fontSize: 14, padding: "40px 0", textAlign: "center" }}>Loading…</div>}
+                {grvStatus === "loading" && <div style={{ color: T.textMuted, fontSize: 14, padding: "40px 0", textAlign: "center" }}>Loading…</div>}
 
-                {!grvLoading && (
+                {grvStatus !== "loading" && (
                   <>
                     {/* Summary card */}
                     {totalReviews > 0 ? (
@@ -9818,17 +9872,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     }
   }, [coeLoaded, coeLoading, dept?.admissionsAccess]);
 
-  const [mgrGrvData, setMgrGrvData] = useState({});
-  const [mgrGrvLoaded, setMgrGrvLoaded] = useState(false);
-  useEffect(() => {
-    if (mgrGrvLoaded) return;
-    dbGetGoogleReviews().then(r => {
-      const bySlug = {};
-      for (const doc of r.google_reviews) bySlug[doc.campusSlug] = doc;
-      setMgrGrvData(bySlug);
-      setMgrGrvLoaded(true);
-    }).catch(() => setMgrGrvLoaded(true));
-  }, [mgrGrvLoaded]);
+  const { waitForData: waitForGrv } = useGoogleReviews();
 
   const [pilotResponse, setPilotResponse] = useState(null);
   const [expandedRptDepts, setExpandedRptDepts] = useState({});
@@ -9844,7 +9888,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords, cashRecords: mgrCashRecords, grvData: mgrGrvData });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords, cashRecords: mgrCashRecords, grvData: await waitForGrv() });
       const res = await apiFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
@@ -11844,17 +11888,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     }
   }, [coeLoaded, coeLoading, myDept?.admissionsAccess]);
 
-  const [memGrvData, setMemGrvData] = useState({});
-  const [memGrvLoaded, setMemGrvLoaded] = useState(false);
-  useEffect(() => {
-    if (memGrvLoaded) return;
-    dbGetGoogleReviews().then(r => {
-      const bySlug = {};
-      for (const doc of r.google_reviews) bySlug[doc.campusSlug] = doc;
-      setMemGrvData(bySlug);
-      setMemGrvLoaded(true);
-    }).catch(() => setMemGrvLoaded(true));
-  }, [memGrvLoaded]);
+  const { waitForData: waitForGrv } = useGoogleReviews();
 
   const [pilotResponse, setPilotResponse] = useState(null);
   const [expandedRptDepts, setExpandedRptDepts] = useState({});
@@ -11870,7 +11904,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [], grvData: memGrvData });
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [], grvData: await waitForGrv() });
       const res = await apiFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
