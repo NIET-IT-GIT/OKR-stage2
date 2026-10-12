@@ -56,7 +56,12 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  try { await requireUser(req, { roles: ["admin"] }); } catch (err) { return sendAuthError(res, err); }
+  // Every admin; a manager needs both Finance access and the Finance Pack switch (same rule as canUseFinancePack in the app)
+  let caller;
+  try { caller = await requireUser(req); } catch (err) { return sendAuthError(res, err); }
+  if (!(caller.role === "admin" || (caller.role === "manager" && caller.financeAccess && caller.financePackAccess))) {
+    return res.status(403).json({ error: "You don't have access to the Finance Pack. Ask an admin to turn it on for your account." });
+  }
 
   let body = req.body;
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = null; } }

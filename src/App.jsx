@@ -158,6 +158,10 @@ function lastMonthKey(d = new Date()) {
   const x = new Date(d.getFullYear(), d.getMonth() - 1, 1);
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`;
 }
+// Finance Pack: every admin; a manager needs both Finance access and the Finance Pack switch
+function canUseFinancePack(u) {
+  return !!u && u.active !== false && (u.role === "admin" || (u.role === "manager" && !!u.financeAccess && !!u.financePackAccess));
+}
 function monthLabelFor(monthKey) {
   const [y, m] = monthKey.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
@@ -1433,6 +1437,9 @@ function UserMgmtPage({ users: allUsers, depts, projects = [], dispatch, current
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
                 {!isSystem && u.role === "manager" && (
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { financeAccess: !u.financeAccess } })} style={{ background: u.financeAccess ? "#d1fae5" : T.raised, border: `1px solid ${u.financeAccess ? "#6ee7b7" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.financeAccess ? "#065f46" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title="Toggle Financial Performance access">$</button>
+                )}
+                {!isSystem && u.role === "manager" && u.financeAccess && (
+                  <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { financePackAccess: !u.financePackAccess } })} style={{ background: u.financePackAccess ? "#d1fae5" : T.raised, border: `1px solid ${u.financePackAccess ? "#6ee7b7" : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.financePackAccess ? "#065f46" : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={u.financePackAccess ? "Can generate the Finance Pack — click to remove" : "Allow this manager to generate the Finance Pack"}>FP</button>
                 )}
                 {!isSystem && (u.role === "member" || u.role === "manager") && (
                   <button onClick={() => dispatch({ type: "UPDATE_USER", userId: u.id, updates: { excludeFromRate: !u.excludeFromRate } })} style={{ background: u.excludeFromRate ? T.badDim : T.raised, border: `1px solid ${u.excludeFromRate ? T.badBorder : T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: u.excludeFromRate ? T.bad : T.textMuted, fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={u.excludeFromRate ? "Include in dept rate" : "Exclude from dept rate"}>%</button>
@@ -9590,6 +9597,9 @@ function FinancePackReview({ plRecords, cashRecords, user, onClose }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // The draft for a month is shared by everyone who can make the pack; remember which version is on screen
+  const [savedMeta, setSavedMeta] = useState(null);
+  const savedMetaRef = useRef(savedMeta); savedMetaRef.current = savedMeta;
   // Generation takes a while; merge results into what is on screen then, not what was there at the click
   const draftRef = useRef(draft); draftRef.current = draft;
   const notesRef = useRef(notes); notesRef.current = notes;
@@ -9600,6 +9610,7 @@ function FinancePackReview({ plRecords, cashRecords, user, onClose }) {
       if (!alive) return;
       const doc = r.finance_commentary.find(d => d.id === docId);
       if (doc) {
+        setSavedMeta({ updatedAt: doc.updatedAt || null, updatedBy: doc.updatedBy || null, updatedByName: doc.updatedByName || null });
         setNotes(doc.notes || "");
         setDraft(Object.fromEntries(Object.entries(doc.slides || {}).map(([id, e]) => [id, {
           observations: (e.observations || []).join("\n"), drivers: (e.drivers || []).join("\n"), watch: (e.watch || []).join("\n"),
@@ -9629,10 +9640,22 @@ function FinancePackReview({ plRecords, cashRecords, user, onClose }) {
       slides[s.id] = { observations: fpToLines(e.observations).slice(0, 4), drivers: fpToLines(e.drivers).slice(0, 3), watch: fpToLines(e.watch).slice(0, 2),
         source: e.source, factsHash: e.factsHash, generatedAt: e.generatedAt };
     }
-    return { id: docId, month: pack.month, notes: n, slides, updatedAt: new Date().toISOString(), updatedBy: user.id };
+    return { id: docId, month: pack.month, notes: n, slides, updatedAt: new Date().toISOString(), updatedBy: user.id, updatedByName: user.name || "" };
   }
   async function save(d, n) {
-    await dbUpsert("finance_commentary", docFromDraft(d, n));
+    const r = await dbFetchCollections(["finance_commentary"]);
+    const remote = r.finance_commentary.find(x => x.id === docId);
+    const mine = savedMetaRef.current;
+    if (remote?.updatedAt && remote.updatedAt !== mine?.updatedAt && remote.updatedBy !== user.id) {
+      const who = remote.updatedByName || "Someone else";
+      const when = new Date(remote.updatedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+      if (!window.confirm(`${who} saved this month's commentary at ${when}, after you opened it. Saving now replaces their version with yours. Continue?`)) {
+        throw new Error(`${who} saved a newer version, so yours is only on screen. Close and reopen the pack to see theirs, or save again to replace it`);
+      }
+    }
+    const doc = docFromDraft(d, n);
+    await dbUpsert("finance_commentary", doc);
+    setSavedMeta({ updatedAt: doc.updatedAt, updatedBy: doc.updatedBy, updatedByName: doc.updatedByName });
   }
 
   async function requestGroup(slides) {
@@ -9734,6 +9757,11 @@ function FinancePackReview({ plRecords, cashRecords, user, onClose }) {
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Finance Pack · {pack.monthLabel || "no P&L data"}</div>
             <div style={{ fontSize: 13, color: T.textMuted }}>Review the commentary for each slide, then export. Charts and figures come straight from the imported data.</div>
+            {savedMeta?.updatedAt && (
+              <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
+                Last saved by {savedMeta.updatedBy === user.id ? "you" : savedMeta.updatedByName || "another user"} · {new Date(savedMeta.updatedAt).toLocaleString("en-AU", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })}
+              </div>
+            )}
           </div>
           <Btn small onClick={saveDraft} disabled={busy || running || !loaded}>Save draft</Btn>
           <Btn small primary onClick={exportPack} disabled={busy || running || !loaded || !pack.month}>Export pack</Btn>
@@ -10397,6 +10425,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [mgrPlLoaded, setMgrPlLoaded] = useState(false);
   const [mgrPlLoading, setMgrPlLoading] = useState(false);
   const [mgrPlTab, setMgrPlTab] = useState("overview");
+  const [mgrFpOpen, setMgrFpOpen] = useState(false);
   useEffect(() => {
     if (!user.financeAccess) return;
     if (!mgrPlLoaded && !mgrPlLoading) {
@@ -11760,6 +11789,11 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 {[["overview","Overview"],["data","Line Items"]].map(([v, label]) => (
                   <Btn key={v} small primary={mgrPlTab === v} onClick={() => setMgrPlTab(v)}>{label}</Btn>
                 ))}
+                {canUseFinancePack(user) && mgrPlRecords.length > 0 && (<>
+                  <div style={{ flex: 1 }} />
+                  <Btn small disabled={!mgrCashLoaded} onClick={() => setMgrFpOpen(true)}>{mgrCashLoaded ? "⬡ Generate Finance Pack" : "Loading data…"}</Btn>
+                </>)}
+                {mgrFpOpen && canUseFinancePack(user) && <FinancePackReview plRecords={mgrPlRecords} cashRecords={mgrCashRecords} user={user} onClose={() => setMgrFpOpen(false)} />}
               </div>
               {!mgrPlLoaded && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading P&L data…</div>}
               {mgrPlLoaded && mgrPlRecords.length === 0 && <div style={{ padding: "32px 0", textAlign: "center", color: T.textMuted, fontSize: 14 }}>No P&L data available yet.</div>}
