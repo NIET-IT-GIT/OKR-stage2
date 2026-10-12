@@ -8959,6 +8959,8 @@ function packToolbar(fileBase) {
     + ".pack-bar button:hover{opacity:0.85}"
     + ".pack-bar button:focus-visible{outline:2px solid #64D2FF;outline-offset:2px}"
     + "@media print{.pack-bar{display:none!important}}"
+    // Browsers drop background colours when printing unless told they are content (dark cover, panels, table headers)
+    + "*{-webkit-print-color-adjust:exact;print-color-adjust:exact}"
     + "</style>"
     + "<div class='pack-bar'><button type='button' id='pack-dl' title='Save this pack as a file you can open offline or email'>Download</button>"
     + "<button type='button' id='pack-pdf' title='Opens the print window — choose Save as PDF'>Save as PDF</button></div>"
