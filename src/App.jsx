@@ -8948,6 +8948,29 @@ const FINANCE_PACK_GROUPS = [
 // Builds the pack. Returns the HTML plus, for every slide that carries commentary, the facts the AI may use
 // and the rule-based bullets used when there is no AI commentary. `commentary` maps slide id →
 // { observations, drivers, watch } (already reviewed); slides without an entry fall back to the rules.
+// Download / Save as PDF bar for an exported pack. Screen only (hidden when printing) and kept in the
+// downloaded copy, which is self-contained and works offline.
+function packToolbar(fileBase) {
+  const file = String(fileBase || "NIET-Pack").replace(/[^A-Za-z0-9._-]+/g, "-") + ".html";
+  return "<style>"
+    + ".pack-bar{position:fixed;top:12px;right:12px;z-index:10;display:flex;gap:6px;padding:6px;background:rgba(28,28,30,0.88);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,0.2);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
+    + ".pack-bar button{border:0;border-radius:7px;padding:7px 13px;font:600 12px/1 inherit;cursor:pointer;background:#fff;color:#1c1c1e}"
+    + ".pack-bar button+button{background:transparent;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.35)}"
+    + ".pack-bar button:hover{opacity:0.85}"
+    + ".pack-bar button:focus-visible{outline:2px solid #64D2FF;outline-offset:2px}"
+    + "@media print{.pack-bar{display:none!important}}"
+    + "</style>"
+    + "<div class='pack-bar'><button type='button' id='pack-dl' title='Save this pack as a file you can open offline or email'>Download</button>"
+    + "<button type='button' id='pack-pdf' title='Opens the print window — choose Save as PDF'>Save as PDF</button></div>"
+    + "<script>(function(){"
+    + "document.getElementById('pack-dl').onclick=function(){"
+    + "var h='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;"
+    + "var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([h],{type:'text/html'}));a.download=" + JSON.stringify(file) + ";"
+    + "document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1000);};"
+    + "document.getElementById('pack-pdf').onclick=function(){window.print();};"
+    + "})();</" + "script>";
+}
+
 function generateFinancePack({ plRecords = [], cashRecords = [], commentary = null }) {
   const ENTS = [
     { key: "NIET",    label: "NIET",           color: "#3B2F6E" },
@@ -9523,6 +9546,7 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
   const html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
     + "<title>NIET Group Finance Pack — " + esc(moFull(cur)) + "</title>"
     + "<style>" + css + "</style></head><body>"
+    + packToolbar("NIET-Finance-Pack" + (cur ? "-" + cur : ""))
     + slidesHtml + "</body></html>";
   return { html, month: cur, monthLabel: moFull(cur), slides: slideMeta };
 }
@@ -10364,7 +10388,9 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
 
   return "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
     + "<title>NIET Group Performance Report — " + moFull(okrCur) + "</title>"
-    + "<style>" + css + "</style></head><body>" + slidesHtml + "</body></html>";
+    + "<style>" + css + "</style></head><body>"
+    + packToolbar("NIET-Performance-Report" + (okrCur ? "-" + okrCur : ""))
+    + slidesHtml + "</body></html>";
 }
 
 /* ─────────────────────────────────────────────────────────────
