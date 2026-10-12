@@ -2813,6 +2813,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
   const [plLoading, setPlLoading] = useState(false);
   const [plError, setPlError] = useState(null);
   const [plParsed, setPlParsed] = useState(null);
+  const [plSelected, setPlSelected] = useState([]);
   const [plImporting, setPlImporting] = useState(false);
   const [plFilterRto, setPlFilterRto] = useState("all");
   useEffect(() => {
@@ -6639,23 +6640,36 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
               const parsed = await plParseFile(file);
               if (parsed.error) { setPlError(parsed.error); return; }
               setPlParsed(parsed);
+              setPlSelected(parsed.months.filter(m => m.lineItems.length && m.totalsCheck !== "mismatch").map(m => m.month));
             } catch (err) { setPlError(`Parse failed: ${err.message}`); }
           };
 
+          // Saves each ticked month as its own record (pl_<month>_<rto>), replacing any earlier import of that month
           const handlePlImport = async () => {
             if (!plParsed) return;
+            const toImport = plParsed.months.filter(m => plSelected.includes(m.month) && m.lineItems.length && m.totalsCheck !== "mismatch");
+            if (!toImport.length) return;
             setPlImporting(true);
             setPlError(null);
+            const done = [];
             try {
-              const id = `pl_${plParsed.month}_${plParsed.rto}`;
-              const rec = { id, month: plParsed.month, rto: plParsed.rto, lineItems: plParsed.lineItems,
-                tradingIncome: plParsed.tradingIncome, otherIncome: plParsed.otherIncome,
-                totalExpenses: plParsed.totalExpenses, netProfit: plParsed.netProfit,
-                fileName: plParsed.fileName, uploadedAt: new Date().toISOString() };
-              await dbUpsert("pl_records", rec);
-              setPlRecords(prev => { const rest = prev.filter(r => r.id !== id); return [...rest, rec]; });
+              for (const m of toImport) {
+                const id = `pl_${m.month}_${plParsed.rto}`;
+                const rec = { id, month: m.month, rto: plParsed.rto, lineItems: m.lineItems,
+                  tradingIncome: m.tradingIncome, otherIncome: m.otherIncome,
+                  totalExpenses: m.totalExpenses, netProfit: m.netProfit,
+                  fileName: plParsed.fileName, uploadedAt: new Date().toISOString() };
+                await dbUpsert("pl_records", rec);
+                done.push(rec);
+              }
               setPlParsed(null);
-            } catch (err) { setPlError(`Import failed: ${err.message}`); }
+              setPlSelected([]);
+            } catch (err) {
+              // Months saved before the failure stay saved; untick them so a retry only sends the rest
+              setPlSelected(prev => prev.filter(mk => !done.some(r => r.month === mk)));
+              setPlError(`Import stopped at ${monthLabelFor(toImport[done.length].month)}: ${err.message}. ${done.length} of ${toImport.length} months were saved.`);
+            }
+            if (done.length) setPlRecords(prev => [...prev.filter(r => !done.some(d => d.id === r.id)), ...done]);
             setPlImporting(false);
           };
 
@@ -6789,20 +6803,84 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
                   <div style={{ marginBottom: 16 }}>
                     <label style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, background: T.brandDim, border: `1px solid ${T.brandBorder}`, color: T.brand, fontSize: 13, fontWeight: 600 }}>
                       Upload Xero Excel (.xlsx)
-                      <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handlePlFile} />
+                      <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handlePlFile} disabled={plImporting} />
                     </label>
                   </div>
-                  {plParsed && (
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 14px", background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 8, marginBottom: 16 }}>
-                      <span style={{ fontSize: 13, color: T.text }}>
-                        Detected: <strong>{plParsed.rto}</strong> · <strong>{plParsed.month}</strong> · {plParsed.lineItems.length} line items
-                      </span>
-                      <Btn small primary onClick={handlePlImport} disabled={plImporting}>
-                        {plImporting ? "Importing…" : "Confirm Import"}
-                      </Btn>
-                      <Btn small onClick={() => setPlParsed(null)}>Cancel</Btn>
-                    </div>
-                  )}
+                  {plParsed && (() => {
+                    const existing = new Set(plRecords.filter(r => r.rto === plParsed.rto).map(r => r.month));
+                    const previewRows = [...plParsed.months].sort((x, y) => y.month.localeCompare(x.month));
+                    const importable = m => m.lineItems.length > 0 && m.totalsCheck !== "mismatch";
+                    const selectable = previewRows.filter(importable);
+                    const picked = selectable.filter(m => plSelected.includes(m.month));
+                    const allPicked = picked.length === selectable.length;
+                    const toggle = mk => setPlSelected(prev => prev.includes(mk) ? prev.filter(x => x !== mk) : [...prev, mk]);
+                    const now = new Date();
+                    const fyStartKey = `${now.getMonth() + 1 >= 7 ? now.getFullYear() : now.getFullYear() - 1}-07`;
+                    const hasOlder = picked.some(m => m.month < fyStartKey);
+                    const hasSkipped = previewRows.some(m => importable(m) && m.totalsCheck === "skipped");
+                    const replacing = picked.filter(m => existing.has(m.month)).length;
+                    return (
+                      <div style={{ padding: "14px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, marginBottom: 16 }}>
+                        <div style={{ fontSize: 13, color: T.text, marginBottom: 10 }}>
+                          Detected <strong>{plParsed.rto}</strong> · {previewRows.length} {previewRows.length === 1 ? "month" : "months"} · <span style={{ color: T.textMuted }}>{plParsed.fileName}</span>
+                        </div>
+                        <div style={{ overflowX: "auto", marginBottom: 10 }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead><tr>
+                              <th style={{ ...thCss, width: 32 }}>
+                                {selectable.length > 1 && <input type="checkbox" aria-label="Select all months" checked={allPicked} disabled={plImporting}
+                                  onChange={() => setPlSelected(allPicked ? [] : selectable.map(m => m.month))} />}
+                              </th>
+                              <th style={thCss}>Month</th>
+                              <th style={{ ...thCss, textAlign: "right" }}>Income</th>
+                              <th style={{ ...thCss, textAlign: "right" }}>Expenses</th>
+                              <th style={{ ...thCss, textAlign: "right" }}>Net Profit</th>
+                              <th style={thCss}>Status</th>
+                            </tr></thead>
+                            <tbody>
+                              {previewRows.map(m => {
+                                const ok = importable(m);
+                                const status = !m.lineItems.length ? { text: "No figures in this column", color: T.textMuted }
+                                  : m.totalsCheck === "mismatch" ? { text: `Can't import: lines add up to ${FMT_MONEY(m.netProfit)} but the file's Net Profit row says ${FMT_MONEY(m.fileNetProfit)}`, color: T.bad }
+                                  : existing.has(m.month) ? { text: "Replaces existing import", color: T.warn }
+                                  : { text: "New", color: T.ok };
+                                return (
+                                  <tr key={m.month} style={{ opacity: ok ? 1 : 0.6 }}>
+                                    <td style={tdCss}>
+                                      <input type="checkbox" aria-label={`Import ${monthLabelFor(m.month)}`} checked={ok && plSelected.includes(m.month)}
+                                        disabled={!ok || plImporting} onChange={() => toggle(m.month)} />
+                                    </td>
+                                    <td style={{ ...tdCss, fontWeight: 600, whiteSpace: "nowrap" }}>{monthLabelFor(m.month)}</td>
+                                    <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono }}>{FMT_MONEY(m.tradingIncome + m.otherIncome)}</td>
+                                    <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono }}>{FMT_MONEY(m.totalExpenses)}</td>
+                                    <td style={{ ...tdCss, textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: m.netProfit >= 0 ? T.ok : T.bad }}>{FMT_MONEY(m.netProfit)}</td>
+                                    <td style={{ ...tdCss, fontSize: 12, color: status.color }}>
+                                      {status.text}
+                                      {ok && m.totalsCheck === "skipped" && <div style={{ color: T.textMuted }}>File totals not calculated — not cross-checked</div>}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {(plParsed.warnings.length > 0 || hasSkipped || hasOlder) && (
+                          <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6, marginBottom: 10 }}>
+                            {plParsed.warnings.map(w => <div key={w}>{w}</div>)}
+                            {hasSkipped && <div>The total rows in this file show 0 because Excel didn't calculate them, so those months were read from the account lines only.</div>}
+                            {hasOlder && <div>Months before {monthLabelFor(fyStartKey)} will be saved and used in reports, the Finance Pack and Pilot, but not shown on Financial Performance (current financial year only).</div>}
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                          <Btn small primary onClick={handlePlImport} disabled={plImporting || !picked.length}>
+                            {plImporting ? "Importing…" : `Import ${picked.length} ${picked.length === 1 ? "month" : "months"}`}
+                          </Btn>
+                          <Btn small onClick={() => { setPlParsed(null); setPlSelected([]); }} disabled={plImporting}>Cancel</Btn>
+                          {replacing > 0 && <span style={{ fontSize: 12, color: T.warn }}>{replacing} {replacing === 1 ? "month" : "months"} already imported will be replaced.</span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {allSorted.length === 0
                     ? <div style={{ padding: "32px 0", textAlign: "center", color: T.textMuted, fontSize: 14 }}>No imports yet.</div>
                     : (
@@ -8246,33 +8324,60 @@ async function grvParseFile(file) {
 /* ─────────────────────────────────────────────────────────────
    NIET PILOT CONTEXT BUILDER (shared by Manager / Member portals)
    ───────────────────────────────────────────────────────────── */
-async function plParseFile(file) {
-  const { default: readXlsxFile } = await import("read-excel-file/browser");
-  const rawResult = await readXlsxFile(file);
-  // read-excel-file returns either Row[] or [{ name, data: Row[] }] depending on options
-  const rows = (Array.isArray(rawResult[0]) ? rawResult : rawResult[0]?.data) || [];
-  // Detect company name and month — scan all cells in first 15 rows
-  let rto = null;
-  let month = null;
-  const MONTHS_MAP = { january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12 };
+// Month in a P&L column header: "June 2026", "Apr 2026", "Sept 2025", "Jun-26", "30 Jun 2026", or an Excel date
+const PL_MONTH_NAMES = { jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6,
+  jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12 };
+function plMonthFromHeader(v) {
+  const ym = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+  if (v instanceof Date && !isNaN(v)) return ym(v.getUTCFullYear(), v.getUTCMonth() + 1);
+  if (typeof v === "number" && v > 30000 && v < 70000) { // Excel serial date
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return ym(d.getUTCFullYear(), d.getUTCMonth() + 1);
+  }
+  const m = String(v ?? "").trim().toLowerCase().match(/^(?:\d{1,2}[\s-])?([a-z]+)\.?[\s\-/]*(\d{4}|\d{2})$/);
+  if (!m || !PL_MONTH_NAMES[m[1]]) return null;
+  return ym(m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]), PL_MONTH_NAMES[m[1]]);
+}
+
+// Reads a Xero Profit & Loss export: one month (single amount column) or several months side by side.
+// Returns one entry per month column, each with its own line items, totals and totals check.
+function plParseRows(rows) {
+  rows = rows || [];
+  let rto = null, titleMonth = null;
   for (let i = 0; i < Math.min(15, rows.length); i++) {
-    const cells = (rows[i] || []).map(c => String(c || "").toLowerCase());
-    for (const cell of cells) {
+    for (const raw of rows[i] || []) {
+      const cell = String(raw ?? "").toLowerCase();
       if (!rto) {
         if (cell.includes("australia academy") || cell.includes(" aai") || cell.startsWith("aai")) rto = "NIET";
         else if (cell.includes("charlton")) rto = "CB";
         else if (cell.includes("educare")) rto = "Educare";
         else if (cell.includes("rhodes")) rto = "Rhodes";
       }
-      if (!month) {
-        const m = cell.match(/for the month ended\s+\d*\s*(\w+)\s+(\d{4})/);
-        if (m) {
-          const mn = MONTHS_MAP[m[1].toLowerCase()];
-          if (mn) month = `${m[2]}-${String(mn).padStart(2,"0")}`;
-        }
+      if (!titleMonth) {
+        const m = cell.match(/for the month ended\s+\d*\s*([a-z]+)\s+(\d{4})/);
+        if (m && PL_MONTH_NAMES[m[1]]) titleMonth = `${m[2]}-${String(PL_MONTH_NAMES[m[1]]).padStart(2, "0")}`;
       }
     }
   }
+
+  // Month columns come from the "Account" header row; a file without one is a single-month export (column B)
+  const warnings = [];
+  let columns = [];
+  let headerIdx = rows.findIndex(r => String(r?.[0] ?? "").trim().toLowerCase() === "account");
+  if (headerIdx < 0) headerIdx = rows.slice(0, 20).findIndex(r => (r || []).some((c, j) => j > 0 && plMonthFromHeader(c)));
+  if (headerIdx >= 0) {
+    const seen = new Set();
+    (rows[headerIdx] || []).forEach((cell, col) => {
+      if (col === 0) return;
+      const month = plMonthFromHeader(cell);
+      if (!month) return;
+      if (seen.has(month)) { warnings.push(`The file has more than one column for ${month}; only the first was read.`); return; }
+      seen.add(month);
+      columns.push({ col, month });
+    });
+  }
+  if (!columns.length && titleMonth) columns = [{ col: 1, month: titleMonth }];
+
   // Xero cells can be numbers or text such as "(1,234.50)" or "$5,000"
   const toNum = v => {
     if (typeof v === "number") return v;
@@ -8282,41 +8387,58 @@ async function plParseFile(file) {
     const n = parseFloat(t.replace(/[()$,\s]/g, ""));
     return isNaN(n) ? null : (neg ? -n : n);
   };
-  // Parse line items by section header. Cost of Sales lines count as expenses so net profit is right.
+
+  const perCol = columns.map(() => ({ lineItems: [], fileTotals: [], fileNetProfit: null }));
   let section = null;
-  let fileNetProfit = null;
-  const lineItems = [];
-  for (const row of rows) {
-    const label = String(row[0] || "").trim();
+  rows.forEach((row, ri) => {
+    if (ri <= headerIdx) return;
+    const label = String(row?.[0] ?? "").trim();
     const heading = label.toLowerCase().replace(/^less\s+/, "");
-    if (/^(trading income|income|revenue)$/.test(heading)) { section = "trading_income"; continue; }
-    if (/^(cost of sales|cost of goods sold|direct costs)$/.test(heading)) { section = "cost_of_sales"; continue; }
-    if (heading === "other income") { section = "other_income"; continue; }
-    if (/^(operating expenses|expenses|overheads)$/.test(heading)) { section = "expenses"; continue; }
-    if (/^net (profit|loss)/.test(heading)) { const v = toNum(row[1]); if (v != null) fileNetProfit = v; continue; }
-    if (!section) continue;
-    // Account rows: start with digit-dash-digit pattern, e.g. "4-1103 - ..."
-    const amount = toNum(row[1]);
-    if (/^\d+-\d+/.test(label) && amount) {
-      lineItems.push(section === "cost_of_sales"
+    if (/^(trading income|income|revenue)$/.test(heading)) { section = "trading_income"; return; }
+    if (/^(cost of sales|cost of goods sold|direct costs)$/.test(heading)) { section = "cost_of_sales"; return; }
+    if (heading === "other income") { section = "other_income"; return; }
+    if (/^(operating expenses|expenses|overheads)$/.test(heading)) { section = "expenses"; return; }
+    if (/^net (profit|loss)/.test(heading)) { columns.forEach((c, i) => { const v = toNum(row[c.col]); if (v != null) perCol[i].fileNetProfit = v; }); return; }
+    if (/^(total\b|gross profit)/.test(heading)) { columns.forEach((c, i) => { const v = toNum(row[c.col]); if (v != null) perCol[i].fileTotals.push(v); }); return; }
+    // Account rows start with a digit-dash-digit code, e.g. "4-1103 - ..."
+    if (!section || !/^\d+-\d+/.test(label)) return;
+    columns.forEach((c, i) => {
+      const amount = toNum(row[c.col]);
+      if (!amount) return;
+      perCol[i].lineItems.push(section === "cost_of_sales"
         ? { account: label, amount, category: "expenses", group: "Cost of Sales" }
         : { account: label, amount, category: section });
-    }
-  }
-  const tradingIncome = lineItems.filter(i => i.category === "trading_income").reduce((s, i) => s + i.amount, 0);
-  const otherIncome   = lineItems.filter(i => i.category === "other_income").reduce((s, i) => s + i.amount, 0);
-  const totalExpenses = lineItems.filter(i => i.category === "expenses").reduce((s, i) => s + i.amount, 0);
-  const netProfit     = tradingIncome + otherIncome - totalExpenses;
-  const mismatch = fileNetProfit != null && Math.abs(fileNetProfit - netProfit) > 1;
-  const fmtAud = v => (v < 0 ? "-$" : "$") + Math.abs(Math.round(v)).toLocaleString();
+    });
+  });
+
+  const months = columns.map((c, i) => {
+    const { lineItems, fileTotals, fileNetProfit } = perCol[i];
+    const tradingIncome = lineItems.filter(x => x.category === "trading_income").reduce((s, x) => s + x.amount, 0);
+    const otherIncome   = lineItems.filter(x => x.category === "other_income").reduce((s, x) => s + x.amount, 0);
+    const totalExpenses = lineItems.filter(x => x.category === "expenses").reduce((s, x) => s + x.amount, 0);
+    const netProfit     = tradingIncome + otherIncome - totalExpenses;
+    // When the export's total formulas weren't calculated, every total row reads 0 and can't be compared
+    const totalsUncalculated = fileNetProfit === 0 && fileTotals.every(v => v === 0) && Math.abs(netProfit) > 1;
+    const totalsCheck = fileNetProfit == null ? "none" : totalsUncalculated ? "skipped" : Math.abs(fileNetProfit - netProfit) > 1 ? "mismatch" : "ok";
+    return { month: c.month, lineItems, tradingIncome, otherIncome, totalExpenses, netProfit, fileNetProfit, totalsCheck };
+  });
+
   return {
-    rto, month, lineItems, tradingIncome, otherIncome, totalExpenses, netProfit,
-    fileName: file.name, fileSize: file.size,
-    error: !rto ? "Could not detect RTO from company name"
-      : !month ? "Could not detect month from file"
-      : mismatch ? `The account lines in this file add up to a net profit of ${fmtAud(netProfit)}, but the file's Net Profit row says ${fmtAud(fileNetProfit)}. Nothing was imported. Check that the file is a standard Xero Profit & Loss export.`
+    rto, months, warnings,
+    error: !rto ? "Could not detect the RTO from the company name at the top of the file."
+      : !months.length ? "Could not find any months in this file. Expected month columns such as \"June 2026\" next to Account, or a \"For the month ended …\" title."
+      : months.every(m => !m.lineItems.length) ? "No account figures were found in this file. Check that it is a standard Xero Profit & Loss export."
+      : months.every(m => !m.lineItems.length || m.totalsCheck === "mismatch") ? "For every month, the account lines don't add up to the file's Net Profit row. Nothing can be imported. Check that the file is a standard Xero Profit & Loss export."
       : null,
   };
+}
+
+async function plParseFile(file) {
+  const { default: readXlsxFile } = await import("read-excel-file/browser");
+  const rawResult = await readXlsxFile(file);
+  // read-excel-file returns either Row[] or [{ name, data: Row[] }] depending on options
+  const rows = (Array.isArray(rawResult[0]) ? rawResult : rawResult[0]?.data) || [];
+  return { ...plParseRows(rows), fileName: file.name, fileSize: file.size };
 }
 
 async function cashParseFiles(fileSheets) {
