@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef, Fragment, Component, createContext, useContext } from "react";
+﻿import { useState, useEffect, useCallback, useMemo, useRef, Fragment, Component, createContext, useContext } from "react";
 import { useMsal } from "@azure/msal-react";
 import { EventType } from "@azure/msal-browser";
 import { apiFetch, loginRequest } from "./authConfig";
@@ -148,6 +148,91 @@ function calcMemberRate(memberId, memberKrs, okrSubs) {
   if (!scores.length) return null;
   return scores.reduce((a, b) => a + b, 0) / scores.length;
 }
+// ── One rule for every OKR completion figure ──────────────────────────────────────────────
+// A member's rate comes from calcMemberRate over the check-ins in scope (null = nothing to score yet).
+// A department (or team) is the average of its scored members, leaving out members excluded from rate.
+// The company is the average of the departments that have a score.
+const MONTHLY_VIEW_PERIODS = ["daily", "weekly", "monthly"];
+// "Monthly" figures report on last month: this month's check-ins haven't been sent or answered yet.
+function lastMonthKey(d = new Date()) {
+  const x = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`;
+}
+function monthLabelFor(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
+}
+function monthlyViewSubs(subs, monthKey = lastMonthKey()) {
+  return (subs || []).filter(s => MONTHLY_VIEW_PERIODS.includes(s.period) && subPeriodMonth(s) === monthKey);
+}
+function monthlyViewKrs(krs) { return (krs || []).filter(kr => MONTHLY_VIEW_PERIODS.includes(kr.period || "monthly")); }
+// Check-ins behind an OKR Overview period tab: last month for all/daily/weekly/monthly,
+// otherwise the most recent quarter / half-year / year that has check-ins.
+function okrPeriodSubs(subs, okrPeriod) {
+  if (okrPeriod === "all" || MONTHLY_VIEW_PERIODS.includes(okrPeriod)) {
+    const month = monthlyViewSubs(subs);
+    return okrPeriod === "all" ? month : month.filter(s => s.period === okrPeriod);
+  }
+  const ofPeriod = (subs || []).filter(s => s.period === okrPeriod && s.periodKey);
+  const latestSent = ofPeriod.reduce((best, s) => (s.sentAt || "") > (best?.sentAt || "") ? s : best, null);
+  return latestSent ? ofPeriod.filter(s => s.periodKey === latestSent.periodKey) : [];
+}
+function avgOrNull(xs) { return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; }
+function computeOkrRates({ users, depts = [], memberData = {}, subs, krFilter = krs => krs }) {
+  const subsByMember = new Map();
+  for (const s of subs || []) {
+    if (!subsByMember.has(s.memberId)) subsByMember.set(s.memberId, []);
+    subsByMember.get(s.memberId).push(s);
+  }
+  const members = (users || []).filter(u => u.role === "member" || u.role === "manager").map(u => {
+    const rate = calcMemberRate(u.id, krFilter(memberData[u.id]?.krs || []), subsByMember.get(u.id) || []);
+    return { user: u, id: u.id, name: u.name, rate, status: getStatus(rate), excluded: !!u.excludeFromRate };
+  });
+  const memberById = new Map(members.map(m => [m.id, m]));
+  const groupRate = ids => {
+    const scored = ids.map(id => memberById.get(id)).filter(m => m && !m.excluded && m.rate != null);
+    const rate = avgOrNull(scored.map(m => m.rate));
+    return { rate, status: getStatus(rate), scoredCount: scored.length, members: scored };
+  };
+  const deptRates = depts.map(d => ({ dept: d, id: d.id, name: d.name, ...groupRate(members.filter(m => m.user.deptId === d.id).map(m => m.id)) }));
+  const companyRate = avgOrNull(deptRates.filter(d => d.rate != null).map(d => d.rate));
+  return { members, memberById, depts: deptRates, companyRate, groupRate };
+}
+// Members of a team: listed in team.members or assigned through teamId / secondTeamId
+// Shapes stored in published reports
+function reportDeptRanks(rates) {
+  return rates.depts.map(d => ({
+    name: d.name,
+    rate: d.rate != null ? Math.round(d.rate * 10) / 10 : 0,
+    hasData: d.rate != null,
+    status: getStatus(d.rate ?? 0),
+    memberCount: d.scoredCount,
+    members: d.members.map(m => ({ id: m.id, name: m.name, rate: m.rate, status: m.status })).sort((a, b) => b.rate - a.rate),
+  })).sort((a, b) => b.rate - a.rate);
+}
+function reportMembers(rates) {
+  return rates.members.map(m => ({ ...m.user, rate: m.rate, hasData: m.rate != null, status: m.status })).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+}
+function teamMemberIds(team, users) {
+  return [...new Set([...(team.members || []), ...(users || []).filter(u => u.teamId === team.id || u.secondTeamId === team.id).map(u => u.id)])];
+}
+
+// Old KRs were created with actual: 0 meaning "not measured yet". A 0 is only treated that way when
+// no check-in has ever produced a value for the KR; otherwise it's a real result (e.g. "complaints <= 0").
+function measuredKrKeys(subs) {
+  const keys = new Set();
+  for (const sb of subs || []) {
+    if (sb.approval === "approved" || (sb.approval === "rejected" && sb.reviewerActual != null)) {
+      keys.add(sb.krId);
+      keys.add(`${sb.memberId}:${sb.krId}`);
+    }
+  }
+  return keys;
+}
+function clearUnmeasuredZero(kr, measuredKey, measured) {
+  return kr.actual === 0 && !measured.has(measuredKey) ? { ...kr, actual: null } : kr;
+}
+
 // A blank number field means "no value given", never 0.
 function numOrNull(v) {
   if (v == null || String(v).trim() === "") return null;
@@ -1425,41 +1510,10 @@ function DeptMgmtPage({ depts, users, allUsers, memberData, okrSubmissions, disp
   const [editTeamForm, setEditTeamForm] = useState({ name: "", lead: "", obj: "", members: [] });
   const [confirmDelTeam, setConfirmDelTeam] = useState(null);
 
-  // Month-windowed submission pool — mirrors Company Overview "Monthly" logic
-  const _dmNow = new Date();
-  const _dmTypes = ["daily", "weekly", "monthly"];
-  const dmSubs = okrSubmissions.filter(s => {
-    if (!_dmTypes.includes(s.period) || !s.sentAt) return false;
-    const d = new Date(s.sentAt);
-    return d.getFullYear() === _dmNow.getFullYear() && d.getMonth() === _dmNow.getMonth();
-  });
-  const dmFiltKrs = krs => krs.filter(kr => _dmTypes.includes(kr.period || "monthly"));
-  const _dmRateForMembers = members => {
-    const nowMs = _dmNow.getTime();
-    const rates = members.map(u => {
-      const kd = memberData[u.id] || { krs: [] };
-      const krs = dmFiltKrs(kd.krs);
-      const hasEligible = krs.some(kr => {
-        const krSubs = dmSubs.filter(s => s.memberId === u.id && s.krId === kr.id);
-        if (!krSubs.length) return false;
-        if (krSubs.some(s => s.answer !== null)) return true;
-        const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
-        return latest && (nowMs - new Date(latest.sentAt).getTime()) >= 86400000;
-      });
-      if (!hasEligible) return null;
-      return calcMemberRate(u.id, krs, dmSubs);
-    }).filter(r => r !== null);
-    return rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
-  };
-  const calcDeptRate = deptId => {
-    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === deptId);
-    return _dmRateForMembers(members);
-  };
-  const calcTeamRate = (deptId, team) => {
-    const memberSet = new Set([...(team.members || []), ...users.filter(u => u.teamId === team.id || u.secondTeamId === team.id).map(u => u.id)]);
-    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === deptId && memberSet.has(u.id));
-    return _dmRateForMembers(members);
-  };
+  // Last month's results, same rule as the Company Overview and the published monthly report
+  const dmRates = computeOkrRates({ users, depts, memberData, subs: monthlyViewSubs(okrSubmissions), krFilter: monthlyViewKrs });
+  const calcDeptRate = deptId => dmRates.depts.find(d => d.id === deptId)?.rate ?? null;
+  const calcTeamRate = (deptId, team) => dmRates.groupRate(teamMemberIds(team, users).filter(id => users.find(u => u.id === id)?.deptId === deptId)).rate;
 
   function handleAdd() {
     if (!addForm.name.trim()) { setAddErr("Department name is required."); return; }
@@ -1580,12 +1634,12 @@ function DeptMgmtPage({ depts, users, allUsers, memberData, okrSubmissions, disp
                 const r2 = calcDeptRate(d.id); const s2 = getStatus(r2);
                 const deptMembers = users
                   .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
-                  .map(u => { const kd = memberData[u.id] || { krs: [] }; const mr = memberHasRateKrs(kd.krs) ? calcMemberRate(u.id, dmFiltKrs(kd.krs), dmSubs) : null; return { ...u, rate: mr, status: getStatus(mr) }; })
+                  .map(u => { const mr = dmRates.memberById.get(u.id)?.rate ?? null; return { ...u, rate: mr, status: getStatus(mr) }; })
                   .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
                 return (
                   <div style={{ background: T.bgSoft, borderBottom: `1px solid ${T.border}`, padding: "16px 18px" }}>
                     <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
-                      <Metric label="Completion" value={`${r2.toFixed(1)}%`} status={s2} />
+                      <Metric label={`Completion · ${monthLabelFor(lastMonthKey())}`} value={r2 != null ? `${r2.toFixed(1)}%` : "No data"} status={s2} />
                       <Metric label="Teams"   value={d.teams.length} />
                       <Metric label="Members" value={deptMembers.length} />
                     </div>
@@ -1706,7 +1760,7 @@ function DeptMgmtPage({ depts, users, allUsers, memberData, okrSubmissions, disp
                                 {t.obj && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{t.obj}</div>}
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color }}>{tr.toFixed(1)}%</span>
+                                <span style={{ fontFamily: F.mono, fontWeight: 800, color: STATUS_THEME[ts].color }}>{tr != null ? `${tr.toFixed(1)}%` : "No data"}</span>
                                 <Tag type={ts} small />
                                 <button onClick={() => { setEditTeam({ deptId: d.id, teamId: t.id }); setEditTeamForm({ name: t.name, lead: t.lead || "", obj: t.obj || "", members: t.members || [] }); setShowAddTeam(null); }} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
                                 {confirmDelTeam?.deptId === d.id && confirmDelTeam?.teamId === t.id ? (<>
@@ -2906,12 +2960,10 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
     const today = localDateKey(now);
     const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
     // Match Company Overview monthly view: submissions sent in current calendar month, period in daily/weekly/monthly
-    const monthlyTypes = ["daily", "weekly", "monthly"];
-    const monthSubs = okrSubmissions.filter(s => {
-      if (!monthlyTypes.includes(s.period) || !s.sentAt) return false;
-      const d = new Date(s.sentAt);
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-    });
+    const monthlyTypes = MONTHLY_VIEW_PERIODS;
+    // Completion figures are last month's results — the same window as the Company Overview and the monthly report
+    const resultsMonth = monthLabelFor(lastMonthKey());
+    const monthSubs = monthlyViewSubs(okrSubmissions);
     const nowMs = Date.now();
     const members = users.filter(u => u.role === "member" || u.role === "manager");
 
@@ -2973,9 +3025,9 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
     ).join("\n");
 
     const memberSection = memberStats.map(m => {
-      let line = `  ${m.name} (${m.dept}, ${m.role}): ${m.rate !== null ? m.rate.toFixed(1) + "% [" + m.status + "]" : "no data this month"}`;
+      let line = `  ${m.name} (${m.dept}, ${m.role}): ${m.rate !== null ? m.rate.toFixed(1) + "% [" + m.status + "]" : "no data for " + resultsMonth}`;
       if (m.answered || m.pending) line += ` — ${m.answered} answered, ${m.pending} awaiting`;
-      else line += ` — no check-ins sent this month`;
+      else line += ` — no check-ins for ${resultsMonth}`;
       if (m.trackerLines.length) line += "\n" + m.trackerLines.join("\n");
       if (m.krLines.length) line += "\n" + m.krLines.join("\n");
       if (m.ppLines && m.ppLines.length) line += "\n" + m.ppLines.join("\n");
@@ -3171,8 +3223,8 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
     })();
     const topMembers = (() => {
       const withData = memberStats.filter(m => m.rate !== null).sort((a, b) => b.rate - a.rate).slice(0, 10);
-      if (!withData.length) return "TOP MEMBERS BY OKR COMPLETION: No data this month.";
-      return `TOP MEMBERS BY OKR COMPLETION RATE — current month (sorted desc):\n` +
+      if (!withData.length) return `TOP MEMBERS BY OKR COMPLETION: No data for ${resultsMonth}.`;
+      return `TOP MEMBERS BY OKR COMPLETION RATE — ${resultsMonth} (sorted desc):\n` +
         withData.map((m, idx) => `  ${idx + 1}. ${m.name} (${m.dept}, ${m.role}): ${m.rate.toFixed(1)}% [${Math.round(m.rate)}] [${m.status}]`).join("\n");
     })();
     const topDivisions = (() => {
@@ -3218,7 +3270,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
 
     const inactiveSection = (() => {
       const inactive = memberStats.filter(m => !m.answered && !m.pending);
-      if (!inactive.length) return "MEMBERS WITH NO OKR ACTIVITY THIS MONTH: None — all members are active this month.";
+      if (!inactive.length) return `MEMBERS WITH NO OKR ACTIVITY FOR ${resultsMonth}: None — every member has check-ins for that month.`;
       const lines = inactive.map(m => {
         const u = users.find(u => u.id === m.id);
         const lastSub = okrSubmissions
@@ -3232,13 +3284,13 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
         const loginStr = lastLogin ? `last login: ${lastLogin.slice(0, 10)} (${loginDaysAgo}d ago)` : "never logged in";
         return `  - ${m.name} (${m.dept}, ${m.role}) — ${loginStr} · ${okrStr}`;
       }).join("\n");
-      return `MEMBERS WITH NO OKR ACTIVITY THIS MONTH (${inactive.length}):\n${lines}`;
+      return `MEMBERS WITH NO OKR ACTIVITY FOR ${resultsMonth} (${inactive.length}):\n${lines}`;
     })();
 
     return [
       `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
-      `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
-      `\nMEMBER DETAILS (current month):\n${memberSection}`,
+      `\nDEPARTMENT COMPLETION (${resultsMonth} results, same logic as Company Overview):\n${deptSection}`,
+      `\nMEMBER DETAILS (${resultsMonth} results):\n${memberSection}`,
       `\n${inactiveSection}`,
       reportSection ? `\n${reportSection}` : "",
       `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
@@ -3405,83 +3457,49 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
 
   const OV_TYPES = { weekly: ["daily","weekly"], monthly: ["daily","weekly","monthly"], annual: ["daily","weekly","monthly","quarterly","biannual","annual"] };
   const ovTypes = OV_TYPES[overviewView] || OV_TYPES.monthly;
-  const ovSubs = okrSubmissions.filter(s => {
-    if (!ovTypes.includes(s.period) || !s.sentAt) return false;
-    const d = new Date(s.sentAt), now = new Date();
-    if (overviewView === "weekly") {
-      const dow = now.getDay();
-      const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) - 7);
-      const sun = new Date(mon); sun.setDate(mon.getDate() + 7);
-      return d >= mon && d < sun;
-    }
-    if (overviewView === "monthly") return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-    const m = now.getMonth() + 1, y = now.getFullYear();
-    const fyS = new Date(m >= 7 ? y : y - 1, 6, 1);
-    const fyE = new Date(m >= 7 ? y + 1 : y, 5, 30, 23, 59, 59);
-    return d >= fyS && d <= fyE;
-  });
   const filtKrs = (krs) => krs.filter(kr => ovTypes.includes(kr.period || "monthly"));
-  const deptRanks = depts.map(d => {
-    const members = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
-    const now = Date.now();
-    const rates = members.map(u => {
-      const kd = memberData[u.id] || { krs: [] };
-      const krs = filtKrs(kd.krs);
-      // Include member only if they have at least one answered or overdue-unanswered submission
-      const hasEligible = krs.some(kr => {
-        const krSubs = ovSubs.filter(s => s.memberId === u.id && s.krId === kr.id);
-        if (!krSubs.length) return false;
-        if (krSubs.some(s => s.answer !== null)) return true;
-        const latest = krSubs.filter(s => s.sentAt).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
-        return latest && (now - new Date(latest.sentAt).getTime()) >= 86400000;
-      });
-      if (!hasEligible) return null;
-      return calcMemberRate(u.id, krs, ovSubs);
-    }).filter(r => r !== null);
-    const rate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
-    return { ...d, rate, status: getStatus(rate) };
-  }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+  // Weekly = check-ins sent last week; Monthly = last month's results; Annual = this financial year
+  const ovSubs = useMemo(() => {
+    if (overviewView === "monthly" || !OV_TYPES[overviewView]) return monthlyViewSubs(okrSubmissions);
+    const now = new Date();
+    return okrSubmissions.filter(s => {
+      if (!ovTypes.includes(s.period) || !s.sentAt) return false;
+      const d = new Date(s.sentAt);
+      if (overviewView === "weekly") {
+        const dow = now.getDay();
+        const mon = new Date(now); mon.setHours(0,0,0,0); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) - 7);
+        const sun = new Date(mon); sun.setDate(mon.getDate() + 7);
+        return d >= mon && d < sun;
+      }
+      const m = now.getMonth() + 1, y = now.getFullYear();
+      const fyS = new Date(m >= 7 ? y : y - 1, 6, 1);
+      const fyE = new Date(m >= 7 ? y + 1 : y, 5, 30, 23, 59, 59);
+      return d >= fyS && d <= fyE;
+    });
+  }, [okrSubmissions, overviewView]); // eslint-disable-line
+  const ovRates = useMemo(() => computeOkrRates({ users, depts, memberData, subs: ovSubs, krFilter: filtKrs }), [users, depts, memberData, ovSubs]); // eslint-disable-line
+  const deptRanks = ovRates.depts.map(d => ({ ...d.dept, rate: d.rate, status: d.status })).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
   const rankedDepts = deptRanks.filter(d => d.rate != null);
-  const compRate = rankedDepts.length ? rankedDepts.reduce((a, d) => a + d.rate, 0) / rankedDepts.length : null;
-  const _rptD = new Date(); _rptD.setMonth(_rptD.getMonth() - 1);
-  const rptMonthKey = `${_rptD.getFullYear()}-${String(_rptD.getMonth()+1).padStart(2,"0")}`;
-  const rptSubs = okrSubmissions.filter(s => subPeriodMonth(s) === rptMonthKey);
+  const compRate = ovRates.companyRate;
+
+  // Published monthly report: every check-in about last month (all period types), non-responders scored 0%
+  const rptMonthKey = lastMonthKey();
+  const rpt = useMemo(() => {
+    const subs = okrSubmissions.filter(s => subPeriodMonth(s) === rptMonthKey);
+    return { subs, rates: computeOkrRates({ users, depts, memberData, subs }) };
+  }, [okrSubmissions, users, depts, memberData, rptMonthKey]);
+  const rptSubs = rpt.subs;
   const rptAnswered = rptSubs.filter(s => s.answer !== null);
   const rptSubRate = rptAnswered.length > 0 ? Math.round((rptAnswered.filter(s => s.answer === "yes").length / rptAnswered.length) * 1000) / 10 : 0;
-  const rptDeptRanks = depts.map(d => {
-    const dMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
-    const dMemberRates = dMembers.map(u => {
-      const kd = memberData[u.id] || { krs: [] };
-      if (!kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
-      const mr = calcMemberRate(u.id, kd.krs, rptSubs);
-      if (mr == null) return null;
-      return { id: u.id, name: u.name, rate: mr, status: getStatus(mr) };
-    }).filter(r => r !== null).sort((a, b) => b.rate - a.rate);
-    const hasData = dMemberRates.length > 0;
-    const rate = hasData ? Math.round(dMemberRates.reduce((a, b) => a + b.rate, 0) / dMemberRates.length * 10) / 10 : 0;
-    return { name: d.name, rate, hasData, status: getStatus(rate), memberCount: dMemberRates.length, members: dMemberRates };
-  }).sort((a, b) => b.rate - a.rate);
-  const rptActiveDepts = rptDeptRanks.filter(d => d.hasData);
-  const rptCompRate = rptActiveDepts.length ? Math.round(rptActiveDepts.reduce((a, d) => a + d.rate, 0) / rptActiveDepts.length * 10) / 10 : 0;
-  const rptMembers = users
-    .filter(u => u.role === "member" || u.role === "manager")
-    .map(u => {
-      const kd = memberData[u.id] || { krs: [] };
-      const rate = kd.krs.some(kr => rptSubs.some(s => s.memberId === u.id && s.krId === kr.id)) ? calcMemberRate(u.id, kd.krs, rptSubs) : null;
-      return { ...u, rate, hasData: rate != null, status: getStatus(rate) };
-    }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
-  const allMembers = users
-    .filter(u => u.role === "member" || u.role === "manager")
-    .map(u => {
-      const kd = memberData[u.id] || { krs: [] };
-      const r = memberHasRateKrs(kd.krs) ? calcMemberRate(u.id, kd.krs, ovSubs) : null;
-      const hasData = kd.krs.some(kr => ovSubs.some(s => s.memberId === u.id && s.krId === kr.id));
+  const rptDeptRanks = reportDeptRanks(rpt.rates);
+  const rptCompRate = rpt.rates.companyRate != null ? Math.round(rpt.rates.companyRate * 10) / 10 : 0;
+  const rptMembers = reportMembers(rpt.rates);
+  const allMembers = ovRates.members.map(({ user: u, rate }) => {
       const dept = depts.find(d => d.id === u.deptId);
-      const deptName = dept?.name || "—";
       const primaryTeam = dept?.teams.find(t => t.id === u.teamId);
       const secondTeam = u.secondTeamId ? dept?.teams.find(t => t.id === u.secondTeamId) : null;
       const teamName = primaryTeam ? (secondTeam ? `${primaryTeam.name} / ${secondTeam.name}` : primaryTeam.name) : "—";
-      return { ...u, deptName, teamName, rate: r, hasData, status: getStatus(r) };
+      return { ...u, deptName: dept?.name || "—", teamName, rate, hasData: rate != null, status: getStatus(rate) };
     })
     .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
 
@@ -3852,7 +3870,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
             </div>
             {overviewView !== "financial" && (<>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label={overviewView === "weekly" ? "Weekly Completion" : overviewView === "annual" ? "Annual Completion" : "Monthly Completion"} value={compRate != null ? `${compRate.toFixed(1)}%` : "—"} status={getStatus(compRate)} sub={`Target pace: ${TP}%`} />
+              <Metric label={overviewView === "weekly" ? "Last Week's Completion" : overviewView === "annual" ? "Annual Completion" : `${monthLabelFor(lastMonthKey())} Completion`} value={compRate != null ? `${compRate.toFixed(1)}%` : "—"} status={getStatus(compRate)} sub={`Target pace: ${TP}%`} />
               <Metric label="Departments" value={depts.length} />
               <Metric label="Teams" value={depts.reduce((a, d) => a + d.teams.length, 0)} />
               <Metric label="Staff Tracked" value={allMembers.length} />
@@ -3865,7 +3883,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
                   const isExpanded = ovExpandedDept === d.id;
                   const deptMembers = isExpanded ? users
                     .filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id)
-                    .map(u => { const excl = !!u.excludeFromRate; const kd = memberData[u.id] || { krs: [] }; const mr = (!excl && memberHasRateKrs(kd.krs)) ? calcMemberRate(u.id, filtKrs(kd.krs), ovSubs) : null; return { ...u, rate: mr, status: getStatus(mr), excluded: excl }; })
+                    .map(u => { const excl = !!u.excludeFromRate; const mr = excl ? null : (ovRates.memberById.get(u.id)?.rate ?? null); return { ...u, rate: mr, status: getStatus(mr), excluded: excl }; })
                     .sort((a, b) => { if (a.excluded !== b.excluded) return a.excluded ? 1 : -1; return (b.rate ?? -1) - (a.rate ?? -1); }) : [];
                   return (
                     <Card key={d.id} style={{ marginBottom: 8, overflow: "hidden" }}>
@@ -5117,26 +5135,10 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
                     });
                     const periodAnswered = periodSubs.filter(s => s.answer !== null);
                     const gSubRate = periodAnswered.length > 0 ? Math.round((periodAnswered.filter(s => s.answer === "yes").length / periodAnswered.length) * 1000) / 10 : 0;
-                    const gDeptRanks = depts.map(d => {
-                      const gdMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === d.id && !u.excludeFromRate);
-                      const gdMemberRates = gdMembers.map(u => {
-                        const kd = memberData[u.id] || { krs: [] };
-                        if (!kd.krs.some(kr => periodSubs.some(s => s.memberId === u.id && s.krId === kr.id))) return null;
-                        const gr = calcMemberRate(u.id, kd.krs, periodSubs);
-                        if (gr == null) return null;
-                        return { id: u.id, name: u.name, rate: gr, status: getStatus(gr) };
-                      }).filter(r => r !== null).sort((a, b) => b.rate - a.rate);
-                      const hasData = gdMemberRates.length > 0;
-                      const rate = hasData ? Math.round(gdMemberRates.reduce((a, b) => a + b.rate, 0) / gdMemberRates.length * 10) / 10 : 0;
-                      return { name: d.name, rate, hasData, status: getStatus(rate), memberCount: gdMemberRates.length, members: gdMemberRates };
-                    }).sort((a, b) => b.rate - a.rate);
-                    const gActiveDepts = gDeptRanks.filter(d => d.hasData);
-                    const gCompRate = gActiveDepts.length ? Math.round(gActiveDepts.reduce((a, d) => a + d.rate, 0) / gActiveDepts.length * 10) / 10 : 0;
-                    const gMembers = users.filter(u => u.role === "member" || u.role === "manager").map(u => {
-                      const kd = memberData[u.id] || { krs: [] };
-                      const rate = kd.krs.some(kr => periodSubs.some(s => s.memberId === u.id && s.krId === kr.id)) ? calcMemberRate(u.id, kd.krs, periodSubs) : null;
-                      return { ...u, rate, hasData: rate != null, status: getStatus(rate) };
-                    }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+                    const gRates = computeOkrRates({ users, depts, memberData, subs: periodSubs });
+                    const gDeptRanks = reportDeptRanks(gRates);
+                    const gCompRate = gRates.companyRate != null ? Math.round(gRates.companyRate * 10) / 10 : 0;
+                    const gMembers = reportMembers(gRates);
                     const report = {
                       id: `mr${Date.now()}`,
                       month: label,
@@ -5344,7 +5346,6 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
 
               // Mirror the server-side email template for client-side preview
               const buildPreviewHtml = (name, projs) => {
-                const now = new Date();
                 const fmtDate = d => {
                   if (!d || d === "TBD") return "TBD";
                   const dt = new Date(d);
@@ -5439,7 +5440,6 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
                           <div style={{ padding: "16px 0", textAlign: "center", color: T.textMuted, fontSize: 13 }}>No managers with valid email addresses to notify.</div>
                         )}
                         {sendable.map(({ mgr, email, projs }) => {
-                          const now = new Date();
                           const overdueCount = projs.filter(p => isPastDue(p.due)).length;
                           const rowKey = mgr?.id || email;
                           const isPreviewing = projReminderPreviewId === rowKey;
@@ -7133,10 +7133,11 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
             </div>
             {(() => {
               const q = lbSearch.trim().toLowerCase();
-              const periodMembers = lbPeriod === "all" ? allMembers : allMembers.map(m => {
-                const periodKrs = (memberData[m.id]?.krs || []).filter(kr => (kr.period || "monthly") === lbPeriod);
-                const periodSubs = okrSubmissions.filter(s => s.period === lbPeriod);
-                const rate = memberHasRateKrs(periodKrs) ? calcMemberRate(m.id, periodKrs, periodSubs) : null;
+              // Same rule as the OKR Overview period tabs: last month, or the latest quarter / half / year
+              const lbRates = computeOkrRates({ users, depts, memberData, subs: okrPeriodSubs(okrSubmissions, lbPeriod),
+                krFilter: lbPeriod === "all" ? (krs => krs) : (krs => krs.filter(kr => (kr.period || "monthly") === lbPeriod)) });
+              const periodMembers = allMembers.map(m => {
+                const rate = lbRates.memberById.get(m.id)?.rate ?? null;
                 return { ...m, rate, status: getStatus(rate) };
               }).sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
               const filtered = periodMembers.filter(m =>
@@ -8471,12 +8472,10 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
   const getCompletedYear = projectCompletedYear;
   const today = localDateKey(now);
   const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
-  const monthlyTypes = ["daily", "weekly", "monthly"];
-  const monthSubs = okrSubmissions.filter(s => {
-    if (!monthlyTypes.includes(s.period) || !s.sentAt) return false;
-    const d = new Date(s.sentAt);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  });
+  const monthlyTypes = MONTHLY_VIEW_PERIODS;
+  // Completion figures are last month's results — the same window as the Company Overview and the monthly report
+  const resultsMonth = monthLabelFor(lastMonthKey());
+  const monthSubs = monthlyViewSubs(okrSubmissions);
   const nowMs = Date.now();
   const members = users.filter(u => u.role === "member" || u.role === "manager");
   const memberStats = members.map(u => {
@@ -8529,9 +8528,9 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     `  ${d.name}: ${d.rate !== null ? d.rate.toFixed(1) + "% [" + d.status + "]" : "no data"} (${d.eligible}/${d.total} members with submissions)`
   ).join("\n");
   const memberSection = memberStats.filter(m => isDetail(m.id)).map(m => {
-    let line = `  ${m.name} (${m.dept}, ${m.role}): ${m.rate !== null ? m.rate.toFixed(1) + "% [" + m.status + "]" : "no data this month"}`;
+    let line = `  ${m.name} (${m.dept}, ${m.role}): ${m.rate !== null ? m.rate.toFixed(1) + "% [" + m.status + "]" : "no data for " + resultsMonth}`;
     if (m.answered || m.pending) line += ` — ${m.answered} answered, ${m.pending} awaiting`;
-    else line += ` — no check-ins sent this month`;
+    else line += ` — no check-ins for ${resultsMonth}`;
     if (m.trackerLines.length) line += "\n" + m.trackerLines.join("\n");
     if (m.krLines.length) line += "\n" + m.krLines.join("\n");
     if (m.ppLines && m.ppLines.length) line += "\n" + m.ppLines.join("\n");
@@ -8717,8 +8716,8 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
   })();
   const topMembers = (() => {
     const withData = memberStats.filter(m => m.rate !== null && isDetail(m.id)).sort((a, b) => b.rate - a.rate).slice(0, 10);
-    if (!withData.length) return "TOP MEMBERS BY OKR COMPLETION: No data this month.";
-    return `TOP MEMBERS BY OKR COMPLETION RATE — current month (sorted desc):\n` +
+    if (!withData.length) return `TOP MEMBERS BY OKR COMPLETION: No data for ${resultsMonth}.`;
+    return `TOP MEMBERS BY OKR COMPLETION RATE — ${resultsMonth} (sorted desc):\n` +
       withData.map((m, idx) => `  ${idx + 1}. ${m.name} (${m.dept}, ${m.role}): ${m.rate.toFixed(1)}% [${Math.round(m.rate)}] [${m.status}]`).join("\n");
   })();
   const topMembersBySales = (() => {
@@ -8764,7 +8763,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
 
   const inactiveSection = (() => {
     const inactive = memberStats.filter(m => !m.answered && !m.pending && isDetail(m.id));
-    if (!inactive.length) return "MEMBERS WITH NO OKR ACTIVITY THIS MONTH: None — all members are active this month.";
+    if (!inactive.length) return `MEMBERS WITH NO OKR ACTIVITY FOR ${resultsMonth}: None — every member has check-ins for that month.`;
     const lines = inactive.map(m => {
       const u = users.find(u => u.id === m.id);
       const lastSub = okrSubmissions
@@ -8778,14 +8777,14 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
       const loginStr = lastLogin ? `last login: ${lastLogin.slice(0, 10)} (${loginDaysAgo}d ago)` : "never logged in";
       return `  - ${m.name} (${m.dept}, ${m.role}) — ${loginStr} · ${okrStr}`;
     }).join("\n");
-    return `MEMBERS WITH NO OKR ACTIVITY THIS MONTH (${inactive.length}):\n${lines}`;
+    return `MEMBERS WITH NO OKR ACTIVITY FOR ${resultsMonth} (${inactive.length}):\n${lines}`;
   })();
 
   return [
     ...(scope ? [`DATA SCOPE: ${scope.description} Only answer from this data. If asked about anything outside it (other departments, other people's individual results${financeAllowed ? "" : ", financial results"}), say you don't have access to that information for this account.\n`] : []),
     `[Today: ${today} | Month: ${monthLabel} | ${scope ? "Completion in scope" : "Company OKR completion"}: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
-    `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
-    `\nMEMBER DETAILS (current month):\n${memberSection}`,
+    `\nDEPARTMENT COMPLETION (${resultsMonth} results, same logic as Company Overview):\n${deptSection}`,
+    `\nMEMBER DETAILS (${resultsMonth} results):\n${memberSection}`,
     `\n${inactiveSection}`,
     reportSection ? `\n${reportSection}` : "",
     ...(financeAllowed ? [
@@ -9904,21 +9903,13 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const myOkrSubsForApproval = allOkrSubs.filter(s => myTeamMemberIds.includes(s.memberId) || peerManagerIds.includes(s.memberId) || designatedMemberIds.includes(s.memberId));
   const pendingOkrSubs = myOkrSubsForApproval.filter(s => s.answer !== null && s.approval === "pending");
   const myProjects = projects.filter(p => p.type !== "pursuit" && (user.deptId ? users.find(u => u.id === p.mgrId)?.deptId === user.deptId : p.mgrId === user.id));
-  const _dmNowMgr = new Date();
-  const _dmTypesMgr = ["daily", "weekly", "monthly"];
-  const dmSubs = allOkrSubs.filter(s => {
-    if (!_dmTypesMgr.includes(s.period) || !s.sentAt) return false;
-    const _d = new Date(s.sentAt);
-    return _d.getFullYear() === _dmNowMgr.getFullYear() && _d.getMonth() === _dmNowMgr.getMonth();
-  });
-  const dmFiltKrsMgr = krs => krs.filter(kr => _dmTypesMgr.includes(kr.period || "monthly"));
+  // Same figures as the Company Overview: last month's results for the people this manager oversees
+  const mgrRates = useMemo(
+    () => computeOkrRates({ users: myMembers, depts, memberData, subs: monthlyViewSubs(allOkrSubs), krFilter: monthlyViewKrs }),
+    [users, depts, memberData, allOkrSubs, user.deptId, user.teamIds, user.mgrDeptIds] // eslint-disable-line
+  );
+  const myDeptRate = mgrRates.groupRate(myMembers.map(u => u.id)).rate;
   const myExcludedCount = myMembers.filter(u => u.excludeFromRate).length;
-  const myMemberRates = myMembers.filter(u => !u.excludeFromRate).map(u => {
-    const kd = memberData[u.id] || { krs: [] };
-    if (!memberHasRateKrs(kd.krs)) return null;
-    return calcMemberRate(u.id, dmFiltKrsMgr(kd.krs), dmSubs);
-  }).filter(r => r !== null);
-  const myDeptRate = myMemberRates.length ? myMemberRates.reduce((a, b) => a + b, 0) / myMemberRates.length : 0;
 
   function mgrTriggerSync(deptId, teamId) {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -10201,16 +10192,11 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           const dKrs = filterP(dept.krs);
           const deptStatus = getStatus(myDeptRate);
           const filtMKrs = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          // Team figures follow the period tab, with the same rule as the Member portal
+          const tabRates = computeOkrRates({ users: myMembers, depts, memberData, subs: okrPeriodSubs(allOkrSubs, okrPeriod), krFilter: filtMKrs });
           const teamStats = dept.teams.map(t => {
-            const tKrs = filterP(t.krs);
-            const teamMembers = myMembers.filter(u => !u.excludeFromRate && (u.teamId === t.id || u.secondTeamId === t.id));
-            const memberRates = teamMembers.map(u => {
-              const kd = memberData[u.id];
-              if (!kd || !memberHasRateKrs(filtMKrs(kd.krs))) return null;
-              return calcMemberRate(u.id, filtMKrs(kd.krs), allOkrSubs);
-            }).filter(r => r !== null);
-            const rate = memberRates.length ? memberRates.reduce((a, b) => a + b, 0) / memberRates.length : null;
-            return { ...t, krs: tKrs, rate, status: getStatus(rate) };
+            const { rate, status } = tabRates.groupRate(myMembers.filter(u => u.teamId === t.id || u.secondTeamId === t.id).map(u => u.id));
+            return { ...t, krs: filterP(t.krs), rate, status };
           });
           const totalKrs = dKrs.length + teamStats.reduce((s, t) => s + t.krs.length, 0);
           // A manager limited to certain teams can only edit and sync those teams' KRs
@@ -10222,7 +10208,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 {PERIODS.map(p => <Btn key={p.id} primary={okrPeriod === p.id} small onClick={() => setOkrPeriod(p.id)}>{p.label}</Btn>)}
               </div>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <Metric label="Dept Completion" value={`${myDeptRate.toFixed(1)}%`} status={deptStatus} sub={myExcludedCount > 0 ? `${myExcludedCount} excluded · Target: ${TP}%` : `Target: ${TP}%`} />
+                <Metric label={`Dept Completion · ${monthLabelFor(lastMonthKey())}`} value={myDeptRate != null ? `${myDeptRate.toFixed(1)}%` : "No data"} status={deptStatus} sub={myExcludedCount > 0 ? `${myExcludedCount} excluded · Target: ${TP}%` : `Target: ${TP}%`} />
                 <Metric label="KRs this period" value={totalKrs} />
                 <Metric label="Teams" value={dept.teams.length} />
               </div>
@@ -10297,15 +10283,14 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
           <Header title={`${dept?.name || "Team"} Dashboard`} sub={`${dept?.college} · Manager view`} />
           <Pane>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Metric label="Dept Completion"   value={`${myDeptRate.toFixed(1)}%`} status={getStatus(myDeptRate)} sub={myExcludedCount > 0 ? `${myExcludedCount} excluded · Time: ${TP}%` : `Time: ${TP}%`} />
+              <Metric label={`Dept Completion · ${monthLabelFor(lastMonthKey())}`}   value={myDeptRate != null ? `${myDeptRate.toFixed(1)}%` : "No data"} status={getStatus(myDeptRate)} sub={myExcludedCount > 0 ? `${myExcludedCount} excluded · Time: ${TP}%` : `Time: ${TP}%`} />
               <Metric label="My Members"        value={myMembers.length} />
               <Metric label="Pending Approvals" value={pendingOkrSubs.length} status={pendingOkrSubs.length > 0 ? "yellow" : undefined} />
             </div>
             <SectionLabel>My Team Members</SectionLabel>
             {myMembers.map(m => {
               const kd = memberData[m.id]; if (!kd) return null;
-              const hasRateKrs = memberHasRateKrs(kd.krs);
-              const r = hasRateKrs ? calcMemberRate(m.id, dmFiltKrsMgr(kd.krs), dmSubs) : null;
+              const r = mgrRates.memberById.get(m.id)?.rate ?? null;
               const s = getStatus(r);
               const memberProjCount = projects.filter(p => p.mgrId === m.id).length;
               const mSubs = allOkrSubs.filter(sub => sub.memberId === m.id);
@@ -11054,8 +11039,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
               {myMembers.filter(m => m.role === "member").map(m => {
                 const kd = memberData[m.id];
                 const krs = kd?.krs || [];
-                const hasRateKrs = memberHasRateKrs(krs);
-                const r = hasRateKrs ? calcMemberRate(m.id, krs, allOkrSubs) : null;
+                const r = mgrRates.memberById.get(m.id)?.rate ?? null;
                 const s = getStatus(r);
                 const groups = {};
                 krs.filter(kr => kr.type !== "manager-fill" && kr.type !== "project_profit").forEach(kr => { const p = kr.period || "monthly"; if (!groups[p]) groups[p] = []; groups[p].push(kr); });
@@ -11971,15 +11955,8 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
   const myOkrSubs = (state.okrSubmissions || []).filter(s => s.memberId === user.id);
   const myPendingCheckins = myOkrSubs.filter(s => s.answer === null);
   const hasRateKrs = memberHasRateKrs(kd.krs);
-  const _memNow = new Date();
-  const _memTypes = ["daily", "weekly", "monthly"];
-  const _memMonthSubs = (state.okrSubmissions || []).filter(s => {
-    if (!_memTypes.includes(s.period) || !s.sentAt) return false;
-    const _d = new Date(s.sentAt);
-    return _d.getFullYear() === _memNow.getFullYear() && _d.getMonth() === _memNow.getMonth();
-  });
-  const _memFiltKrs = krs => krs.filter(kr => _memTypes.includes(kr.period || "monthly"));
-  const rate = hasRateKrs ? calcMemberRate(user.id, _memFiltKrs(kd.krs), _memMonthSubs) : null;
+  // Last month's results, same rule as the Company Overview
+  const rate = hasRateKrs ? calcMemberRate(user.id, monthlyViewKrs(kd.krs), monthlyViewSubs(myOkrSubs)) : null;
   const st = getStatus(rate);
   const pendingCount = myOkrSubs.filter(s => s.answer !== null && s.approval === "pending").length;
   const myOwnProjects = projects.filter(p => p.type !== "pursuit" && p.mgrId === user.id);
@@ -12477,28 +12454,14 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             );
           };
           const dKrs = filterP(myDept.krs);
-          const _deptNow = new Date();
-          const _deptTypes = ["daily", "weekly", "monthly"];
-          const _deptSubs = (state.okrSubmissions || []).filter(s => {
-            if (!_deptTypes.includes(s.period) || !s.sentAt) return false;
-            const _d = new Date(s.sentAt);
-            return _d.getFullYear() === _deptNow.getFullYear() && _d.getMonth() === _deptNow.getMonth();
-          });
-          const _deptFiltKrs = krs => krs.filter(kr => _deptTypes.includes(kr.period || "monthly"));
-          const _deptRates = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && !u.excludeFromRate).map(u => { const kd2 = memberData[u.id] || { krs: [] }; if (!memberHasRateKrs(kd2.krs)) return null; return calcMemberRate(u.id, _deptFiltKrs(kd2.krs), _deptSubs); }).filter(r => r !== null);
-          const deptRate = _deptRates.length ? _deptRates.reduce((a, b) => a + b, 0) / _deptRates.length : 0;
+          const deptPeople = users.filter(u => u.deptId === user.deptId);
+          const deptRate = computeOkrRates({ users: deptPeople, depts: [myDept], memberData, subs: monthlyViewSubs(state.okrSubmissions), krFilter: monthlyViewKrs }).depts[0]?.rate ?? null;
           const deptStatus = getStatus(deptRate);
           const filtMKrs = krs => okrPeriod === "all" ? krs : krs.filter(kr => (kr.period || "monthly") === okrPeriod);
+          const tabRates = computeOkrRates({ users: deptPeople, depts: [myDept], memberData, subs: okrPeriodSubs(state.okrSubmissions, okrPeriod), krFilter: filtMKrs });
           const allTeamStats = myDept.teams.map(t => {
-            const tKrs = filterP(t.krs);
-            const teamMembers = users.filter(u => (u.role === "member" || u.role === "manager") && u.deptId === user.deptId && !u.excludeFromRate && (u.teamId === t.id || u.secondTeamId === t.id));
-            const memberRates = teamMembers.map(u => {
-              const kd = memberData[u.id];
-              if (!kd || !memberHasRateKrs(filtMKrs(kd.krs))) return null;
-              return calcMemberRate(u.id, filtMKrs(kd.krs), _deptSubs);
-            }).filter(r => r !== null);
-            const rate = memberRates.length ? memberRates.reduce((a, b) => a + b, 0) / memberRates.length : null;
-            return { ...t, krs: tKrs, rate, status: getStatus(rate) };
+            const { rate, status } = tabRates.groupRate(deptPeople.filter(u => u.teamId === t.id || u.secondTeamId === t.id).map(u => u.id));
+            return { ...t, krs: filterP(t.krs), rate, status };
           }).filter(t => t.krs.length > 0);
           const totalKrs = dKrs.length + allTeamStats.reduce((s, t) => s + t.krs.length, 0);
           return (<>
@@ -12508,7 +12471,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                 {PERIODS.map(p => <Btn key={p.id} primary={okrPeriod === p.id} small onClick={() => setOkrPeriod(p.id)}>{p.label}</Btn>)}
               </div>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-                <Metric label="Dept Completion" value={`${deptRate.toFixed(1)}%`} status={deptStatus} sub={`Target: ${TP}%`} />
+                <Metric label={`Dept Completion · ${monthLabelFor(lastMonthKey())}`} value={deptRate != null ? `${deptRate.toFixed(1)}%` : "No data"} status={deptStatus} sub={`Target: ${TP}%`} />
                 <Metric label="KRs this period" value={totalKrs} />
                 {myTeam && <Metric label={mySecondTeam ? "My Teams" : "My Team"} value={mySecondTeam ? `${myTeam.name} / ${mySecondTeam.name}` : myTeam.name} />}
               </div>
@@ -13826,13 +13789,13 @@ function appReducer(state, action) {
       if (!dept) return state;
       const memberIds = state.users.filter(u => u.deptId === action.deptId && (u.role === "member" || u.role === "manager")).map(u => u.id);
       const krsToSync = dept.krs || [];
+      const measured = measuredKrKeys(state.okrSubmissions);
       const newMemberData = { ...state.memberData };
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
         const existing = md.krs || [];
-        // Update metadata only. Reset actual: 0 → null (initial default, not a real submission).
-        // Non-zero actuals from real approved check-ins are preserved.
-        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); if (!dk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = dk; const merged = { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; if (!meta.monthlyTargets) { delete merged.monthlyTargets; delete merged.monthlyActuals; } return merged; });
+        // Update metadata only; the member's own actual is kept (a 0 only counts once a check-in produced it)
+        const updated = existing.map(kr => { const dk = krsToSync.find(t => t.id === kr.id); if (!dk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = dk; const merged = { ...kr, ...meta, actual: kr.actual == null || (kr.actual === 0 && !measured.has(`${memberId}:${kr.id}`)) ? null : kr.actual }; if (!meta.monthlyTargets) { delete merged.monthlyTargets; delete merged.monthlyActuals; } return merged; });
         // New KRs start with null actual so krCompletion correctly treats them as not yet measured
         const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
@@ -13849,13 +13812,13 @@ function appReducer(state, action) {
         ...state.users.filter(u => u.teamId === action.teamId || u.secondTeamId === action.teamId).map(u => u.id),
       ])];
       const krsToSync = team.krs || [];
+      const measured = measuredKrKeys(state.okrSubmissions);
       const newMemberData = { ...state.memberData };
       for (const memberId of memberIds) {
         const md = newMemberData[memberId] || { krs: [] };
         const existing = md.krs || [];
-        // Update metadata only. Reset actual: 0 → null (initial default, not a real submission).
-        // Non-zero actuals from real approved check-ins are preserved.
-        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); if (!tk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = tk; const merged = { ...kr, ...meta, actual: (kr.actual === 0 || kr.actual == null) ? null : kr.actual }; if (!meta.monthlyTargets) { delete merged.monthlyTargets; delete merged.monthlyActuals; } return merged; });
+        // Update metadata only; the member's own actual is kept (a 0 only counts once a check-in produced it)
+        const updated = existing.map(kr => { const tk = krsToSync.find(t => t.id === kr.id); if (!tk) return kr; const { actual: _a, monthlyActuals: _m, ...meta } = tk; const merged = { ...kr, ...meta, actual: kr.actual == null || (kr.actual === 0 && !measured.has(`${memberId}:${kr.id}`)) ? null : kr.actual }; if (!meta.monthlyTargets) { delete merged.monthlyTargets; delete merged.monthlyActuals; } return merged; });
         // New KRs start with null actual so krCompletion correctly treats them as not yet measured
         const added = krsToSync.filter(kr => !existing.some(e => e.id === kr.id)).map(({ actual: _a, monthlyActuals: _m, ...meta }) => ({ ...meta, actual: null, ...(meta.monthlyTargets ? { monthlyActuals: {} } : {}) }));
         newMemberData[memberId] = { ...md, krs: [...updated, ...added] };
@@ -14392,21 +14355,19 @@ export default function App({ redirectAccount = null }) {
     });
   }, []); // eslint-disable-line
 
-  // Shared data processor: resets actual: 0 → null on every load (0 is the legacy init default,
-  // not a real submitted value; approved submissions always write back a non-null actualValue).
-  // Used by both the mount effect and reloadState.
+  // Shared data processor for the mount effect and reloadState. A legacy actual of 0 becomes null
+  // ("not measured") only for KRs that no check-in has ever produced a value for.
   const applyLoadedData = useCallback((data) => {
     const okrSubs = data.okrSubmissions || [];
-    const fixActuals = krs => (krs || []).map(kr =>
-      kr.actual === 0 ? { ...kr, actual: null } : kr
-    );
+    const measured = measuredKrKeys(okrSubs);
+    const fixDeptKrs = krs => (krs || []).map(kr => clearUnmeasuredZero(kr, kr.id, measured));
     const fixedDepts = (data.depts || []).map(d => ({
       ...d,
-      krs: fixActuals(d.krs),
-      teams: (d.teams || []).map(t => ({ ...t, krs: fixActuals(t.krs) })),
+      krs: fixDeptKrs(d.krs),
+      teams: (d.teams || []).map(t => ({ ...t, krs: fixDeptKrs(t.krs) })),
     }));
     const fixedMemberData = Object.fromEntries(
-      (data.memberData || []).map(m => [m.id, { krs: fixActuals(m.krs || []) }])
+      (data.memberData || []).map(m => [m.id, { krs: (m.krs || []).map(kr => clearUnmeasuredZero(kr, `${m.id}:${kr.id}`, measured)) }])
     );
     dbLoadedRef.current = true;
     rawDispatch(() => ({
