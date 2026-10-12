@@ -322,6 +322,36 @@ function periodDateRange(period, periodKey) {
   if (period === "annual") { const y = +periodKey; return `${fmt(new Date(y,0,1))} – ${fmt(new Date(y,11,31))}`; }
   return periodKey;
 }
+// Short KR ids that are unique across every department, team and member KR list
+function newKrId(prefix, depts = [], memberData = {}) {
+  const used = new Set([
+    ...depts.flatMap(d => [...(d.krs || []), ...(d.teams || []).flatMap(t => t.krs || [])]).map(k => k.id),
+    ...Object.values(memberData).flatMap(m => (m.krs || []).map(k => k.id)),
+  ]);
+  for (;;) {
+    const id = prefix + Math.random().toString(36).slice(2, 6).toUpperCase();
+    if (id.length === prefix.length + 4 && !used.has(id)) return id;
+  }
+}
+// The month whose monthly target applies to a check-in for this period
+function checkinMonthKey(period, periodKey) {
+  if (period === "monthly") return periodKey;
+  if (period === "weekly") { const d = new Date(); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+  return currentFYMonthKey();
+}
+// A KR with monthly targets is only checked in once that month's target has been set
+function krReadyForCheckin(kr, monthKey) {
+  if (kr.type === "manager-fill" || kr.type === "project_profit") return false;
+  if (!kr.monthlyTargets || kr.type === "tracker" || kr.type === "progress") return true;
+  return kr.monthlyTargets[monthKey] != null;
+}
+// Year a project was completed. Older records have no completedYear, so fall back to the year in updatedDate,
+// which is stored either as "09 Oct 2026, 10:30 am" or (legacy) "09/10/2026, 10:30 am".
+function projectCompletedYear(p) {
+  if (p.completedYear) return p.completedYear;
+  const m = String(p.updatedDate || "").match(/\b(20\d{2})\b/);
+  return m ? Number(m[1]) : null;
+}
 function makeAv(name) {
   return (name || "?").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 }
@@ -398,6 +428,28 @@ const dbGetCoeData       = () => dbFetchCollections(["coe_records", "coe_batches
 const dbGetPlData        = () => dbFetchCollections(["pl_records"]);
 const dbGetCashData      = () => dbFetchCollections(["cash_records"]);
 const dbGetGoogleReviews = () => dbFetchCollections(["google_reviews"]);
+
+async function dbDeleteMany(collection, ids) {
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { error } = await supabase.from("app_data").delete().eq("collection", collection).in("id", ids.slice(i, i + CHUNK));
+    if (error) throw new Error(`dbDeleteMany(${collection}): ${error.message}`);
+  }
+}
+
+// Writes a weekly import, replacing rows it supersedes. New rows go in first and old ones are removed
+// afterwards, so a failure never loses data; a partial insert is cleaned up so a retry can't duplicate.
+async function dbReplaceImport({ recordCollection, batchCollection, batch, records, oldRecordIds }) {
+  await dbUpsert(batchCollection, batch);
+  try {
+    await dbBulkInsert(recordCollection, records);
+  } catch (err) {
+    await dbDeleteMany(recordCollection, records.map(r => r.id)).catch(() => {});
+    await dbDelete(batchCollection, batch.id).catch(() => {});
+    throw err;
+  }
+  if (oldRecordIds.length) await dbDeleteMany(recordCollection, oldRecordIds);
+}
 
 async function dbBulkInsert(collection, items) {
   const CHUNK = 200;
@@ -844,7 +896,7 @@ function LoadingScreen({ error, onRetry }) {
 /* ─────────────────────────────────────────────────────────────
    LOGIN PAGE
    ───────────────────────────────────────────────────────────── */
-function LoginPage({ msalErr, onDismissErr }) {
+function LoginPage({ msalErr, deactivated, onDismissErr }) {
   const { instance } = useMsal();
   const [show, setShow] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
@@ -873,9 +925,9 @@ function LoginPage({ msalErr, onDismissErr }) {
       {msalErr && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, fontFamily: F.body }}>
           <div style={{ background: T.surface, border: `1px solid ${T.badBorder}`, borderRadius: 14, padding: "36px 32px", maxWidth: 420, width: "90%", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: T.bad, marginBottom: 10 }}>Access Not Granted</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.bad, marginBottom: 10 }}>{deactivated ? "Account Deactivated" : "Access Not Granted"}</div>
             <p style={{ margin: "0 0 8px", fontSize: 15, color: T.textSoft, lineHeight: 1.65 }}>
-              The account <span style={{ color: T.text, fontWeight: 600 }}>{msalErr}</span> is not registered in this system.
+              The account <span style={{ color: T.text, fontWeight: 600 }}>{msalErr}</span> {deactivated ? "has been deactivated." : "is not registered in this system."}
             </p>
             <p style={{ margin: "0 0 24px", fontSize: 15, color: T.textSoft, lineHeight: 1.65 }}>
               Please contact your <strong style={{ color: T.text }}>team manager</strong> or the <strong style={{ color: T.text }}>IT team</strong> to request access.
@@ -956,7 +1008,9 @@ function LoginPage({ msalErr, onDismissErr }) {
    ───────────────────────────────────────────────────────────── */
 const BLANK_FORM = { name: "", email: "", role: "member", title: "", deptId: "", teamId: "", teamIds: [], mgrDeptIds: [], canApprovePeers: false, canApproveProjects: false, designatedApproverId: "" };
 
-function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, settings }) {
+function UserMgmtPage({ users: allUsers, depts, projects = [], dispatch, currentUserId, onImpersonate, settings }) {
+  const users = allUsers.filter(u => u.active !== false);
+  const inactiveUsers = allUsers.filter(u => u.active === false);
   const { isMobile } = useContext(MobileContext);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
@@ -970,7 +1024,8 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
 
   function handleAdd() {
     if (!form.name.trim() || !form.email.trim()) { setFormErr("Name and email are required."); return; }
-    if (users.some(u => u.email.toLowerCase() === form.email.trim().toLowerCase())) { setFormErr("A user with this email already exists."); return; }
+    const dupe = allUsers.find(u => String(u.email || "").toLowerCase() === form.email.trim().toLowerCase());
+    if (dupe) { setFormErr(dupe.active === false ? "A deactivated user with this email already exists. Reactivate them from the Deactivated list instead." : "A user with this email already exists."); return; }
     const id = `usr_${Date.now().toString(36)}`;
     const newUser = {
       id, name: form.name.trim(), email: form.email.trim().toLowerCase(),
@@ -993,6 +1048,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
   }
 
   function saveEdit() {
+    const newEmail = editForm.email.trim().toLowerCase();
+    if (!editForm.name.trim() || !newEmail) { window.alert("Name and email are required."); return; }
+    if (allUsers.some(u => u.id !== editId && String(u.email || "").toLowerCase() === newEmail)) { window.alert("Another user (active or deactivated) already uses this email."); return; }
     dispatch({ type: "UPDATE_USER", userId: editId, updates: {
       name: editForm.name.trim(), email: editForm.email.trim().toLowerCase(),
       role: editForm.role, av: makeAv(editForm.name), title: editForm.title.trim() || editForm.role,
@@ -1011,9 +1069,9 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
   const roleColor = { admin: T.brand, manager: T.orange, member: T.ok };
 
   const roleCounts = users.reduce((a, u) => { a[u.role] = (a[u.role] || 0) + 1; return a; }, {});
-  const filteredUsers = users.filter(u => {
+  const filteredUsers = (deptFilter === "__inactive__" ? inactiveUsers : users).filter(u => {
     const matchesSearch = !search.trim() || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
-    const matchesDept = deptFilter === "all" || (deptFilter === "__none__" ? !u.deptId : u.deptId === deptFilter);
+    const matchesDept = deptFilter === "all" || deptFilter === "__inactive__" || (deptFilter === "__none__" ? !u.deptId : u.deptId === deptFilter);
     return matchesSearch && matchesDept;
   });
 
@@ -1142,6 +1200,11 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
           <Btn small primary={deptFilter === "__none__"} onClick={() => setDeptFilter("__none__")}>
             No Dept <span style={{ opacity: 0.7, fontWeight: 400 }}>({users.filter(u => !u.deptId).length})</span>
           </Btn>
+          {inactiveUsers.length > 0 && (
+            <Btn small primary={deptFilter === "__inactive__"} onClick={() => setDeptFilter("__inactive__")}>
+              Deactivated <span style={{ opacity: 0.7, fontWeight: 400 }}>({inactiveUsers.length})</span>
+            </Btn>
+          )}
         </div>
       </div>
 
@@ -1150,7 +1213,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
         <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 140px", padding: "7px 18px", gap: 10, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: "0.07em", textTransform: "uppercase" }}>
           <span></span><span>Name / Email</span><span>Title</span><span>Role</span><span>Department</span><span>Team</span><span style={{ textAlign: "right" }}>Actions</span>
         </div>
-        {filteredUsers.length === 0 && <EmptyState text={`No users match "${search}".`} />}
+        {filteredUsers.length === 0 && <EmptyState text={search.trim() ? `No users match "${search}".` : "No users here."} />}
         {filteredUsers.map((u, i) => {
           const dept = depts.find(d => d.id === u.deptId);
           const team = dept?.teams.find(t => t.id === u.teamId);
@@ -1273,7 +1336,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
             <div key={u.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 80px 120px 130px 140px", padding: "10px 18px", gap: 10, alignItems: "center", background: i % 2 ? T.raised : "transparent", borderBottom: `1px solid ${T.border}`, fontSize: 14 }}>
               <Avatar letters={u.av} size={26} />
               <div>
-                <div style={{ fontWeight: 600, color: T.text }}>{u.name}{isSelf && <span style={{ fontSize: 11, color: T.brand, marginLeft: 6 }}>you</span>}</div>
+                <div style={{ fontWeight: 600, color: T.text }}>{u.name}{isSelf && <span style={{ fontSize: 11, color: T.brand, marginLeft: 6 }}>you</span>}{u.active === false && <span style={{ fontSize: 10, fontWeight: 700, color: T.bad, background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 6, padding: "1px 6px", marginLeft: 6 }}>Deactivated{u.deactivatedAt ? " " + new Date(u.deactivatedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : ""}</span>}</div>
                 <div style={{ fontSize: 12, color: T.textMuted }}>{isSystem ? "System login only" : u.email}</div>
               </div>
               <span style={{ fontSize: 13, color: T.textSoft }}>{u.title}</span>
@@ -1307,15 +1370,31 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
                 {!isSystem && u.role !== "admin" && u.pilotAccess && !u.pilotSetId && (
                   <span title="NIET Pilot enabled but no question set assigned" style={{ color: "#f59e0b", fontSize: 13, lineHeight: 1 }}>⚠</span>
                 )}
-                {!isSystem && u.role !== "admin" && (
+                {!isSystem && u.role !== "admin" && u.active !== false && (
                   <button onClick={() => onImpersonate(u)} style={{ background: "#fff3e0", border: "1px solid #ffb74d", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#e65100", fontSize: 12, fontWeight: 700, fontFamily: F.body }} title={`View portal as ${u.name}`}>👁</button>
                 )}
                 {!isSystem && (
                   <button onClick={() => startEdit(u)} style={{ background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.brand, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Edit</button>
                 )}
-                {!isSystem && !isSelf && (
-                  <button onClick={() => { if (window.confirm(`Delete user "${u.name}"? This cannot be undone.`)) dispatch({ type: "REMOVE_USER", userId: u.id }); }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                {!isSystem && !isSelf && u.active !== false && (
+                  <button onClick={() => {
+                    const owned = projects.filter(p => p.mgrId === u.id && p.status === "active").length;
+                    const warn = owned ? `\n\n${u.name} still manages ${owned} active project${owned > 1 ? "s" : ""}. Reassign ${owned > 1 ? "them" : "it"} to another manager, or ${owned > 1 ? "they" : "it"} will drop out of department views.` : "";
+                    if (window.confirm(`Deactivate ${u.name}?\n\nThey won't be able to sign in or receive check-ins, and they'll be hidden from rankings and lists. All their OKR history is kept, and you can reactivate them at any time.${warn}`)) {
+                      dispatch({ type: "DEACTIVATE_USER", userId: u.id, by: currentUserId });
+                    }
+                  }} title="Deactivate user" style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Deactivate</button>
                 )}
+                {!isSystem && u.active === false && (<>
+                  <button onClick={() => dispatch({ type: "REACTIVATE_USER", userId: u.id })} style={{ background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.ok, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Reactivate</button>
+                  <button onClick={() => {
+                    if (!window.confirm(`Permanently delete ${u.name}?\n\nThis also deletes all of their OKR check-ins and history. It cannot be undone. To keep their history, leave them deactivated instead.`)) return;
+                    const typed = window.prompt(`To confirm, type the user's full name: ${u.name}`);
+                    if (typed == null) return;
+                    if (typed.trim() !== u.name.trim()) { window.alert("The name didn't match, so nothing was deleted."); return; }
+                    dispatch({ type: "REMOVE_USER", userId: u.id });
+                  }} title="Advanced: permanently delete this user and their history" style={{ background: "transparent", border: `1px dashed ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 11, fontWeight: 600, fontFamily: F.body }}>Delete permanently…</button>
+                </>)}
               </div>
             </div>
           );
@@ -1331,7 +1410,7 @@ function UserMgmtPage({ users, depts, dispatch, currentUserId, onImpersonate, se
    ───────────────────────────────────────────────────────────── */
 const BLANK_DEPT = { name: "", obj: "", head: "", college: "" };
 
-function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onViewKrs }) {
+function DeptMgmtPage({ depts, users, allUsers, memberData, okrSubmissions, dispatch, onViewKrs }) {
   const { isMobile } = useContext(MobileContext);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(BLANK_DEPT);
@@ -1485,7 +1564,15 @@ function DeptMgmtPage({ depts, users, memberData, okrSubmissions, dispatch, onVi
                     <button onClick={() => { dispatch({ type: "REMOVE_DEPT", deptId: d.id }); setConfirmDel(null); if (selDept === d.id) setSelDept(null); }} style={{ background: T.bad, border: "none", borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: F.body }}>Confirm</button>
                     <button onClick={() => setConfirmDel(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.textSoft, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>✕</button>
                   </>) : (
-                    <button onClick={() => setConfirmDel(d.id)} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>✕</button>
+                    <button onClick={() => {
+                      const inDept = (allUsers || users).filter(u => u.deptId === d.id);
+                      if (inDept.length) {
+                        const inactive = inDept.filter(u => u.active === false).length;
+                        window.alert(`${d.name} still has ${inDept.length} user${inDept.length > 1 ? "s" : ""}${inactive ? ` (including ${inactive} deactivated)` : ""}. Move them to another department in User Management before deleting it.`);
+                        return;
+                      }
+                      setConfirmDel(d.id);
+                    }} style={{ background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer", color: T.bad, fontSize: 12, fontWeight: 700, fontFamily: F.body }}>✕</button>
                   )}
                 </div>
               </div>
@@ -1663,7 +1750,7 @@ function FinancialPerformancePage({ state, dispatch, plRecords = [] }) {
   const REV_DIVS = ["NIET", "CB", "Rhodes", "Educare"];
   const FY_MONTHS = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
   const DIV_COLORS = { NIET: "#0071e3", CB: "#7c3aed", Rhodes: "#f97316", Educare: "#06b6d4" };
-  const fmtMoney = v => v >= 1_000_000 ? `$${(v/1_000_000).toFixed(2)}M` : v >= 1_000 ? `$${(v/1_000).toFixed(1)}K` : `$${Math.round(v).toLocaleString()}`;
+  const fmtMoney = v => { const a = Math.abs(v); const t = a >= 1_000_000 ? `$${(a/1_000_000).toFixed(2)}M` : a >= 1_000 ? `$${(a/1_000).toFixed(1)}K` : `$${Math.round(a).toLocaleString()}`; return v < 0 ? `-${t}` : t; };
   const nowFYMonth = (() => { const m = new Date().getMonth(); return m >= 6 ? m - 6 : m + 6; })();
   const mkDefault = (pt, dt) => ({ pt, dt, divisions: Object.fromEntries(REV_DIVS.map(d => [d, Array(12).fill(0)])) });
   const thisFY = (() => { const m = new Date().getMonth() + 1; const y = new Date().getFullYear(); return m >= 7 ? y + 1 : y; })();
@@ -1706,11 +1793,13 @@ function FinancialPerformancePage({ state, dispatch, plRecords = [] }) {
       ? Math.max(...cumulative.slice(0, revMonth + 1), ...monthlyGroup, 100) * 1.1
       : Math.max(cfg.dt * 1.08, ...cumulative.slice(0, revMonth + 1), 100) * 1.05);
     const xAt = i => CPad.l + (i / 11) * PW;
-    const yAt = v => CPad.t + PH - Math.min(v / maxY, 1) * PH;
     const plotData = cumulative.slice(0, revMonth + 1);
-    const areaD = plotData.length > 0 ? [`M ${xAt(0)} ${yAt(plotData[0])}`, ...plotData.slice(1).map((v, i) => `L ${xAt(i+1)} ${yAt(v)}`), `L ${xAt(plotData.length-1)} ${CPad.t+PH}`, `L ${xAt(0)} ${CPad.t+PH}`, 'Z'].join(' ') : '';
+    // Net profit can be negative, so the axis extends below zero when needed and the area is drawn from zero
+    const minY = Math.min(0, ...plotData) * 1.1;
+    const yAt = v => CPad.t + PH - Math.max(0, Math.min((v - minY) / (maxY - minY), 1)) * PH;
+    const areaD = plotData.length > 0 ? [`M ${xAt(0)} ${yAt(plotData[0])}`, ...plotData.slice(1).map((v, i) => `L ${xAt(i+1)} ${yAt(v)}`), `L ${xAt(plotData.length-1)} ${yAt(0)}`, `L ${xAt(0)} ${yAt(0)}`, 'Z'].join(' ') : '';
     const lineD = plotData.length > 0 ? [`M ${xAt(0)} ${yAt(plotData[0])}`, ...plotData.slice(1).map((v, i) => `L ${xAt(i+1)} ${yAt(v)}`)].join(' ') : '';
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => ({ v: maxY * t, y: yAt(maxY * t) }));
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => { const v = minY + (maxY - minY) * t; return { v, y: yAt(v) }; });
 
     return (
       <div key={cfgKey} style={{ marginBottom: 20, paddingTop: 18, borderTop: `4px solid ${accentColor}` }}>
@@ -2565,7 +2654,7 @@ const PURSUIT_STAGES = [
   { id: "contract",      label: "Contract Negotiation",         color: "#059669" },
 ];
 
-function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
+function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate }) {
   const [page, setPageRaw] = useState(() => {
     const p = window.location.pathname.split('/');
     return p[1] === 'admin' ? (p[2] || 'ai-chat') : 'ai-chat';
@@ -2813,11 +2902,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
   function buildChatContext(grv = grvData) {
     const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
     const now = new Date();
-    const getCompletedYear = p => {
-      if (p.completedYear) return p.completedYear;
-      const parts = (p.updatedDate || "").split("/");
-      return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
-    };
+    const getCompletedYear = projectCompletedYear;
     const today = localDateKey(now);
     const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
     // Match Company Overview monthly view: submissions sent in current calendar month, period in daily/weekly/monthly
@@ -3435,7 +3520,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
     if (!newKr.label) return;
     if (newKr.krType !== "tracker" && newKr.krType !== "progress" && !newKr.useMonthlyTargets && newKr.target === "") return;
     if (newKr.krType === "progress" && newKr.target === "") return;
-    const newId = `N${Date.now().toString(36).slice(-4).toUpperCase()}`;
+    const newId = newKrId("N", depts, memberData);
     const baseKr = { id: newId, label: newKr.label, unit: newKr.unit.trim(), dataSource: newKr.dataSource.trim(), operator: newKr.operator || ">=", period: newKr.period || "monthly" };
     const kr = newKr.krType === "tracker"
       ? { ...baseKr, type: "tracker", target: 0, actual: null, disallowZero: !!newKr.disallowZero }
@@ -3446,7 +3531,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
       : newKr.krType === "project_profit"
       ? { ...baseKr, type: "project_profit", period: "annual", target: Number(newKr.target), krYear: Number(newKr.krYear) || new Date().getFullYear(), actual: null }
       : newKr.useMonthlyTargets
-        ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, 0])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
+        ? { ...baseKr, monthlyTargets: Object.fromEntries(getFYMonths().map(m => [m.key, newKr.monthlyTargets?.[m.key] ?? null])), monthlyActuals: {}, ...(Number(newKr.dreamTarget) > 0 && { annualTarget: Number(newKr.dreamTarget) }) }
         : { ...baseKr, target: Number(newKr.target), actual: null };
     dispatch({ type: "ADD_KR", deptId, teamId, kr });
     if (teamId) triggerSyncPrompt(deptId, teamId);
@@ -3534,7 +3619,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         dept.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr));
         dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
         const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
-        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`));
+        const monthKey = checkinMonthKey(period, periodKey);
+        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`) && krReadyForCheckin(kr, monthKey));
         if (freshKrs.length) userSections.push({ period, periodKey, dateRange, krs: freshKrs });
       }
       if (!userSections.length) continue;
@@ -3566,11 +3652,9 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         dept.teams.forEach(t => { if (t.members?.includes(u.id) || u.teamId === t.id || u.secondTeamId === t.id) t.krs.filter(kr => (kr.period || "monthly") === period).forEach(kr => krList.push(kr)); });
         if (!krList.length) continue;
         const uniqueKrs = [...new Map(krList.map(kr => [kr.id, kr])).values()];
-        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`) && kr.type !== "manager-fill" && kr.type !== "project_profit");
+        const monthKey = checkinMonthKey(period, periodKey);
+        const freshKrs = uniqueKrs.filter(kr => !existing.has(`${u.id}:${kr.id}`) && krReadyForCheckin(kr, monthKey));
         if (!freshKrs.length) continue;
-        const monthKey = period === "monthly" ? periodKey
-          : period === "weekly" ? (() => { const d = new Date(Date.now() - 7 * 86400000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })()
-          : currentFYMonthKey();
         const resolveTarget = kr => kr.monthlyTargets ? (kr.monthlyTargets[monthKey] ?? kr.target ?? 0) : (kr.target ?? 0);
         freshKrs.forEach(kr => { newSubs.push({ id: `os_${(ctr++).toString(36)}`, memberId: u.id, memberName: u.name, deptId: u.deptId, krId: kr.id, krLabel: kr.label, krTarget: resolveTarget(kr), krUnit: kr.unit || "", krOperator: kr.operator || ">=", krType: kr.type || "", krIsMonthly: !!(kr.monthlyTargets), krDisallowZero: !!(kr.disallowZero), period, periodKey, dateRange, sentAt: new Date().toISOString(), answeredAt: null, answer: null, approval: "pending", approvedBy: null }); });
         const krsForEmail = freshKrs.map(kr => ({ ...kr, target: resolveTarget(kr), isMonthly: !!(kr.monthlyTargets) }));
@@ -3743,7 +3827,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
         subItems={deptSubItems} subItemsFor="okr-mgmt" activeSubItem={adminSelDept ? "__setup__" : "__all__"} onSelectSubItem={id => { setPage("okr-mgmt"); if (id === "__setup__") { setAdminSelDept(depts[0]?.id || null); } else { setAdminSelDept(null); } setSelTeam(null); setAddTarget(null); setExpandedMonthlyKr(null); }} />
       <div style={{ flex: 1, overflow: "auto" }}>
 
-        {page === "users" && <UserMgmtPage users={users} depts={depts} dispatch={dispatch} currentUserId={user.id} onImpersonate={onImpersonate} settings={settings} />}
+        {page === "users" && <UserMgmtPage users={allUsers || users} depts={depts} projects={state.projects || []} dispatch={dispatch} currentUserId={user.id} onImpersonate={onImpersonate} settings={settings} />}
 
         {page === "overview" && (<>
           <Header title="Company Overview" sub={(() => {
@@ -4247,7 +4331,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               </Pane>
             </>);
           }
-          return <DeptMgmtPage depts={depts} users={users} memberData={memberData} okrSubmissions={okrSubmissions} dispatch={dispatch} onViewKrs={id => { setAdminSelDept(id); setExpandedMonthlyKr(null); }} />;
+          return <DeptMgmtPage depts={depts} users={users} allUsers={allUsers} memberData={memberData} okrSubmissions={okrSubmissions} dispatch={dispatch} onViewKrs={id => { setAdminSelDept(id); setExpandedMonthlyKr(null); }} />;
         })()}
 
         {false && false && (() => {
@@ -4611,7 +4695,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                     <option value="biannual">Bi-Annual</option>
                                     <option value="annual">Annual</option>
                                   </select>
-                                  <button onClick={() => { if (!addPersonalKr.label.trim()) return; dispatch({ type: "ADD_MEMBER_KR", memberId: member.id, kr: { id: `P${Date.now().toString(36).slice(-4).toUpperCase()}`, label: addPersonalKr.label.trim(), target: Number(addPersonalKr.target) || 0, actual: null, unit: addPersonalKr.unit.trim(), operator: addPersonalKr.operator, period: addPersonalKr.period } }); setAddPersonalKr(null); }} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
+                                  <button onClick={() => { if (!addPersonalKr.label.trim()) return; dispatch({ type: "ADD_MEMBER_KR", memberId: member.id, kr: { id: newKrId("P", depts, memberData), label: addPersonalKr.label.trim(), target: Number(addPersonalKr.target) || 0, actual: null, unit: addPersonalKr.unit.trim(), operator: addPersonalKr.operator, period: addPersonalKr.period } }); setAddPersonalKr(null); }} style={{ background: T.brand, border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</button>
                                   <button onClick={() => setAddPersonalKr(null)} style={{ background: T.raised, border: `1px solid ${T.border}`, borderRadius: 5, padding: "4px 8px", cursor: "pointer", color: T.text, fontSize: 12 }}>✕</button>
                                 </div>
                               ) : (
@@ -5415,8 +5499,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               const groups = [...depts.map(d => ({ id: d.id, name: d.name })), { id: null, name: "Other" }];
               const groupElements = groups.map(group => {
                 const deptProjects = (group.id
-                  ? projects.filter(p => p.type !== "pursuit" && ownerDept(p) === group.id)
-                  : projects.filter(p => p.type !== "pursuit" && !ownerDept(p))
+                  ? projects.filter(p => p.type !== "pursuit" && p.status !== "pending approval" && ownerDept(p) === group.id)
+                  : projects.filter(p => p.type !== "pursuit" && p.status !== "pending approval" && !ownerDept(p))
                 ).filter(p => !searchLower || (users.find(u => u.id === p.mgrId)?.name || "").toLowerCase().includes(searchLower));
                 if (deptProjects.length === 0) return null;
                 return (
@@ -5579,8 +5663,8 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                             {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                             </div>
                             <div style={{ padding: "8px 18px", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                              <Btn small onClick={() => { if (window.confirm(`Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "active", completedYear: null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Reject</Btn>
-                              <Btn primary small onClick={() => { if (window.confirm(`Approve "${p.name}" as completed?`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "completed", completedYear: new Date().getFullYear(), updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Approve</Btn>
+                              <Btn small onClick={() => { if (window.confirm(p.previousApproved ? `Reject the changes to "${p.name}"? It goes back to Completed with its previously approved figures.` : `Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "REJECT_PROJECT", projectId: p.id, by: user.id }); }}>Reject</Btn>
+                              <Btn primary small onClick={() => { if (window.confirm(p.previousApproved ? `Approve the changed figures for "${p.name}"?` : `Approve "${p.name}" as completed?`)) dispatch({ type: "APPROVE_PROJECT", projectId: p.id, by: user.id }); }}>Approve</Btn>
                             </div>
                           </Card>
                         );
@@ -5656,7 +5740,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       <button onClick={() => { if (window.confirm(`Delete "${p.name}"?`)) dispatch({ type: "REMOVE_PROJECT", projectId: p.id }); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.bad, fontSize: 15, lineHeight: 1, padding: "2px 4px" }}>✕</button>
                     </div>
                   </div>
-                  {isEditing && <PursuitEditForm p={p} onSave={() => saveEdit(p)} onCancel={() => setEditPursuitId(null)} />}
+                  {isEditing && PursuitEditForm({ p, onSave: () => saveEdit(p), onCancel: () => setEditPursuitId(null) })}
                 </div>
               </Card>
             );
@@ -5689,14 +5773,14 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                           <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{st.label}</span>
                           <span style={{ fontSize: 12, color: T.textMuted, marginLeft: "auto" }}>{st.items.length} pursuit{st.items.length !== 1 ? "s" : ""} · ${st.items.reduce((s, p) => s + (p.estimatedValue || 0), 0).toLocaleString()}</span>
                         </div>
-                        {st.items.map(p => <PursuitCard key={p.id} p={p} />)}
+                        {st.items.map(p => <Fragment key={p.id}>{PursuitCard({ p })}</Fragment>)}
                       </div>
                     ))
               )}
               {pursuitAdminTab !== "active" && (
                 tabPursuits.length === 0
                   ? <EmptyState text={`No ${pursuitAdminTab} pursuits.`} />
-                  : tabPursuits.map(p => <PursuitCard key={p.id} p={p} showStage />)
+                  : tabPursuits.map(p => <Fragment key={p.id}>{PursuitCard({ p, showStage: true })}</Fragment>)
               )}
             </Pane>
           </>);
@@ -5918,16 +6002,21 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               const doImport = async () => {
                 if (!enrParsed) return;
                 if (!enrParsed.week) { setEnrError("No week number was found in this file. Add the week to the file name (for example 2026-W40) and upload it again."); return; }
+                const oldRecs = enrRecords.filter(r => r.week === enrParsed.week && enrParsed.rtos.includes(r.rto));
+                if (oldRecs.length && !window.confirm(`Week ${enrParsed.week} already has ${oldRecs.length} application row${oldRecs.length > 1 ? "s" : ""} for ${[...new Set(oldRecs.map(r => r.rto))].join(", ")}. Replace them with this file?`)) return;
                 setEnrImporting(true);
                 try {
                   const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
                   const batchId = `enr${Date.now()}`;
                   const batch = { id: batchId, fileName: enrParsed.fileName, fileSize: enrParsed.fileSize, week: enrParsed.week, totalEnrolments: enrParsed.totalEnrolments, importedAt: now };
                   const records = enrParsed.records.map((r, i) => ({ ...r, id: `${batchId}_${i}`, week: enrParsed.week, batchId, importedAt: now }));
-                  await dbUpsert("enrolment_batches", batch);
-                  await dbBulkInsert("enrolment_records", records);
-                  setEnrRecords(prev => [...prev, ...records]);
-                  setEnrBatches(prev => [...prev, batch]);
+                  await dbReplaceImport({ recordCollection: "enrolment_records", batchCollection: "enrolment_batches", batch, records, oldRecordIds: oldRecs.map(r => r.id) });
+                  const oldIds = new Set(oldRecs.map(r => r.id));
+                  const remaining = [...enrRecords.filter(r => !oldIds.has(r.id)), ...records];
+                  const emptied = enrBatches.filter(b => !remaining.some(r => r.batchId === b.id));
+                  await Promise.all(emptied.map(b => dbDelete("enrolment_batches", b.id).catch(() => {})));
+                  setEnrRecords(remaining);
+                  setEnrBatches(prev => [...prev.filter(b => !emptied.some(e => e.id === b.id)), batch]);
                   setEnrParsed(null);
                   setEnrError(null);
                 } catch (e) { setEnrError(`Import failed: ${e.message}`); }
@@ -5961,7 +6050,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                   )}
                   {enrParsed.weekAlreadyHasData && enrParsed.overlappingRtos.length > 0 && (
                     <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 7, fontSize: 13, color: T.warn, marginBottom: 14, lineHeight: 1.5 }}>
-                      ⚠ Week {enrParsed.week} already has data for: {enrParsed.overlappingRtos.join(", ")}. Importing again will double-count these RTOs. Cancel if this is a re-upload of the same file.
+                      ⚠ Week {enrParsed.week} already has data for: {enrParsed.overlappingRtos.join(", ")}. Importing will replace that week's data for these RTOs.
                     </div>
                   )}
                   <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>{enrParsed.fileName} · {(enrParsed.fileSize / 1024).toFixed(1)} KB</div>
@@ -6317,16 +6406,21 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 const doNietImport = async () => {
                   if (!coeParsed) return;
                   if (!coeParsed.week) { setCoeError("No week number was found in this file. Add the week to the file name (for example 2026-W40) and upload it again."); return; }
+                  const oldRecs = coeRecords.filter(r => r.week === coeParsed.week && coeParsed.sheetsFound.includes(`${r.rto} ${r.type}`));
+                  if (oldRecs.length && !window.confirm(`Week ${coeParsed.week} already has ${oldRecs.length} record${oldRecs.length > 1 ? "s" : ""} for ${[...new Set(oldRecs.map(r => `${r.rto} ${r.type}`))].join(", ")}. Replace them with this file?`)) return;
                   setCoeImporting(true);
                   try {
                     const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
                     const batchId = `coe${Date.now()}`;
                     const batch = { id: batchId, fileName: coeParsed.fileName, fileSize: coeParsed.fileSize, week: coeParsed.week, totalRecords: coeParsed.totalRecords, sheetsFound: coeParsed.sheetsFound, importedAt: now };
                     const records = coeParsed.records.map((r, i) => ({ ...r, id: `${batchId}_${i}`, week: coeParsed.week, batchId, importedAt: now }));
-                    await dbUpsert("coe_batches", batch);
-                    await dbBulkInsert("coe_records", records);
-                    setCoeRecords(prev => [...prev, ...records]);
-                    setCoeBatches(prev => [...prev, batch]);
+                    await dbReplaceImport({ recordCollection: "coe_records", batchCollection: "coe_batches", batch, records, oldRecordIds: oldRecs.map(r => r.id) });
+                    const oldIds = new Set(oldRecs.map(r => r.id));
+                    const remaining = [...coeRecords.filter(r => !oldIds.has(r.id)), ...records];
+                    const emptied = coeBatches.filter(b => !remaining.some(r => r.batchId === b.id));
+                    await Promise.all(emptied.map(b => dbDelete("coe_batches", b.id).catch(() => {})));
+                    setCoeRecords(remaining);
+                    setCoeBatches(prev => [...prev.filter(b => !emptied.some(e => e.id === b.id)), batch]);
                     setCoeParsed(null);
                     setCoeError(null);
                   } catch (e) { setCoeError(`Import failed: ${e.message}`); }
@@ -6348,16 +6442,21 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                 const doEducareImport = async () => {
                   if (!educareParsed) return;
                   if (!educareParsed.week) { setCoeError("No week number was found in this file. Add the week to the file name (for example 2026-W40) and upload it again."); return; }
+                  const oldRecs = coeRecords.filter(r => r.week === educareParsed.week && educareParsed.sheetsFound.includes(`${r.rto} ${r.type}`));
+                  if (oldRecs.length && !window.confirm(`Week ${educareParsed.week} already has ${oldRecs.length} record${oldRecs.length > 1 ? "s" : ""} for ${[...new Set(oldRecs.map(r => `${r.rto} ${r.type}`))].join(", ")}. Replace them with this file?`)) return;
                   setEducareImporting(true);
                   try {
                     const now = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
                     const batchId = `edu${Date.now()}`;
                     const batch = { id: batchId, fileName: educareParsed.fileName, fileSize: educareParsed.fileSize, week: educareParsed.week, totalRecords: educareParsed.totalRecords, sheetsFound: educareParsed.sheetsFound, importedAt: now };
                     const records = educareParsed.records.map((r, i) => ({ ...r, id: `${batchId}_${i}`, week: educareParsed.week, batchId, importedAt: now }));
-                    await dbUpsert("coe_batches", batch);
-                    await dbBulkInsert("coe_records", records);
-                    setCoeRecords(prev => [...prev, ...records]);
-                    setCoeBatches(prev => [...prev, batch]);
+                    await dbReplaceImport({ recordCollection: "coe_records", batchCollection: "coe_batches", batch, records, oldRecordIds: oldRecs.map(r => r.id) });
+                    const oldIds = new Set(oldRecs.map(r => r.id));
+                    const remaining = [...coeRecords.filter(r => !oldIds.has(r.id)), ...records];
+                    const emptied = coeBatches.filter(b => !remaining.some(r => r.batchId === b.id));
+                    await Promise.all(emptied.map(b => dbDelete("coe_batches", b.id).catch(() => {})));
+                    setCoeRecords(remaining);
+                    setCoeBatches(prev => [...prev.filter(b => !emptied.some(e => e.id === b.id)), batch]);
                     setEducareParsed(null);
                     setCoeError(null);
                   } catch (e) { setCoeError(`Import failed: ${e.message}`); }
@@ -6385,7 +6484,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                       </div>
                       {parsed.weekAlreadyHasData && parsed.overlapping.length > 0 && (
                         <div style={{ padding: "10px 14px", background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 7, fontSize: 13, color: T.warn, marginBottom: 10, lineHeight: 1.5 }}>
-                          ⚠ Week {parsed.week} already has data for: {parsed.overlapping.join(", ")}. Importing again will duplicate records.
+                          ⚠ Week {parsed.week} already has data for: {parsed.overlapping.join(", ")}. Importing will replace that week's data for these sheets.
                         </div>
                       )}
                       {parsed.weekAlreadyHasData && parsed.overlapping.length === 0 && (
@@ -7198,7 +7297,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                       const mk = currentFYMonthKey();
                                       const mTgt = isMonthly ? (Number(kr.monthlyTargets[mk]) || 0) : null;
                                       const mAct = isMonthly ? ((kr.monthlyActuals || {})[mk] ?? null) : null;
-                                      const lbPPAct = kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; return (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0); })() : null;
+                                      const lbPPAct = kr.type === "project_profit" ? (() => { const lbGetCY = projectCompletedYear; return (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0); })() : null;
                                       const pct = kr.type === "project_profit" ? (kr.target > 0 ? Math.min(Math.round(lbPPAct / kr.target * 100), 100) : 0) : krCompletion(kr);
                                       const st = getStatus(pct);
                                       return (
@@ -7220,7 +7319,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                               : kr.type === "progress" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>
                                               : <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{kr.operator || ">="} {fmt(kr.target)}{kr.unit ? ` ${kr.unit}` : ""}</span>}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, color: T.textMuted }}>{fmt(kr.actual)}</span>
-                                              : kr.type === "project_profit" ? (() => { const lbGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; }; const lbAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0); return <span style={{ textAlign: "right", fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>${lbAct.toLocaleString()}</span>; })()
+                                              : kr.type === "project_profit" ? (() => { const lbGetCY = projectCompletedYear; const lbAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && lbGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0); return <span style={{ textAlign: "right", fontFamily: F.mono, color: T.ok, fontWeight: 700 }}>${lbAct.toLocaleString()}</span>; })()
                                               : isMonthly ? <NumInput value={mAct} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "monthlyActuals", value: { ...(kr.monthlyActuals || {}), [mk]: n } })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />
                                               : <NumInput value={kr.actual} onChange={n => dispatch({ type: "UPDATE_MEMBER_KR", memberId: m.id, krId: kr.id, field: "actual", value: n })} style={{ textAlign: "right", padding: "4px 8px", fontSize: 13, fontFamily: F.mono }} />}
                                             {kr.type === "tracker" ? <span style={{ textAlign: "right", fontFamily: F.mono, fontSize: 11, color: "#7c3aed" }}>—</span> : <span style={{ textAlign: "right", fontFamily: F.mono, fontWeight: 700, color: STATUS_THEME[st].color }}>{pct.toFixed(0)}%</span>}
@@ -7295,7 +7394,7 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
                                 else if (lbKrForm.krType === "progress") kr = { ...base, type: "progress", target: Number(lbKrForm.target), actual: null };
                                 else if (lbKrForm.krType === "manager-fill") kr = { ...base, type: "manager-fill", target: Number(lbKrForm.target), actual: null };
                                 else if (isProjProfit) kr = { id: `mkr_${Date.now().toString(36)}`, label: lbKrForm.label, type: "project_profit", period: "annual", target: Number(lbKrForm.target), krYear: Number(lbKrForm.krYear) || new Date().getFullYear(), actual: null };
-                                else if (lbKrForm.useMonthlyTargets) kr = { ...base, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, 0])), monthlyActuals: {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
+                                else if (lbKrForm.useMonthlyTargets) kr = { ...base, monthlyTargets: Object.fromEntries(getFYMonths().map(mo => [mo.key, null])), monthlyActuals: {}, ...(Number(lbKrForm.dreamTarget) > 0 && { annualTarget: Number(lbKrForm.dreamTarget) }) };
                                 else kr = { ...base, target: Number(lbKrForm.target), actual: null };
                                 dispatch({ type: "ADD_MEMBER_KR", memberId: m.id, kr });
                                 setLbAddMember(null);
@@ -7466,11 +7565,11 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 20 : 32, alignItems: "start" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, color: T.text }}>Template Fields</div>
-                  <Field label="Sender Name" value={localDraft.fromName} onChange={v => setField("fromName", v)} hint='Displayed in the From field, e.g. "NIET Group OKRs"' />
-                  <Field label="Subject Line" value={localDraft.subject} onChange={v => setField("subject", v)} hint="Placeholders: {periodLabel} · {periodKey}" />
-                  <Field label="Email Body" value={localDraft.body} onChange={v => setField("body", v)} hint="HTML tags OK. Placeholders: {periodLower} · {periodLabel} · {periodKey}" multiline />
-                  <Field label="CTA Button Text" value={localDraft.ctaText} onChange={v => setField("ctaText", v)} />
-                  <Field label="Footer Text" value={localDraft.footer} onChange={v => setField("footer", v)} hint="Use \n for line breaks." multiline />
+                  {Field({ label: "Sender Name", value: localDraft.fromName, onChange: v => setField("fromName", v), hint: 'Displayed in the From field, e.g. "NIET Group OKRs"' })}
+                  {Field({ label: "Subject Line", value: localDraft.subject, onChange: v => setField("subject", v), hint: "Placeholders: {periodLabel} · {periodKey}" })}
+                  {Field({ label: "Email Body", value: localDraft.body, onChange: v => setField("body", v), hint: "HTML tags OK. Placeholders: {periodLower} · {periodLabel} · {periodKey}", multiline: true })}
+                  {Field({ label: "CTA Button Text", value: localDraft.ctaText, onChange: v => setField("ctaText", v) })}
+                  {Field({ label: "Footer Text", value: localDraft.footer, onChange: v => setField("footer", v), hint: "Use \\n for line breaks.", multiline: true })}
                   {tmplPeriod === "default" && <div style={{ fontSize: 12, color: T.textMuted, padding: "10px 0 4px" }}>Changes to the Default template are saved automatically and apply to all periods that don't have an override.</div>}
                 </div>
                 <div>
@@ -7820,12 +7919,17 @@ function AdminPortal({ user, onLogout, state, dispatch, onImpersonate }) {
           async function grvHandleImport(file) {
             setGrvImporting(true); setGrvImportError(null); setGrvImportMsg(null);
             try {
-              const parsed = await grvParseFile(file);
+              const { reviews: parsed, placeName, skipped } = await grvParseFile(file);
               const campusLabel = GRV_CAMPUSES.find(c => c.slug === grvCampus)?.label || grvCampus;
+              if (!parsed.length) throw new Error("No reviews with a 1–5 star rating were found in this file. Nothing was imported.");
+              const existing = grvData[grvCampus]?.reviews?.length || 0;
+              const fileFor = placeName ? `\n\nThis file is for: ${placeName}` : "";
+              if (existing && !window.confirm(`Replace the ${existing} reviews stored for ${campusLabel} with ${parsed.length} reviews from this file?${fileFor}`)) { setGrvImporting(false); return; }
+              if (!existing && placeName && !window.confirm(`Import ${parsed.length} reviews for ${campusLabel}?${fileFor}`)) { setGrvImporting(false); return; }
               const doc = { id: grvCampus, campusSlug: grvCampus, campusName: campusLabel, reviews: parsed, lastImport: new Date().toISOString(), count: parsed.length };
               await dbUpsert("google_reviews", doc);
               setGrvData(prev => ({ ...prev, [grvCampus]: doc }));
-              setGrvImportMsg(`Imported ${parsed.length} reviews for ${campusLabel}`);
+              setGrvImportMsg(`Imported ${parsed.length} reviews for ${campusLabel}${skipped ? ` (${skipped} row${skipped > 1 ? "s" : ""} without a valid rating skipped)` : ""}`);
             } catch (e) { setGrvImportError(e.message); }
             setGrvImporting(false);
           }
@@ -8119,8 +8223,13 @@ async function grvParseFile(file) {
   const iTimestamp = col("review_timestamp");
   const iDate      = col("review_datetime_utc");
   const iLikes     = col("review_likes");
-  return rows.slice(1)
-    .filter(r => r.some(c => c !== null && c !== undefined && c !== ""))
+  if (iRating < 0 || (iReviewId < 0 && iText < 0)) {
+    throw new Error("This file doesn't look like an Outscraper Google Reviews export: the review_rating and review_id / review_text columns are missing. Nothing was imported.");
+  }
+  const iPlace = [col("name"), col("place_name"), col("title")].find(i => i >= 0) ?? -1;
+  const dataRows = rows.slice(1).filter(r => r.some(c => c !== null && c !== undefined && c !== ""));
+  const placeName = iPlace >= 0 ? (dataRows.map(r => r[iPlace]).find(v => v != null && String(v).trim()) || null) : null;
+  const reviews = dataRows
     .map(r => ({
       reviewId:  r[iReviewId]  != null ? String(r[iReviewId])  : null,
       author:    r[iAuthor]    != null ? String(r[iAuthor])     : null,
@@ -8131,7 +8240,9 @@ async function grvParseFile(file) {
       timestamp: r[iTimestamp] != null ? Number(r[iTimestamp])  : null,
       date:      r[iDate]      != null ? String(r[iDate])       : null,
       likes:     r[iLikes]     != null ? Number(r[iLikes])      : 0,
-    }));
+    }))
+    .filter(rv => Number.isFinite(rv.rating) && rv.rating >= 1 && rv.rating <= 5);
+  return { reviews, placeName: placeName ? String(placeName).trim() : null, skipped: dataRows.length - reviews.length };
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -8340,14 +8451,24 @@ async function cashParseFiles(fileSheets) {
   return { records: allRecords, warnings };
 }
 
-function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [], cashRecords = [], grvData = {} }) {
-  const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
+// scope (Manager/Member Pilot) limits what the AI can see:
+//   detailUserIds    — people whose names, KRs, sales, logins and projects may appear
+//   aggregateUserIds — people whose numbers feed the department completion figures (never listed individually)
+//   deptIds          — departments in view; finance — whether P&L / cash data may be included
+// Admin passes no scope and sees everything.
+function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [], cashRecords = [], grvData = {}, scope = null }) {
+  const detailIds = scope ? new Set(scope.detailUserIds) : null;
+  const aggIds = scope ? new Set([...scope.aggregateUserIds, ...scope.detailUserIds]) : null;
+  const isDetail = id => !detailIds || detailIds.has(id);
+  const depts = scope ? state.depts.filter(d => scope.deptIds.includes(d.id)) : state.depts;
+  const users = scope ? state.users.filter(u => aggIds.has(u.id)) : state.users;
+  const okrSubmissions = scope ? (state.okrSubmissions || []).filter(s => aggIds.has(s.memberId)) : (state.okrSubmissions || []);
+  const projects = scope ? (state.projects || []).filter(p => detailIds.has(p.mgrId)) : (state.projects || []);
+  const { memberData, monthlyReports = [] } = state;
+  const financeAllowed = !scope || !!scope.finance;
+  if (!financeAllowed) { plRecords = []; cashRecords = []; }
   const now = new Date();
-  const getCompletedYear = p => {
-    if (p.completedYear) return p.completedYear;
-    const parts = (p.updatedDate || "").split("/");
-    return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
-  };
+  const getCompletedYear = projectCompletedYear;
   const today = localDateKey(now);
   const monthLabel = now.toLocaleString("en-AU", { month: "long", year: "numeric" });
   const monthlyTypes = ["daily", "weekly", "monthly"];
@@ -8407,7 +8528,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
   const deptSection = deptStats.map(d =>
     `  ${d.name}: ${d.rate !== null ? d.rate.toFixed(1) + "% [" + d.status + "]" : "no data"} (${d.eligible}/${d.total} members with submissions)`
   ).join("\n");
-  const memberSection = memberStats.map(m => {
+  const memberSection = memberStats.filter(m => isDetail(m.id)).map(m => {
     let line = `  ${m.name} (${m.dept}, ${m.role}): ${m.rate !== null ? m.rate.toFixed(1) + "% [" + m.status + "]" : "no data this month"}`;
     if (m.answered || m.pending) line += ` — ${m.answered} answered, ${m.pending} awaiting`;
     else line += ` — no check-ins sent this month`;
@@ -8595,7 +8716,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     }).join("\n");
   })();
   const topMembers = (() => {
-    const withData = memberStats.filter(m => m.rate !== null).sort((a, b) => b.rate - a.rate).slice(0, 10);
+    const withData = memberStats.filter(m => m.rate !== null && isDetail(m.id)).sort((a, b) => b.rate - a.rate).slice(0, 10);
     if (!withData.length) return "TOP MEMBERS BY OKR COMPLETION: No data this month.";
     return `TOP MEMBERS BY OKR COMPLETION RATE — current month (sorted desc):\n` +
       withData.map((m, idx) => `  ${idx + 1}. ${m.name} (${m.dept}, ${m.role}): ${m.rate.toFixed(1)}% [${Math.round(m.rate)}] [${m.status}]`).join("\n");
@@ -8606,7 +8727,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
       const unt = (kr.unit || "").toLowerCase();
       return lbl.includes("sale") || lbl.includes("revenue") || unt === "$" || unt.includes("usd") || unt.includes("aud");
     };
-    const ranked = members.map(u => {
+    const ranked = members.filter(u => isDetail(u.id)).map(u => {
       const kd = memberData[u.id] || { krs: [] };
       const dept = depts.find(d => d.id === u.deptId)?.name || "—";
       const salesKrs = kd.krs.filter(isSalesKr);
@@ -8642,7 +8763,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
         .join("\n");
 
   const inactiveSection = (() => {
-    const inactive = memberStats.filter(m => !m.answered && !m.pending);
+    const inactive = memberStats.filter(m => !m.answered && !m.pending && isDetail(m.id));
     if (!inactive.length) return "MEMBERS WITH NO OKR ACTIVITY THIS MONTH: None — all members are active this month.";
     const lines = inactive.map(m => {
       const u = users.find(u => u.id === m.id);
@@ -8661,19 +8782,21 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
   })();
 
   return [
-    `[Today: ${today} | Month: ${monthLabel} | Company OKR completion: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
+    ...(scope ? [`DATA SCOPE: ${scope.description} Only answer from this data. If asked about anything outside it (other departments, other people's individual results${financeAllowed ? "" : ", financial results"}), say you don't have access to that information for this account.\n`] : []),
+    `[Today: ${today} | Month: ${monthLabel} | ${scope ? "Completion in scope" : "Company OKR completion"}: ${compRate !== null ? compRate.toFixed(1) + "%" : "no data"} | Target: ${TP}%]`,
     `\nDEPARTMENT COMPLETION (current month, same logic as Company Overview):\n${deptSection}`,
     `\nMEMBER DETAILS (current month):\n${memberSection}`,
     `\n${inactiveSection}`,
     reportSection ? `\n${reportSection}` : "",
-    `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
-    `\n${plRawSection}`,
-    `\n${plTopLineItems}`,
+    ...(financeAllowed ? [
+      `\nFINANCIAL PERFORMANCE (${fyLabel}):\n${finSection}`,
+      `\n${plRawSection}`,
+      `\n${plTopLineItems}`,
+    ] : ["\nFINANCIAL DATA (P&L, cash statements, division profit): Not available for this account."]),
     `\n${topProjects}`,
     `\n${topMembers}`,
     `\n${topMembersBySales}`,
-    `\n${topDivisions}`,
-    `\n${cashSection}`,
+    ...(financeAllowed ? [`\n${topDivisions}`, `\n${cashSection}`] : []),
     `\n${pendingSection}`,
     `\n${projectSection}`,
     `\n${enrolmentSection}`,
@@ -9741,24 +9864,26 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
   const [mgrPlLoading, setMgrPlLoading] = useState(false);
   const [mgrPlTab, setMgrPlTab] = useState("overview");
   useEffect(() => {
+    if (!user.financeAccess) return;
     if (!mgrPlLoaded && !mgrPlLoading) {
       setMgrPlLoading(true);
       dbGetPlData().then(r => { setMgrPlRecords(r.pl_records); setMgrPlLoaded(true); setMgrPlLoading(false); })
         .catch(() => { setMgrPlLoaded(true); setMgrPlLoading(false); });
     }
-  }, [mgrPlLoaded, mgrPlLoading]);
+  }, [mgrPlLoaded, mgrPlLoading, user.financeAccess]);
   const [mgrCashRecords, setMgrCashRecords] = useState([]);
   const [mgrCashLoaded, setMgrCashLoaded] = useState(false);
   const [mgrCashLoading, setMgrCashLoading] = useState(false);
   const [mgrCashTab, setMgrCashTab] = useState("overview");
   const [mgrCashDetailRto, setMgrCashDetailRto] = useState("");
   useEffect(() => {
+    if (!user.financeAccess) return;
     if (!mgrCashLoaded && !mgrCashLoading) {
       setMgrCashLoading(true);
       dbGetCashData().then(r => { setMgrCashRecords(r.cash_records); setMgrCashLoaded(true); setMgrCashLoading(false); })
         .catch(() => { setMgrCashLoaded(true); setMgrCashLoading(false); });
     }
-  }, [mgrCashLoaded, mgrCashLoading]);
+  }, [mgrCashLoaded, mgrCashLoading, user.financeAccess]);
 
   const { depts, memberData, okrSubmissions: allOkrSubs = [], projects, monthlyReports, users } = state;
   const dept = depts.find(d => d.id === user.deptId);
@@ -9888,7 +10013,14 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: mgrPlRecords, cashRecords: mgrCashRecords, grvData: await waitForGrv() });
+      const scopeIds = [user.id, ...myMembers.map(u => u.id)];
+      const scopeDeptIds = [user.deptId, ...extraDeptIds].filter(Boolean);
+      const scopeDeptNames = depts.filter(d => scopeDeptIds.includes(d.id)).map(d => d.name).join(", ") || "no department";
+      const scope = {
+        detailUserIds: scopeIds, aggregateUserIds: scopeIds, deptIds: scopeDeptIds, finance: !!user.financeAccess,
+        description: `This is the view of ${user.name}, a manager in ${scopeDeptNames}${user.teamIds?.length ? " (limited to the teams they oversee)" : ""}. It contains only the people this manager oversees, their projects, and published company reports.`,
+      };
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: user.financeAccess ? mgrPlRecords : [], cashRecords: user.financeAccess ? mgrCashRecords : [], grvData: await waitForGrv(), scope });
       const res = await apiFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
@@ -10081,6 +10213,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
             return { ...t, krs: tKrs, rate, status: getStatus(rate) };
           });
           const totalKrs = dKrs.length + teamStats.reduce((s, t) => s + t.krs.length, 0);
+          // A manager limited to certain teams can only edit and sync those teams' KRs
+          const editableTeams = dept.teams.filter(t => !user.teamIds?.length || user.teamIds.includes(t.id));
           return (<>
             <Header title="OKR Overview" sub={`${dept.name} · ${okrPeriod.charAt(0).toUpperCase() + okrPeriod.slice(1)} key results`} right={<Tag type={deptStatus} />} />
             <Pane>
@@ -10097,16 +10231,16 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                 {dKrs.length > 0 && <Btn primary small onClick={() => mgrDoDeptSync(dept.id)}>⟳ Sync to All Members</Btn>}
               </div>
               {renderSection(dKrs, dept.id, null)}
-              {dept.teams.length > 0 && (<>
+              {editableTeams.length > 0 && (<>
                 <SectionLabel>Team Key Results</SectionLabel>
                 <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  {dept.teams.map(t => <Btn key={t.id} primary={mgrSelTeam === t.id} small onClick={() => setMgrSelTeam(p => p === t.id ? null : t.id)}>{t.name}</Btn>)}
+                  {editableTeams.map(t => <Btn key={t.id} primary={mgrSelTeam === t.id} small onClick={() => setMgrSelTeam(p => p === t.id ? null : t.id)}>{t.name}</Btn>)}
                   {mgrDirtySync?.deptId === dept.id && mgrSelTeam && mgrDirtySync?.teamId === mgrSelTeam && (
                     <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, border: `1px solid ${T.warnBorder}`, borderRadius: 6, padding: "2px 9px", fontWeight: 600 }}>⚠ Unsynced changes</div>
                   )}
                 </div>
                 {mgrSelTeam && (() => {
-                  const team = dept.teams.find(t => t.id === mgrSelTeam);
+                  const team = editableTeams.find(t => t.id === mgrSelTeam);
                   if (!team) return null;
                   return (<>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
@@ -10584,7 +10718,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
               </div>
             )}
             {user.canApproveProjects && (() => {
-              const pendingAll = projects.filter(p => p.type !== "pursuit" && p.status === "pending approval");
+              const pendingAll = projects.filter(p => p.type !== "pursuit" && p.status === "pending approval" && p.mgrId !== user.id);
               if (!pendingAll.length) return null;
               return (
                 <div style={{ marginBottom: 24 }}>
@@ -10609,8 +10743,8 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           {p.income != null && <span style={{ fontSize: 11, color: T.brand, background: T.brandDim, border: `1px solid ${T.brandBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Income: ${p.income.toLocaleString()}</span>}
                           {p.income != null && p.margin != null && <span style={{ fontSize: 11, color: T.ok, background: T.okDim, border: `1px solid ${T.okBorder}`, borderRadius: 6, padding: "2px 8px", fontFamily: F.mono, fontWeight: 700, whiteSpace: "nowrap" }}>Profit: ${Math.round(p.income * p.margin / 100).toLocaleString()} ({p.margin}%)</span>}
                           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                            <Btn small onClick={() => { if (window.confirm(`Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "active", completedYear: null, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Reject</Btn>
-                            <Btn primary small onClick={() => { if (window.confirm(`Approve "${p.name}" as completed?`)) dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: "completed", completedYear: new Date().getFullYear(), updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } }); }}>Approve</Btn>
+                            <Btn small onClick={() => { if (window.confirm(p.previousApproved ? `Reject the changes to "${p.name}"? It goes back to Completed with its previously approved figures.` : `Reject "${p.name}"? This will revert the project to Active.`)) dispatch({ type: "REJECT_PROJECT", projectId: p.id, by: user.id }); }}>Reject</Btn>
+                            <Btn primary small onClick={() => { if (window.confirm(p.previousApproved ? `Approve the changed figures for "${p.name}"?` : `Approve "${p.name}" as completed?`)) dispatch({ type: "APPROVE_PROJECT", projectId: p.id, by: user.id }); }}>Approve</Btn>
                           </div>
                         </div>
                       </Card>
@@ -10749,7 +10883,19 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                             const submit = window.confirm("Submit for System Admin approval?");
                             dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           } else {
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            const newIncome = editProjForm.income !== "" ? Number(editProjForm.income) : null;
+                            const newMargin = editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null;
+                            const stamp = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                            const base = { startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: newIncome, margin: newMargin, contributeRate: cr, updatedDate: stamp };
+                            // Profit figures of a completed project feed project-profit KRs, so changing them needs approval again
+                            const finChanged = p.status === "completed" && editProjForm.status === "completed"
+                              && (newIncome !== (p.income ?? null) || newMargin !== (p.margin ?? null) || cr !== (p.contributeRate ?? null));
+                            if (finChanged) {
+                              if (!window.confirm("Changing the income, margin or contribution rate of a completed project sends it back for approval. Its profit won't count towards KRs until it is approved again. Continue?")) return;
+                              dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { ...base, status: "pending approval", previousApproved: p.previousApproved || { income: p.income ?? null, margin: p.margin ?? null, contributeRate: p.contributeRate ?? null } } });
+                            } else {
+                              dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { ...base, status: editProjForm.status, ...(editProjForm.status === "active" ? { previousApproved: null } : {}) } });
+                            }
                           }
                           setEditProjId(null);
                         }}>Save Details</Btn>
@@ -10831,7 +10977,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                       </div>
                     )}
                   </div>
-                  {isOwn && isEditing && <PursuitEditForm p={p} />}
+                  {isOwn && isEditing && PursuitEditForm({ p })}
                 </div>
               </Card>
             );
@@ -10883,14 +11029,14 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{st.label}</span>
                           <span style={{ fontSize: 12, color: T.textMuted, marginLeft: "auto" }}>{st.items.length} pursuit{st.items.length !== 1 ? "s" : ""} · ${st.items.reduce((s, p) => s + (p.estimatedValue || 0), 0).toLocaleString()}</span>
                         </div>
-                        {st.items.map(p => <PursuitCard key={p.id} p={p} />)}
+                        {st.items.map(p => <Fragment key={p.id}>{PursuitCard({ p })}</Fragment>)}
                       </div>
                     ))
               )}
               {pursuitMgrTab !== "active" && (
                 tabPursuits.length === 0
                   ? <EmptyState text={`No ${pursuitMgrTab} pursuits.`} />
-                  : tabPursuits.map(p => <PursuitCard key={p.id} p={p} showStage />)
+                  : tabPursuits.map(p => <Fragment key={p.id}>{PursuitCard({ p, showStage: true })}</Fragment>)
               )}
             </Pane>
           </>);
@@ -11033,7 +11179,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
                           <span style={{ fontSize: 11, color: T.ok }}>auto-tracked from completed projects — read only</span>
                         </div>
                         {ppKrsTeam.map((kr, ki) => {
-                          const ppTGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
+                          const ppTGetCY = projectCompletedYear;
                           const ppTAct = (state.projects || []).filter(p => p.mgrId === m.id && p.status === "completed" && p.type !== "pursuit" && ppTGetCY(p) === kr.krYear).reduce((s, p) => s + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                           const ppTPct = kr.target > 0 ? Math.min(Math.round(ppTAct / kr.target * 100), 100) : 0;
                           const ppTSt = getStatus(ppTPct);
@@ -11904,7 +12050,12 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
     setPilotLoading(true);
     setPilotResponse({ question, answer: null });
     try {
-      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [], grvData: await waitForGrv() });
+      const deptPeers = state.users.filter(u => u.deptId === user.deptId && (u.role === "member" || u.role === "manager")).map(u => u.id);
+      const scope = {
+        detailUserIds: [user.id], aggregateUserIds: deptPeers, deptIds: [user.deptId].filter(Boolean), finance: false,
+        description: `This is the view of ${user.name}, a staff member in ${myDept?.name || "no department"}. It contains this person's own OKRs, check-ins and projects in full, their department's overall completion figures (no individual colleagues' results), and published company reports.`,
+      };
+      const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [], grvData: await waitForGrv(), scope });
       const res = await apiFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, systemPrompt: state.settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT, contextData: ctx, lang: "en" }) });
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
@@ -11948,7 +12099,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
               <Metric label="Pending Review" value={pendingCount} status={pendingCount > 0 ? "yellow" : undefined} />
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {["all", "weekly", "monthly", "quarterly", "biannual", "annual"].map(p => (
+              {["all", "daily", "weekly", "monthly", "quarterly", "biannual", "annual"].map(p => (
                 <Btn key={p} small primary={myKpiPeriod === p} onClick={() => setMyKpiPeriod(p)}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                 </Btn>
@@ -12152,7 +12303,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                     </div>
                   ) : kr.type === "project_profit" ? (
                     (() => {
-                      const kpiGetCY = p => { if (p.completedYear) return p.completedYear; const pts = (p.updatedDate || "").split("/"); return pts.length >= 3 ? parseInt(pts[2].split(",")[0].trim()) : null; };
+                      const kpiGetCY = projectCompletedYear;
                       const kpiYearProjects = projects.filter(p => p.mgrId === user.id && p.status === "completed" && p.type !== "pursuit" && kpiGetCY(p) === kr.krYear);
                       const kpiAct = kpiYearProjects.reduce((acc, p) => acc + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0);
                       const kpiPct = kr.target > 0 ? Math.min(Math.round(kpiAct / kr.target * 100), 100) : 0;
@@ -12249,7 +12400,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
             const annSt = (annDream > 0 ? annVsDream : annVsSum) >= 80 ? "green" : (annDream > 0 ? annVsDream : annVsSum) >= 50 ? "yellow" : "red";
             const _pkMem = okrPeriod === "weekly" ? prevPeriodKey(okrPeriod) : currentPeriodKey(okrPeriod);
             const hasSub = okrPeriod === "all" ? (isMonthly ? Object.values(kr.monthlyActuals || {}).some(v => v != null) : kr.actual != null) : (state.okrSubmissions || []).some(s => s.krId === kr.id && s.period === (kr.period || "monthly") && s.periodKey === _pkMem && s.answer !== null);
-            const { ppActual, ppHasPartial } = kr.type === "project_profit" ? (() => { const getCompletedYear = p => { if (p.completedYear) return p.completedYear; const parts = (p.updatedDate || "").split("/"); return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null; }; const ppYrProj = projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear); return { ppActual: ppYrProj.reduce((sum, p) => sum + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0), ppHasPartial: ppYrProj.some(p => p.contributeRate != null && p.contributeRate < 100) }; })() : { ppActual: null, ppHasPartial: false };
+            const { ppActual, ppHasPartial } = kr.type === "project_profit" ? (() => { const getCompletedYear = projectCompletedYear; const ppYrProj = projects.filter(p => p.mgrId === user.id && p.status === "completed" && getCompletedYear(p) === kr.krYear); return { ppActual: ppYrProj.reduce((sum, p) => sum + (p.income != null && p.margin != null ? Math.round(p.income * p.margin * (p.contributeRate ?? 100) / 10000) : 0), 0), ppHasPartial: ppYrProj.some(p => p.contributeRate != null && p.contributeRate < 100) }; })() : { ppActual: null, ppHasPartial: false };
             const ppPct = kr.type === "project_profit" && kr.target > 0 ? Math.min(Math.round(ppActual / kr.target * 100), 100) : null;
             const ppSt = ppPct != null ? getStatus(ppPct) : null;
             return (
@@ -12437,11 +12588,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
               {(() => {
                 const ppKrs = (memberData[user.id]?.krs || []).filter(kr => kr.type === "project_profit");
                 if (!ppKrs.length) return null;
-                const getCompletedYear = p => {
-                  if (p.completedYear) return p.completedYear;
-                  const parts = (p.updatedDate || "").split("/");
-                  return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
-                };
+                const getCompletedYear = projectCompletedYear;
                 return (
                   <div style={{ marginBottom: 24 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${T.okBorder}` }}>
@@ -12719,11 +12866,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
               </>);
             })()}
             {(() => {
-              const getCompletedYear = p => {
-                if (p.completedYear) return p.completedYear;
-                const parts = (p.updatedDate || "").split("/");
-                return parts.length >= 3 ? parseInt(parts[2].split(",")[0].trim()) : null;
-              };
+              const getCompletedYear = projectCompletedYear;
               const ppMembers = designatedApproveeIds
                 .map(memberId => {
                   const ppKrs = (memberData[memberId]?.krs || []).filter(kr => kr.type === "project_profit");
@@ -12767,9 +12910,9 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                                 {hasPartialRate && <div style={{ marginTop: 3, fontSize: 11, color: T.brand }}>⚡ Partial rates applied</div>}
                               </div>
                               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                                <div style={{ fontSize: 16, fontWeight: 800, color: st === "met" ? T.ok : st === "near" ? T.warn : T.bad, fontFamily: F.mono }}>${actual.toLocaleString()}</div>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: st === "green" ? T.ok : st === "yellow" ? T.warn : T.bad, fontFamily: F.mono }}>${actual.toLocaleString()}</div>
                                 <div style={{ fontSize: 11, color: T.textMuted }}>of ${(kr.target || 0).toLocaleString()}</div>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: st === "met" ? T.ok : st === "near" ? T.warn : T.bad }}>{pct}%</div>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: st === "green" ? T.ok : st === "yellow" ? T.warn : T.bad }}>{pct}%</div>
                               </div>
                             </div>
                           </div>
@@ -12853,7 +12996,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
           </Pane>
         </>)}
 
-        {page === "projects" && (<>
+        {page === "projects" && user.projectAccess && (<>
           <Header title="Projects" sub="Create and track your projects" />
           <Pane>
             {myProjects.length > 0 && (
@@ -13025,7 +13168,19 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                             const submit = window.confirm("Submit for System Admin approval?");
                             dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: submit ? "pending approval" : "active", startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
                           } else {
-                            dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { status: editProjForm.status, startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: editProjForm.income !== "" ? Number(editProjForm.income) : null, margin: editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null, contributeRate: cr, updatedDate: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) } });
+                            const newIncome = editProjForm.income !== "" ? Number(editProjForm.income) : null;
+                            const newMargin = editProjForm.margin !== "" ? Math.min(100, Math.max(0, Number(editProjForm.margin))) : null;
+                            const stamp = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                            const base = { startDate: editProjForm.startDate || p.startDate || "", due: editProjForm.due || p.due, income: newIncome, margin: newMargin, contributeRate: cr, updatedDate: stamp };
+                            // Profit figures of a completed project feed project-profit KRs, so changing them needs approval again
+                            const finChanged = p.status === "completed" && editProjForm.status === "completed"
+                              && (newIncome !== (p.income ?? null) || newMargin !== (p.margin ?? null) || cr !== (p.contributeRate ?? null));
+                            if (finChanged) {
+                              if (!window.confirm("Changing the income, margin or contribution rate of a completed project sends it back for approval. Its profit won't count towards KRs until it is approved again. Continue?")) return;
+                              dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { ...base, status: "pending approval", previousApproved: p.previousApproved || { income: p.income ?? null, margin: p.margin ?? null, contributeRate: p.contributeRate ?? null } } });
+                            } else {
+                              dispatch({ type: "UPDATE_PROJECT", projectId: p.id, updates: { ...base, status: editProjForm.status, ...(editProjForm.status === "active" ? { previousApproved: null } : {}) } });
+                            }
                           }
                           setEditProjId(null);
                         }}>Save Details</Btn>
@@ -13205,7 +13360,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                       </div>
                     )}
                   </div>
-                  {isOwn && isEditing && <MemEditForm p={p} />}
+                  {isOwn && isEditing && MemEditForm({ p })}
                 </div>
               </Card>
             );
@@ -13257,14 +13412,14 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
                           <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{st.label}</span>
                           <span style={{ fontSize: 12, color: T.textMuted, marginLeft: "auto" }}>{st.items.length} pursuit{st.items.length !== 1 ? "s" : ""} · ${st.items.reduce((s, p) => s + (p.estimatedValue || 0), 0).toLocaleString()}</span>
                         </div>
-                        {st.items.map(p => <MemCard key={p.id} p={p} />)}
+                        {st.items.map(p => <Fragment key={p.id}>{MemCard({ p })}</Fragment>)}
                       </div>
                     ))
               )}
               {pursuitMemTab !== "active" && (
                 tabPursuits.length === 0
                   ? <EmptyState text={`No ${pursuitMemTab} pursuits.`} />
-                  : tabPursuits.map(p => <MemCard key={p.id} p={p} showStage />)
+                  : tabPursuits.map(p => <Fragment key={p.id}>{MemCard({ p, showStage: true })}</Fragment>)
               )}
             </Pane>
           </>);
@@ -14036,6 +14191,20 @@ function appReducer(state, action) {
     case "REMOVE_MGR_SPRINT": return { ...state, mgrSprints: state.mgrSprints.filter(s => s.id !== action.sprintId) };
     case "ADD_PROJECT":     return { ...state, projects: [...state.projects, action.project] };
     case "UPDATE_PROJECT":  return { ...state, projects: state.projects.map(p => p.id === action.projectId ? { ...p, ...action.updates } : p) };
+    case "APPROVE_PROJECT":
+    case "REJECT_PROJECT": {
+      const stamp = new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      return { ...state, projects: state.projects.map(p => {
+        if (p.id !== action.projectId) return p;
+        if (action.type === "APPROVE_PROJECT") {
+          // Re-approving changed figures keeps the year the project was originally completed in
+          const completedYear = p.previousApproved ? (p.completedYear || new Date().getFullYear()) : new Date().getFullYear();
+          return { ...p, status: "completed", completedYear, previousApproved: null, approvedBy: action.by || null, updatedDate: stamp };
+        }
+        if (p.previousApproved) return { ...p, ...p.previousApproved, status: "completed", previousApproved: null, updatedDate: stamp };
+        return { ...p, status: "active", completedYear: null, updatedDate: stamp };
+      }) };
+    }
     case "REMOVE_PROJECT":  return { ...state, projects: state.projects.filter(p => p.id !== action.projectId) };
     case "PUBLISH_REPORT":  return { ...state, monthlyReports: [action.report, ...state.monthlyReports] };
     case "REMOVE_REPORT":   return { ...state, monthlyReports: state.monthlyReports.filter(r => r.id !== action.reportId) };
@@ -14104,6 +14273,27 @@ function appReducer(state, action) {
       return { ...state, users: state.users.map(u => u.id === uid ? updated : u), depts: newDepts, memberData: newMemberData };
     }
 
+    // Deactivated users keep all their history but can't sign in and are hidden from every portal list.
+    case "DEACTIVATE_USER": {
+      const uid = action.userId;
+      return {
+        ...state,
+        users: state.users.map(u => u.id === uid ? { ...u, active: false, deactivatedAt: new Date().toISOString(), deactivatedBy: action.by || null } : u),
+        depts: state.depts.map(d => ({ ...d, teams: (d.teams || []).map(t => ({ ...t, members: (t.members || []).filter(id => id !== uid) })) })),
+      };
+    }
+    case "REACTIVATE_USER": {
+      const u = state.users.find(x => x.id === action.userId);
+      if (!u) return state;
+      const myTeams = [u.teamId, u.secondTeamId].filter(Boolean);
+      return {
+        ...state,
+        users: state.users.map(x => x.id === u.id ? { ...x, active: true, deactivatedAt: null, deactivatedBy: null } : x),
+        depts: state.depts.map(d => d.id !== u.deptId ? d : {
+          ...d, teams: (d.teams || []).map(t => myTeams.includes(t.id) && !(t.members || []).includes(u.id) ? { ...t, members: [...(t.members || []), u.id] } : t),
+        }),
+      };
+    }
     case "REMOVE_USER": {
       const { [action.userId]: _removed, ...remainingMemberData } = state.memberData;
       return {
@@ -14134,7 +14324,13 @@ function appReducer(state, action) {
       return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, ...action.updates } : d) };
 
     case "REMOVE_DEPT":
-      return { ...state, depts: state.depts.filter(d => d.id !== action.deptId) };
+      // A department with users can't be deleted: they would silently stop receiving check-ins
+      if (state.users.some(u => u.deptId === action.deptId)) return state;
+      return {
+        ...state,
+        depts: state.depts.filter(d => d.id !== action.deptId),
+        users: state.users.map(u => (u.mgrDeptIds || []).includes(action.deptId) ? { ...u, mgrDeptIds: u.mgrDeptIds.filter(id => id !== action.deptId) } : u),
+      };
 
     case "ADD_TEAM":
       return { ...state, depts: state.depts.map(d => d.id === action.deptId ? { ...d, teams: [...d.teams, action.team] } : d) };
@@ -14167,6 +14363,7 @@ export default function App({ redirectAccount = null }) {
   const [user, setUser] = useState(null);
   const [originalAdmin, setOriginalAdmin] = useState(null);
   const [msalErr, setMsalErr] = useState("");
+  const [msalDeactivated, setMsalDeactivated] = useState(false);
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState("");
   const [syncErr, setSyncErr] = useState("");
@@ -14266,8 +14463,18 @@ export default function App({ redirectAccount = null }) {
     pendingEmailRef.current = email;
     if (!dbLoadedRef.current) return;
     const lc = email.trim().toLowerCase();
-    const matched = usersRef.current.find(u => u.email.trim().toLowerCase() === lc);
+    const matched = usersRef.current.find(u => String(u.email || "").trim().toLowerCase() === lc);
+    if (matched && matched.active === false) {
+      setMsalErr(lc);
+      setMsalDeactivated(true);
+      if (!loginLogSentRef.current.failed.has(lc)) {
+        loginLogSentRef.current.failed.add(lc);
+        dbWriteLoginLog({ userId: matched.id, userName: matched.name, email: lc, role: matched.role, loginAt: new Date().toISOString(), status: "failed", reason: "deactivated" }).catch(() => {});
+      }
+      return;
+    }
     if (matched) {
+      setMsalDeactivated(false);
       setMsalErr("");
       setUser(matched);
       pendingEmailRef.current = null;
@@ -14279,6 +14486,7 @@ export default function App({ redirectAccount = null }) {
       }
     } else {
       setMsalErr(lc);
+      setMsalDeactivated(false);
       if (!loginLogSentRef.current.failed.has(lc)) {
         loginLogSentRef.current.failed.add(lc);
         dbWriteLoginLog({ email: lc, loginAt: new Date().toISOString(), status: "failed", reason: "no_match" }).catch(() => {});
@@ -14310,7 +14518,7 @@ export default function App({ redirectAccount = null }) {
 
   if (!dbReady) return <LoadingScreen error={dbError || null} onRetry={() => window.location.reload()} />;
 
-  if (!user) return <LoginPage msalErr={msalErr} onDismissErr={() => { setMsalErr(""); try { instance.clearCache(); } catch (_) {} }} />;
+  if (!user) return <LoginPage msalErr={msalErr} deactivated={msalDeactivated} onDismissErr={() => { setMsalErr(""); try { instance.clearCache(); } catch (_) {} }} />;
   const logout = () => {
     setUser(null);
     setOriginalAdmin(null);
@@ -14322,6 +14530,12 @@ export default function App({ redirectAccount = null }) {
 
   // Always derive the active user from state.users so admin edits (role, title, dept, etc.) are reflected immediately.
   const activeUser = state.users.find(u => u.id === user.id) || user;
+  const signedInUser = state.users.find(u => u.id === (originalAdmin || user).id);
+  if (signedInUser?.active === false) {
+    return <LoginPage msalErr={signedInUser.email} deactivated onDismissErr={() => { logout(); try { instance.clearCache(); } catch (_) {} }} />;
+  }
+  // Portals only ever see active users; User Management gets the full list so accounts can be reactivated.
+  const portalState = { ...state, users: state.users.filter(u => u.active !== false) };
 
   const syncErrToast = syncErr ? (
     <div style={{ position: "fixed", bottom: 24, right: 24, background: T.bad, color: "#fff", borderRadius: 12, padding: "12px 18px", zIndex: 9999, fontSize: 13, fontWeight: 600, maxWidth: 340, boxShadow: "0 4px 18px rgba(0,0,0,0.22)", display: "flex", alignItems: "center", gap: 10 }}>
@@ -14338,7 +14552,7 @@ export default function App({ redirectAccount = null }) {
     </div>
   ) : null;
 
-  if (activeUser.role === "admin")   return <>{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={state} dispatch={dispatch} onReload={reloadState} onImpersonate={onImpersonate} /></>;
-  if (activeUser.role === "manager") return <>{syncErrToast}{impersonationBanner}<ManagerPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
-  return <>{syncErrToast}{impersonationBanner}<MemberPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={state} dispatch={dispatch} onReload={reloadState} /></>;
+  if (activeUser.role === "admin")   return <>{syncErrToast}<AdminPortal   user={activeUser} onLogout={logout} state={portalState} allUsers={state.users} dispatch={dispatch} onReload={reloadState} onImpersonate={onImpersonate} /></>;
+  if (activeUser.role === "manager") return <>{syncErrToast}{impersonationBanner}<ManagerPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={portalState} dispatch={dispatch} onReload={reloadState} /></>;
+  return <>{syncErrToast}{impersonationBanner}<MemberPortal user={activeUser} onLogout={originalAdmin ? onExitImpersonate : logout} state={portalState} dispatch={dispatch} onReload={reloadState} /></>;
 }
