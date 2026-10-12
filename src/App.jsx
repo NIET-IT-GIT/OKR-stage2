@@ -9177,6 +9177,204 @@ const FINANCE_PACK_GROUPS = [
 // Builds the pack. Returns the HTML plus, for every slide that carries commentary, the facts the AI may use
 // and the rule-based bullets used when there is no AI commentary. `commentary` maps slide id →
 // { observations, drivers, watch } (already reviewed); slides without an entry fall back to the rules.
+/* ─────────────────────────────────────────────────────────────
+   PACK CHARTS & STYLES — shared by the Finance Pack and the Performance Pack
+   Charts are SVG strings drawn in viewBox units; CSS sizes them to fill the space left on the slide.
+   ───────────────────────────────────────────────────────────── */
+const PACK_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+function packEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;").replace(/"/g, "&quot;"); }
+// Axis money: $0, $500, $1.5k, $20k, $1.25m — negatives in brackets like the rest of the packs
+function packMoney(v) {
+  if (v == null || !isFinite(v)) return "—";
+  const a = Math.abs(v), trim = n => String(Math.round(n * 100) / 100);
+  const s = a >= 1e6 ? "$" + trim(a / 1e6) + "m" : a >= 1000 ? "$" + trim(a / 1000) + "k" : "$" + Math.round(a);
+  return v < 0 ? "(" + s + ")" : s;
+}
+// Round-number axis covering [lo, hi] and always 0, about `count` steps of 1, 2 or 5 × 10^n
+function packNiceTicks(lo, hi, count = 5) {
+  lo = Math.min(0, lo); hi = Math.max(0, hi);
+  if (lo === hi) hi = lo + 1;
+  const raw = (hi - lo) / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map(m => m * mag).find(s => s >= raw * 0.999);
+  const first = Math.floor(lo / step + 1e-9) * step, last = Math.ceil(hi / step - 1e-9) * step;
+  const ticks = [];
+  for (let t = first; t <= last + step * 1e-6; t += step) ticks.push(Math.round(t / step) * step);
+  return ticks;
+}
+// Splits a label into lines of at most maxChars, at most maxLines (the last one gets "…" only if it still doesn't fit)
+function packWrap(text, maxChars, maxLines = 3) {
+  const words = String(text).split(/\s+/).filter(Boolean), lines = [];
+  let cur = "";
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if ((cur + " " + w).length <= maxChars) cur += " " + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  const out = lines.flatMap(l => { const parts = []; for (let i = 0; i < l.length; i += maxChars) parts.push(l.slice(i, i + maxChars)); return parts; });
+  if (out.length > maxLines) { const keep = out.slice(0, maxLines); keep[maxLines - 1] = keep[maxLines - 1].slice(0, maxChars - 1) + "…"; return keep; }
+  return out.length ? out : [""];
+}
+function packSvgOpen(w, h, label) {
+  return "<svg class='pk-chart' viewBox='0 0 " + w + " " + h + "' preserveAspectRatio='xMidYMin meet' role='img' aria-label='" + packEsc(label || "Chart") + "' xmlns='http://www.w3.org/2000/svg' font-family=\"" + PACK_FONT + "\">";
+}
+function packLegend(series) {
+  return "<div class='legend'>" + series.map(s => "<span><i style='background:" + s.color + "'></i>" + packEsc(s.label) + "</span>").join("") + "</div>";
+}
+function packText(x, y, txt, { size = 13, fill = "#6E6E73", anchor = "start", weight = 400, extra = "" } = {}) {
+  return "<text x='" + x + "' y='" + y + "' font-size='" + size + "' fill='" + fill + "' text-anchor='" + anchor + "'" + (weight !== 400 ? " font-weight='" + weight + "'" : "") + extra + ">" + txt + "</text>";
+}
+
+// Line chart: y axis with round ticks and a title, month labels and a title on x, end-of-line values that never overlap
+function packLineChart({ series, labels, fmt, tickFmt = fmt, yTitle = "", xTitle = "Month", w = 760, h = 520 }) {
+  const vals = series.flatMap(s => s.values.filter(v => v != null && isFinite(v)));
+  if (!labels.length || !vals.length) return "<div class='empty'>No data in this period.</div>";
+  const ticks = packNiceTicks(Math.min(...vals), Math.max(...vals));
+  const lo = ticks[0], hi = ticks[ticks.length - 1], n = labels.length;
+  const PL = 84, PR = 78, PT = 14, PB = 58, cW = w - PL - PR, cH = h - PT - PB;
+  const px = i => PL + (n > 1 ? i / (n - 1) * cW : cW / 2);
+  const py = v => PT + cH - (v - lo) / (hi - lo) * cH;
+  let out = packSvgOpen(w, h, yTitle);
+  ticks.forEach(t => {
+    out += "<line x1='" + PL + "' y1='" + py(t) + "' x2='" + (PL + cW) + "' y2='" + py(t) + "' stroke='" + (t === 0 ? "#AEAEB2" : "#E5E5EA") + "' stroke-width='" + (t === 0 ? 1.5 : 1) + "'/>"
+      + packText(PL - 8, py(t) + 4.5, tickFmt(t), { anchor: "end" });
+  });
+  if (yTitle) out += packText(18, PT + cH / 2, packEsc(yTitle), { anchor: "middle", fill: "#3A3A3C", weight: 600, extra: " transform='rotate(-90 18 " + (PT + cH / 2) + ")'" });
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(cW / 56))));
+  labels.forEach((l, i) => {
+    if (i % every && i !== n - 1) return;
+    out += packText(px(i), PT + cH + 22, packEsc(l), { anchor: n > 1 && i === n - 1 ? "end" : n > 1 && i === 0 ? "start" : "middle" });
+  });
+  if (xTitle) out += packText(PL + cW / 2, h - 8, packEsc(xTitle), { anchor: "middle", fill: "#3A3A3C", weight: 600 });
+  const ends = [];
+  series.forEach(s => {
+    // Break the line where a month has no value
+    let seg = [];
+    const flush = () => { if (seg.length > 1) out += "<polyline points='" + seg.join(" ") + "' fill='none' stroke='" + s.color + "' stroke-width='" + (s.bold ? 3.5 : 2.5) + "' stroke-linejoin='round' stroke-linecap='round'" + (s.dash ? " stroke-dasharray='6,5'" : "") + "/>"; seg = []; };
+    s.values.forEach((v, i) => { if (v == null || !isFinite(v)) flush(); else seg.push(px(i) + "," + py(v)); });
+    flush();
+    s.values.forEach((v, i) => { if (v != null && isFinite(v)) out += "<circle cx='" + px(i) + "' cy='" + py(v) + "' r='3.5' fill='" + s.color + "'/>"; });
+    let li = s.values.length - 1;
+    while (li >= 0 && (s.values[li] == null || !isFinite(s.values[li]))) li--;
+    if (li >= 0) ends.push({ x: px(li) + 9, y: py(s.values[li]) + 4.5, txt: fmt(s.values[li]), color: s.color });
+  });
+  // Push end labels apart so each stays readable
+  ends.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 16) ends[i].y = ends[i - 1].y + 16;
+  const over = ends.length ? ends[ends.length - 1].y - (PT + cH + 4) : 0;
+  if (over > 0) ends.forEach(e => { e.y -= over; });
+  ends.forEach(e => { out += packText(e.x, e.y, packEsc(e.txt), { fill: e.color, weight: 700 }); });
+  return out + "</svg>";
+}
+
+// Horizontal bars: full names wrapped onto up to 3 lines, rows sized to fill the space, negatives grow left
+function packHBarChart({ items, fmt, w = 760, fitH = 520, labelW = 330, valueW = 86, pct = false, target = null, label = "", pad = 12 }) {
+  if (!items.length) return "<div class='empty'>No data in this period.</div>";
+  const FS = 13, LH = 16, maxChars = Math.floor((labelW - 12) / (FS * 0.54));
+  const rows = items.map(it => ({ ...it, lines: packWrap(it.label, maxChars, 3) }));
+  const need = rows.reduce((s, r) => s + r.lines.length * LH + pad, 0);
+  const extra = Math.max(0, Math.min(30, (fitH - (target != null ? 22 : 4) - need) / rows.length));
+  const vals = items.map(x => x.value);
+  const lo = pct ? 0 : Math.min(0, ...vals), hi = pct ? 100 : Math.max(0, ...vals, 1e-9);
+  const negRoom = lo < 0 ? valueW : 0;
+  const x0 = labelW + negRoom, cW = w - x0 - valueW;
+  const sx = v => x0 + (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo || 1) * cW;
+  let y = target != null ? 22 : 4, body = "";
+  rows.forEach(r => {
+    const rowH = r.lines.length * LH + pad + extra, barH = Math.min(30, Math.max(12, rowH - Math.max(6, pad))), cy = y + rowH / 2;
+    const ty = cy - (r.lines.length - 1) * LH / 2 + 4.5;
+    body += "<text x='" + (labelW - 10) + "' y='" + ty + "' font-size='" + FS + "' fill='#3A3A3C' text-anchor='end'>"
+      + r.lines.map((ln, k) => "<tspan x='" + (labelW - 10) + "' dy='" + (k ? LH : 0) + "'>" + packEsc(ln) + "</tspan>").join("") + "<title>" + packEsc(r.label) + "</title></text>";
+    if (pct) body += "<rect x='" + x0 + "' y='" + (cy - barH / 2) + "' width='" + cW + "' height='" + barH + "' fill='#F2F2F7' rx='4'/>";
+    const a = sx(Math.min(0, r.value)), b = sx(Math.max(0, r.value));
+    body += "<rect x='" + a + "' y='" + (cy - barH / 2) + "' width='" + Math.max(2, b - a) + "' height='" + barH + "' fill='" + (r.color || "#2D1B69") + "' rx='4'/>";
+    const vx = r.value < 0 ? a - 8 : (pct ? x0 + cW : b) + 8;
+    body += packText(vx, cy + 4.5, packEsc(fmt(r.value)), { anchor: r.value < 0 ? "end" : "start", fill: r.value < 0 ? "#E54B4B" : "#1D1D1F", weight: 700 });
+    y += rowH;
+  });
+  if (lo < 0) body = "<line x1='" + sx(0) + "' y1='0' x2='" + sx(0) + "' y2='" + y + "' stroke='#AEAEB2'/>" + body;
+  if (target != null) {
+    const tx = sx(target);
+    body += "<line x1='" + tx + "' y1='14' x2='" + tx + "' y2='" + y + "' stroke='#1D1D1F' stroke-dasharray='4,4'/>" + packText(tx, 11, "Target " + fmt(target), { anchor: "middle", fill: "#1D1D1F", weight: 600, size: 12 });
+  }
+  return packSvgOpen(w, y + 4, label) + body + "</svg>";
+}
+
+// Grouped vertical bars: one group per entity, one bar per series, values on top
+function packGroupBarChart({ groups, series, data, fmt, tickFmt = fmt, yTitle = "", w = 760, h = 520, label = "" }) {
+  const vals = groups.flatMap(g => (data[g.key] || []).map(v => v || 0));
+  if (!groups.length || !vals.length) return "<div class='empty'>No data in this period.</div>";
+  const ticks = packNiceTicks(Math.min(...vals), Math.max(...vals));
+  const lo = ticks[0], hi = ticks[ticks.length - 1];
+  const PL = 84, PR = 14, PT = 22, PB = 34, cW = w - PL - PR, cH = h - PT - PB;
+  const py = v => PT + cH - (v - lo) / (hi - lo) * cH;
+  const gW = cW / groups.length, bW = Math.min(64, gW * 0.72 / series.length);
+  let out = packSvgOpen(w, h, label || yTitle);
+  ticks.forEach(t => {
+    out += "<line x1='" + PL + "' y1='" + py(t) + "' x2='" + (PL + cW) + "' y2='" + py(t) + "' stroke='" + (t === 0 ? "#AEAEB2" : "#E5E5EA") + "' stroke-width='" + (t === 0 ? 1.5 : 1) + "'/>"
+      + packText(PL - 8, py(t) + 4.5, tickFmt(t), { anchor: "end" });
+  });
+  if (yTitle) out += packText(18, PT + cH / 2, packEsc(yTitle), { anchor: "middle", fill: "#3A3A3C", weight: 600, extra: " transform='rotate(-90 18 " + (PT + cH / 2) + ")'" });
+  groups.forEach((g, gi) => {
+    const gx = PL + gi * gW + (gW - bW * series.length) / 2;
+    series.forEach((s, si) => {
+      const v = (data[g.key] || [])[si] || 0, top = py(Math.max(v, 0)), bot = py(Math.min(v, 0));
+      out += "<rect x='" + (gx + si * bW + 2) + "' y='" + top + "' width='" + (bW - 4) + "' height='" + Math.max(1, bot - top) + "' fill='" + s.color + "' rx='3'/>"
+        + packText(gx + si * bW + bW / 2, v >= 0 ? top - 6 : bot + 15, packEsc(fmt(v)), { anchor: "middle", size: 12, fill: v < 0 ? "#E54B4B" : "#3A3A3C", weight: 600 });
+    });
+    out += packText(PL + gi * gW + gW / 2, PT + cH + 22, packEsc(g.label), { anchor: "middle", fill: "#1D1D1F", weight: 600 });
+  });
+  return out + "</svg>";
+}
+
+// Slide styles both packs share (A4 landscape, ~1123 × 794 px)
+function packBaseCss(COVER_BG, TEAL) {
+  return "*{box-sizing:border-box;margin:0;padding:0}"
+    + "body{font-family:" + PACK_FONT + ";background:#ECECF1;color:#1D1D1F;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+    + ".slide{width:297mm;height:210mm;position:relative;overflow:hidden;padding:26px 34px 40px;display:flex;flex-direction:column;background:#fff;page-break-after:always;break-after:page}"
+    + ".sl-hdr{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:18px;border-bottom:1px solid #E5E5EA;padding-bottom:12px;flex-shrink:0}"
+    + ".eyebrow{font-size:12px;font-weight:800;letter-spacing:0.14em;margin-bottom:4px}"
+    + ".sl-title{font-size:27px;font-weight:700;letter-spacing:-0.02em;color:#1D1D1F}"
+    + ".sl-sub{font-size:12.5px;color:#8E8E93;margin-top:4px;letter-spacing:0.05em}"
+    + ".mo-badge{background:#F5F5F7;border:1px solid #E5E5EA;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:700;color:#3A3A3C;white-space:nowrap}"
+    + ".kpi-row{display:flex;gap:14px;margin-bottom:16px;flex-shrink:0}"
+    + ".kpi-card{flex:1;border:1px solid #E5E5EA;border-radius:10px;padding:14px 18px}"
+    + ".kpi-v{font-size:32px;font-weight:700;letter-spacing:-0.03em;font-variant-numeric:tabular-nums}"
+    + ".kpi-l{font-size:14px;color:#3A3A3C;font-weight:600;margin-top:4px}"
+    + ".kpi-s{font-size:12px;color:#8E8E93;margin-top:3px}"
+    + ".body-row{display:flex;gap:22px;align-items:stretch;flex:1;min-height:0}"
+    + ".main-col,.chart-col{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}"
+    + ".chart-col .pk-chart{flex:1 1 0;min-height:0;width:100%;height:100%}"
+    + ".legend{display:flex;flex-wrap:wrap;gap:6px 20px;margin-top:8px;font-size:13.5px;color:#3A3A3C;flex-shrink:0}"
+    + ".legend i{display:inline-block;width:16px;height:4px;border-radius:2px;margin-right:7px;vertical-align:middle}"
+    + ".cmt-panel{width:285px;flex-shrink:0;background:" + COVER_BG + ";color:#fff;border-radius:12px;padding:20px 20px;overflow:hidden}"
+    + ".cp-head{font-size:11.5px;font-weight:800;letter-spacing:0.12em;color:rgba(255,255,255,0.6);margin-bottom:10px}"
+    + ".cp-kpi{font-size:36px;font-weight:700;letter-spacing:-0.03em;font-variant-numeric:tabular-nums;line-height:1.1}"
+    + ".cp-kpi-lbl{font-size:13px;color:rgba(255,255,255,0.72);margin:4px 0 16px}"
+    + ".cp-buls{padding-left:17px;font-size:13.5px;line-height:1.5;color:rgba(255,255,255,0.9)}"
+    + ".cp-buls li{margin-bottom:8px}"
+    + ".cmt-panel.dense .cp-kpi{font-size:30px}.cmt-panel.dense .cp-kpi-lbl{margin-bottom:10px}"
+    + ".cmt-panel.dense .cp-buls{font-size:12px;line-height:1.38}.cmt-panel.dense .cp-buls li{margin-bottom:5px}"
+    + ".dt{width:100%;border-collapse:collapse;font-size:14.5px;font-variant-numeric:tabular-nums}"
+    + ".dt th{background:#F5F5F7;padding:10px 12px;text-align:left;font-size:11.5px;color:#6E6E73;letter-spacing:0.05em;text-transform:uppercase;border-bottom:1px solid #E5E5EA}"
+    + ".dt td{padding:9px 12px;border-bottom:1px solid #F0F0F3;vertical-align:middle}"
+    + ".dt.fill{height:100%}"
+    + ".dt .num{text-align:right}"
+    + ".empty{padding:48px 0;color:#8E8E93;font-size:16px}"
+    + ".note{font-size:12px;color:#8E8E93;margin-top:10px;flex-shrink:0}"
+    + ".pg-num{position:absolute;bottom:14px;right:34px;font-size:11px;color:#AEAEB2}"
+    + ".branding{position:absolute;bottom:14px;left:34px;font-size:11px;color:#AEAEB2}"
+    + ".cover{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:24px}"
+    + ".cv-1{font-size:68px;font-weight:300;letter-spacing:0.18em;color:#fff}"
+    + ".cv-2{font-size:18px;letter-spacing:0.32em;color:rgba(255,255,255,0.7)}"
+    + ".cv-rule{width:72px;height:2px;background:" + TEAL + "}"
+    + ".cv-3{font-size:14px;letter-spacing:0.2em;color:rgba(255,255,255,0.55)}"
+    + ".cv-4{font-size:20px;letter-spacing:0.14em;color:" + TEAL + ";font-weight:600}"
+    + "@page{size:A4 landscape;margin:0}"
+    + "@media print{body{background:#fff}.slide{width:100vw;height:100vh;box-shadow:none;margin:0}}"
+    + "@media screen{.slide{margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,0.12)}}";
+}
+
 // Download / Save as PDF bar for an exported pack. Screen only (hidden when printing) and kept in the
 // downloaded copy, which is self-contained and works offline.
 function packToolbar(fileBase) {
@@ -9204,9 +9402,9 @@ function packToolbar(fileBase) {
 
 function generateFinancePack({ plRecords = [], cashRecords = [], commentary = null }) {
   const ENTS = [
-    { key: "NIET",    label: "NIET",           color: "#3B2F6E" },
-    { key: "CB",      label: "Charlton Brown",  color: "#2D1B69" },
-    { key: "Rhodes",  label: "Rhodes",          color: "#5A4490" },
+    { key: "NIET",    label: "NIET",           color: "#2D1B69" },
+    { key: "CB",      label: "Charlton Brown",  color: "#FF9F0A" },
+    { key: "Rhodes",  label: "Rhodes",          color: "#9B7FD4" },
     { key: "Educare", label: "Educare",         color: "#1ABCCD" },
   ];
   const COVER_BG = "#2D1B69";
@@ -9293,101 +9491,16 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
     return "<div class='ins-row'>" + col("What drove it", c.drivers) + col("Watch", c.watch) + "</div>";
   }
 
-  /* SVG line chart */
-  function svgLine(series, labels, { w = 640, h = 285 } = {}) {
-    const PL = 62, PR = 24, PT = 16, PB = 52;
-    const cW = w - PL - PR, cH = h - PT - PB, n = labels.length;
-    if (!n) return "<svg width='" + w + "' height='" + h + "'></svg>";
-    const allV = series.flatMap(s => s.values.filter(v => v != null));
-    const lo = Math.min(...allV), hi = Math.max(...allV);
-    const pad = (hi - lo) * 0.1 || 1;
-    const vLo = lo - pad, vHi = hi + pad, vR = vHi - vLo;
-    const px = i => PL + (n > 1 ? i / (n - 1) * cW : cW / 2);
-    const py = v => PT + cH - (v - vLo) / vR * cH;
-    const grid = Array.from({ length: 6 }, (_, i) => {
-      const tv = vLo + (vHi - vLo) * i / 5, ty = py(tv);
-      return "<line x1='" + PL + "' y1='" + ty + "' x2='" + (PL + cW) + "' y2='" + ty + "' stroke='#E5E5EA' stroke-width='1'/>"
-        + "<text x='" + (PL - 5) + "' y='" + (ty + 4) + "' text-anchor='end' font-size='10' fill='#8E8E93'>" + fm(tv) + "</text>";
-    }).join("");
-    const zero = (vLo < 0 && vHi > 0)
-      ? "<line x1='" + PL + "' y1='" + py(0) + "' x2='" + (PL + cW) + "' y2='" + py(0) + "' stroke='#C7C7CC' stroke-width='1.5' stroke-dasharray='4,3'/>"
-      : "";
-    const xax = labels.map((l, i) => {
-      const lx = px(i);
-      return "<text x='" + lx + "' y='" + (PT + cH + 14) + "' text-anchor='middle' font-size='9' fill='#8E8E93' transform='rotate(-30," + lx + "," + (PT + cH + 14) + ")'>" + l + "</text>";
-    }).join("");
-    const lines = series.map(s => {
-      const pts = s.values.map((v, i) => v != null ? px(i) + "," + py(v) : null).filter(Boolean).join(" ");
-      const dots = s.values.map((v, i) => v != null ? "<circle cx='" + px(i) + "' cy='" + py(v) + "' r='2.5' fill='" + s.color + "'/>" : "").join("");
-      const lv = s.values[s.values.length - 1], li = s.values.length - 1;
-      const lbl = lv != null ? "<text x='" + (px(li) + 4) + "' y='" + (py(lv) - 4) + "' font-size='9' fill='" + s.color + "' font-weight='600'>" + fm(lv) + "</text>" : "";
-      return "<polyline points='" + pts + "' fill='none' stroke='" + s.color + "' stroke-width='2' stroke-linejoin='round'/>" + dots + lbl;
-    }).join("");
-    const leg = series.map((s, i) => {
-      const lx = PL + i * 130;
-      return "<rect x='" + lx + "' y='" + (PT + cH + 36) + "' width='10' height='3' fill='" + s.color + "' rx='1'/>"
-        + "<text x='" + (lx + 14) + "' y='" + (PT + cH + 40) + "' font-size='10' fill='#3A3A3C'>" + s.label + "</text>";
-    }).join("");
-    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">"
-      + grid + zero + "<line x1='" + PL + "' y1='" + PT + "' x2='" + PL + "' y2='" + (PT + cH) + "' stroke='#C7C7CC'/>"
-      + xax + lines + leg + "</svg>";
+  /* Charts — shared drawing (packLineChart etc.). The viewBox height is smaller when the AI strip needs room. */
+  const chartH = c => (c ? 430 : 610);
+  const moAxis = mo => moLabel(mo).replace("-", " ");
+  function lineCol(series, yTitle, c) {
+    return "<div class='chart-col'>" + packLineChart({ series, labels: months.map(moAxis), fmt: fm, tickFmt: packMoney, yTitle, w: 760, h: chartH(c) }) + packLegend(series) + "</div>";
   }
-
-  /* SVG horizontal bar */
-  function svgHBar(items, { w = 580, barH = 15, gap = 6, lw = 250, rw = 80 } = {}) {
-    const h = items.length * (barH + gap) + 24;
-    const chartW = w - lw - rw;
-    const maxV = Math.max(...items.map(x => Math.abs(x.value)), 1);
-    const bars = items.map((item, i) => {
-      const y = 10 + i * (barH + gap);
-      const bw = Math.max(1, Math.abs(item.value) / maxV * chartW);
-      const col = item.color || COVER_BG;
-      return "<text x='" + (lw - 6) + "' y='" + (y + barH * 0.75) + "' text-anchor='end' font-size='11' fill='#3A3A3C'>" + esc(item.label) + "</text>"
-        + "<rect x='" + lw + "' y='" + y + "' width='" + bw + "' height='" + barH + "' fill='" + col + "' rx='2'/>"
-        + "<text x='" + (lw + bw + 6) + "' y='" + (y + barH * 0.75) + "' font-size='11' fill='#3A3A3C' font-weight='600'>" + fm(item.value) + "</text>";
-    }).join("");
-    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">" + bars + "</svg>";
+  function hbarCol(items, c, opts = {}) {
+    return "<div class='chart-col'>" + packHBarChart({ items, fmt: fm, w: 760, fitH: chartH(c), labelW: 430, ...opts }) + "</div>";
   }
-
-  /* SVG grouped bar */
-  function svgGBar(groups, serLabels, serColors, data, { w = 560, h = 295 } = {}) {
-    const PL = 62, PR = 16, PT = 24, PB = 60;
-    const cW = w - PL - PR, cH = h - PT - PB;
-    const ng = groups.length, ns = serLabels.length;
-    const gW = cW / ng, bW = gW * 0.65 / ns;
-    const allV = groups.flatMap(g => (data[g] || []).map(v => v || 0));
-    const lo = Math.min(...allV, 0), hi = Math.max(...allV, 1), vR = hi - lo || 1;
-    const py = v => PT + cH - (v - lo) / vR * cH;
-    const grid = Array.from({ length: 6 }, (_, i) => {
-      const tv = lo + (hi - lo) * i / 5, ty = py(tv);
-      return "<line x1='" + PL + "' y1='" + ty + "' x2='" + (PL + cW) + "' y2='" + ty + "' stroke='#E5E5EA' stroke-width='1'/>"
-        + "<text x='" + (PL - 5) + "' y='" + (ty + 4) + "' text-anchor='end' font-size='10' fill='#8E8E93'>" + fm(tv) + "</text>";
-    }).join("");
-    const z0 = py(0);
-    const bars = groups.map((g, gi) => {
-      const gx = PL + gi * gW + gW * 0.175;
-      const serBars = serLabels.map((_, si) => {
-        const v = (data[g] || [])[si] || 0;
-        const bx = gx + si * (bW + 1.5);
-        const top = py(Math.max(v, 0)), bot = py(Math.min(v, 0));
-        const bh = Math.max(Math.abs(top - bot), 1);
-        const by = v >= 0 ? top : z0;
-        return "<rect x='" + bx + "' y='" + by + "' width='" + bW + "' height='" + bh + "' fill='" + serColors[si] + "' rx='1'/>"
-          + "<text x='" + (bx + bW / 2) + "' y='" + (v >= 0 ? top - 4 : bot + 11) + "' text-anchor='middle' font-size='8' fill='" + serColors[si] + "'>" + fm(v) + "</text>";
-      }).join("");
-      const glabel = g === "CB" ? "Charlton Brown" : g;
-      return serBars + "<text x='" + (PL + gi * gW + gW / 2) + "' y='" + (PT + cH + 16) + "' text-anchor='middle' font-size='10' fill='#3A3A3C'>" + glabel + "</text>";
-    }).join("");
-    const leg = serLabels.map((l, i) => {
-      const lx = PL + i * 140;
-      return "<rect x='" + lx + "' y='" + (PT + cH + 28) + "' width='10' height='3' fill='" + serColors[i] + "' rx='1'/>"
-        + "<text x='" + (lx + 14) + "' y='" + (PT + cH + 33) + "' font-size='10' fill='#3A3A3C'>" + l + "</text>";
-    }).join("");
-    return "<svg width='" + w + "' height='" + h + "' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">"
-      + grid + "<line x1='" + PL + "' y1='" + z0 + "' x2='" + (PL + cW) + "' y2='" + z0 + "' stroke='#C7C7CC' stroke-width='1.5'/>"
-      + "<line x1='" + PL + "' y1='" + PT + "' x2='" + PL + "' y2='" + (PT + cH) + "' stroke='#C7C7CC'/>"
-      + bars + leg + "</svg>";
-  }
+  function bodyRow(main, panel) { return "<div class='body-row'>" + main + panel + "</div>"; }
 
   /* Layout helpers */
   function slide(content, dark) {
@@ -9398,8 +9511,8 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       + "<div class='mo-badge'>" + moLabel(cur).toUpperCase() + "</div></div>";
   }
   function cmtPanel(head, val, valLbl, valCol, bullets) {
-    const buls = bullets.filter(Boolean).map(b => "<li>" + esc(b) + "</li>").join("");
-    return "<div class='cmt-panel'><div class='cp-head'>" + esc(head) + "</div>"
+    const list = bullets.filter(Boolean), buls = list.map(b => "<li>" + esc(b) + "</li>").join("");
+    return "<div class='cmt-panel" + (list.join("").length > 320 ? " dense" : "") + "'><div class='cp-head'>" + esc(head) + "</div>"
       + "<div class='cp-kpi' style='color:" + (valCol || "#fff") + "'>" + esc(val) + "</div>"
       + "<div class='cp-kpi-lbl'>" + esc(valLbl) + "</div>"
       + "<ul class='cp-buls'>" + buls + "</ul></div>";
@@ -9420,14 +9533,10 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
   function s1() {
     const [y, m] = (cur || "2026-01").split("-"), mn = +m;
     const fy = mn >= 7 ? +y + 1 : +y, fyMo = mn >= 7 ? mn - 6 : mn + 6;
-    return slide(
-      "<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;padding:40px'>"
-      + "<div style='font-size:48px;font-weight:300;letter-spacing:0.18em;color:#fff'>NIET GROUP</div>"
-      + "<div style='font-size:13px;letter-spacing:0.32em;color:rgba(255,255,255,0.65)'>FINANCE UPDATE</div>"
-      + "<div style='width:56px;height:1px;background:" + TEAL + ";margin:4px 0'></div>"
-      + "<div style='font-size:11px;letter-spacing:0.2em;color:rgba(255,255,255,0.5)'>NIET · CHARLTON BROWN · EDUCARE · RHODES</div>"
-      + "<div style='font-size:15px;letter-spacing:0.14em;color:" + TEAL + ";font-weight:600'>" + moFull(cur).toUpperCase() + " · MONTH " + fyMo + ", FY" + fy + "</div>"
-      + "</div>", true);
+    return slide("<div class='cover'>"
+      + "<div class='cv-1'>NIET GROUP</div><div class='cv-2'>FINANCE UPDATE</div><div class='cv-rule'></div>"
+      + "<div class='cv-3'>NIET · CHARLTON BROWN · EDUCARE · RHODES</div>"
+      + "<div class='cv-4'>" + moFull(cur).toUpperCase() + " · MONTH " + fyMo + ", FY" + fy + "</div></div>", true);
   }
 
   /* S2: Executive Summary */
@@ -9452,22 +9561,32 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
     const entCards = ENTS.map(e => {
       const ti = plv(e.key, cur, "tradingIncome"), np = plv(e.key, cur, "netProfit");
       const mm = momPct(ti, plv(e.key, prev, "tradingIncome"));
+      const te = plv(e.key, cur, "totalExpenses");
       const buls = [
         mm != null ? "Income " + (mm >= 0 ? "up +" : "down ") + Math.abs(mm).toFixed(1) + "% on " + moLabel(prev) + "." : null,
         np < 0 ? "Loss of " + fm(Math.abs(np)) + " for the month." : np > 0 ? "Net profit " + fm(np) + "." : null,
+        ti > 0 ? "Expenses " + fm(te) + " · cost-to-income " + Math.round(te / ti * 100) + "%." : null,
       ].filter(Boolean);
-      return "<div class='ent-card' style='border-top:3px solid " + e.color + "'>"
+      return "<div class='ent-card' style='border-top:4px solid " + e.color + "'>"
         + "<div class='ent-nm'>" + e.label.toUpperCase() + "</div>"
-        + "<div style='display:flex;gap:16px;margin:5px 0'>"
-        + "<div><div style='font-size:15px;font-weight:700'>" + fm(ti) + "</div><div style='font-size:8px;color:#6E6E73'>Trading income</div></div>"
-        + "<div><div style='font-size:15px;font-weight:700;color:" + fmColor(np) + "'>" + fm(np) + "</div><div style='font-size:8px;color:#6E6E73'>Net result</div></div>"
-        + "</div><ul style='margin:0;padding-left:13px;font-size:8.5px;color:#3A3A3C;line-height:1.55'>" + buls.map(b => "<li>" + esc(b) + "</li>").join("") + "</ul></div>";
+        + "<div class='ent-vals'>"
+        + "<div><div class='ent-v'>" + fm(ti) + "</div><div class='ent-l'>Trading income</div></div>"
+        + "<div><div class='ent-v' style='color:" + fmColor(np) + "'>" + fm(np) + "</div><div class='ent-l'>Net result</div></div>"
+        + "</div><ul class='ent-buls'>" + buls.map(b => "<li>" + esc(b) + "</li>").join("") + "</ul></div>";
     }).join("");
     const keyMsgs = c?.observations?.length
       ? "<div class='key-msgs'><div class='ins-h'>Key messages</div><ul>" + c.observations.map(t => "<li>" + esc(t) + "</li>").join("") + "</ul></div>"
       : "";
+    const trend = [
+      { label: "Trading income", color: COVER_BG, values: months.map(m => grpPl(m, "tradingIncome")) },
+      { label: "Oper. expenses", color: "#5B4E8A", values: months.map(m => grpPl(m, "totalExpenses")) },
+      { label: "Net result",     color: TEAL,      values: months.map(m => grpPl(m, "netProfit")) },
+    ];
+    const trendCol = "<div class='chart-col'><div class='chart-h'>Group result — " + months.length + " months</div>"
+      + packLineChart({ series: trend, labels: months.map(moAxis), fmt: fm, tickFmt: packMoney, yTitle: "AUD", w: 580, h: 420 }) + packLegend(trend) + "</div>";
     return slide(slHdr("Executive Summary", "GROUP POSITION — " + moFull(cur).toUpperCase())
-      + kpis + "<div class='ent-row'>" + entCards + "</div>" + keyMsgs + insightStrip(c));
+      + kpis + (c ? "<div class='ent-row'>" + entCards + "</div>" : "<div class='body-row'><div class='ent-grid'>" + entCards + "</div>" + trendCol + "</div>")
+      + keyMsgs + insightStrip(c));
   }
 
   /* S3: Group result by entity */
@@ -9475,7 +9594,8 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
     const serColors = [COVER_BG, "#5B4E8A", TEAL];
     const data = {};
     entKeys.forEach(k => { data[k] = [plv(k, cur, "tradingIncome"), plv(k, cur, "totalExpenses"), plv(k, cur, "netProfit")]; });
-    const chart = svgGBar(entKeys, ["Trading income", "Oper. expenses", "Net result"], serColors, data, { w: 560, h: 285 });
+    const serList = ["Trading income", "Oper. expenses", "Net result"].map((label, i) => ({ label, color: serColors[i] }));
+    const gbGroups = entKeys.map(k => ({ key: k, label: k === "CB" ? "Charlton Brown" : k }));
     const grpN = grpPl(cur, "netProfit"), grpI = grpPl(cur, "tradingIncome");
     const sorted = [...ENTS].sort((a, b) => plv(b.key, cur, "tradingIncome") - plv(a.key, cur, "tradingIncome"));
     const topPct = grpI ? Math.round(plv(sorted[0].key, cur, "tradingIncome") / grpI * 100) : 0;
@@ -9489,14 +9609,13 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       entities: ENTS.map(e => ({ ...entityPl(e), shareOfGroupIncomePct: pctOf(plv(e.key, cur, "tradingIncome"), grpI) })),
     }, rules);
     return slide(slHdr("Group result by entity", moFull(cur).toUpperCase() + " — ALL ENTITIES")
-      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + chart + "</div>"
-      + cmtPanel("GROUP READ", fm(grpN), "Group net result", grpN < 0 ? "#FF8080" : TEAL, bulletsFor(c, rules))
-      + "</div>" + insightStrip(c) + "<p style='font-size:9px;color:#8E8E93;margin-top:6px'>Not a statutory consolidation.</p>");
+      + bodyRow("<div class='chart-col'>" + packGroupBarChart({ groups: gbGroups, series: serList, data, fmt: fm, tickFmt: packMoney, yTitle: "AUD", w: 760, h: chartH(c), label: "Group result by entity" }) + packLegend(serList) + "</div>",
+        cmtPanel("GROUP READ", fm(grpN), "Group net result", grpN < 0 ? "#FF8080" : TEAL, bulletsFor(c, rules)))
+      + insightStrip(c) + "<p class='note'>Not a statutory consolidation.</p>");
   }
 
   /* S4: Cash collections — monthly total */
   function s4() {
-    const mLbls = months.map(moLabel);
     const series = ENTS.map(e => ({ label: e.label, color: e.color, values: months.map(m => csv(e.key, m, "totalReceived")) }));
     const grpVals = months.map(m => grpCs(m, "totalReceived"));
     series.push({ label: "Group", color: "#8E8E93", values: grpVals });
@@ -9516,14 +9635,12 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
         return { entity: e.label, received: v, prevReceived: p, changePct: momPct(v, p), ...(yearAgo ? { yoyPct: momPct(v, csv(e.key, yearAgo, "totalReceived")) } : {}) }; }),
     }, rules);
     return slide(slHdr("Cash collections — monthly total", moLabel(months[0]) + " – " + moLabel(cur))
-      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel("TREND", fm(ct), "Group cash " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
+      + bodyRow(lineCol(series, "Cash received (AUD)", c), cmtPanel("TREND", fm(ct), "Group cash " + moFull(cur), TEAL, bulletsFor(c, rules))) + insightStrip(c));
   }
 
   /* S5: Cash collections — daily average */
   function s5() {
     function days(mo) { const [y, m] = mo.split("-"); return new Date(+y, +m, 0).getDate(); }
-    const mLbls = months.map(moLabel);
     const series = ENTS.map(e => ({ label: e.label, color: e.color, values: months.map(m => { const d = days(m); return d ? csv(e.key, m, "totalReceived") / d : null; }) }));
     const grpVals = months.map(m => { const d = days(m); return d ? grpCs(m, "totalReceived") / d : null; });
     series.push({ label: "Group", color: "#8E8E93", values: grpVals });
@@ -9540,13 +9657,11 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       entities: ENTS.map(e => ({ entity: e.label, dailyAverage: cur ? csv(e.key, cur, "totalReceived") / days(cur) : 0, prevDailyAverage: prev ? csv(e.key, prev, "totalReceived") / days(prev) : 0 })),
     }, rules);
     return slide(slHdr("Cash collections — daily average", moLabel(months[0]) + " – " + moLabel(cur))
-      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel("RUN-RATE", fm(cta), "Group daily avg " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
+      + bodyRow(lineCol(series, "Cash per day (AUD)", c), cmtPanel("RUN-RATE", fm(cta), "Group daily avg " + moFull(cur), TEAL, bulletsFor(c, rules))) + insightStrip(c));
   }
 
   /* S6: Cash collections — from new enrolments */
   function s6() {
-    const mLbls = months.map(moLabel);
     const series = ENTS.map(e => ({ label: e.label, color: e.color, values: months.map(m => csv(e.key, m, "newStudents")) }));
     const grpVals = months.map(m => grpCs(m, "newStudents"));
     series.push({ label: "Group", color: "#8E8E93", values: grpVals });
@@ -9565,8 +9680,7 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
         return { entity: e.label, newEnrolmentCash: v, prevNewEnrolmentCash: p, changePct: momPct(v, p), newStudents: csv(e.key, cur, "newStudentCount"), prevNewStudents: csv(e.key, prev, "newStudentCount") }; }),
     }, rules);
     return slide(slHdr("Cash collections — from new enrolments", moLabel(months[0]) + " – " + moLabel(cur))
-      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel("PIPELINE SIGNAL", fm(ct), "New-enrolment cash " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
+      + bodyRow(lineCol(series, "New-enrolment cash (AUD)", c), cmtPanel("PIPELINE SIGNAL", fm(ct), "New-enrolment cash " + moFull(cur), TEAL, bulletsFor(c, rules))) + insightStrip(c));
   }
 
   /* S7–S9: Enrolments & collections per entity */
@@ -9578,9 +9692,9 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
     });
     const rows = rowFacts.map(r => {
       const mmStr = r.changePct != null ? "<span style='color:" + (r.changePct >= 0 ? "#28CD41" : RED_NEG) + "'>" + (r.changePct >= 0 ? "+" : "") + r.changePct.toFixed(1) + "%</span>" : "";
-      return "<tr><td>" + esc(r.month.slice(0, 3) + "-" + r.month.slice(-2)) + "</td><td>" + (r.newEnrolments ? Math.round(r.newEnrolments) : "—") + "</td>"
-        + "<td>" + (r.newEnrolmentCash ? fm(r.newEnrolmentCash) : "—") + "</td><td>" + (r.existingStudentCash ? fm(r.existingStudentCash) : "—") + "</td>"
-        + "<td style='font-weight:600'>" + fm(r.totalReceived) + "</td><td>" + mmStr + "</td></tr>";
+      return "<tr><td>" + esc(r.month.slice(0, 3) + " " + r.month.slice(-4)) + "</td><td class='num'>" + (r.newEnrolments ? Math.round(r.newEnrolments) : "—") + "</td>"
+        + "<td class='num'>" + (r.newEnrolmentCash ? fm(r.newEnrolmentCash) : "—") + "</td><td class='num'>" + (r.existingStudentCash ? fm(r.existingStudentCash) : "—") + "</td>"
+        + "<td class='num' style='font-weight:700'>" + fm(r.totalReceived) + "</td><td class='num'>" + mmStr + "</td></tr>";
     }).join("");
     const ct = csv(entKey, cur, "totalReceived"), ya = csv(entKey, months[0], "totalReceived");
     const yoy = momPct(ct, ya), nc = csv(entKey, cur, "newStudentCount");
@@ -9593,10 +9707,9 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       entity: entLabel, month: moFull(cur), months: rowFacts, ...(yearAgo ? { yoyPct: yoy } : {}),
     }, rules);
     return slide(slHdr("Enrolments & collections — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
-      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
-      + "<div style='flex:1;overflow-x:auto'><table class='dt'><thead><tr><th>Month</th><th>New enrol.</th><th>New cash</th><th>Existing cash</th><th>Total received</th><th>MoM</th></tr></thead>"
-      + "<tbody>" + rows + "</tbody></table></div>"
-      + cmtPanel(head, fm(ct), "Collections " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
+      + bodyRow("<div class='main-col'><table class='dt fill" + (c ? " compact" : "") + "'><thead><tr><th>Month</th><th class='num'>New enrol.</th><th class='num'>New cash</th><th class='num'>Existing cash</th><th class='num'>Total received</th><th class='num'>MoM</th></tr></thead>"
+        + "<tbody>" + rows + "</tbody></table></div>",
+        cmtPanel(head, fm(ct), "Collections " + moFull(cur), TEAL, bulletsFor(c, rules))) + insightStrip(c));
   }
 
   /* S10–S12: Revenue by course */
@@ -9607,7 +9720,7 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
     const prevTotal = plv(entKey, prev, "tradingIncome") + plv(entKey, prev, "otherIncome");
     const top = items.slice(0, 13), rest = items.slice(13);
     const disp = rest.length ? [...top, { account: "Other lines (" + rest.length + ")", amount: rest.reduce((s, x) => s + x.amount, 0) }] : top;
-    const barItems = disp.map(li => ({ label: li.account.length > 43 ? li.account.slice(0, 40) + "…" : li.account, value: li.amount, color: COVER_BG }));
+    const barItems = disp.map(li => ({ label: li.account, value: li.amount, color: COVER_BG }));
     const top1 = items[0];
     const topPct = total ? Math.round((top1?.amount || 0) / total * 100) : 0;
     const rules = [
@@ -9622,9 +9735,7 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       ...(rest.length ? { otherLines: { count: rest.length, amount: rest.reduce((s, x) => s + x.amount, 0) } } : {}),
     }, rules);
     return slide(slHdr("Revenue by course — " + entLabel, moFull(cur).toUpperCase())
-      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
-      + "<div style='flex:1;overflow:hidden;max-height:" + (c ? 380 : 470) + "px'>" + svgHBar(barItems, { w: 580, barH: 15, gap: 6, lw: 240, rw: 85 }) + "</div>"
-      + cmtPanel(head, fm(total), "Trading income " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
+      + bodyRow(hbarCol(barItems, c, { pad: 8, label: "Revenue by course" }), cmtPanel(head, fm(total), "Trading income " + moFull(cur), TEAL, bulletsFor(c, rules))) + insightStrip(c));
   }
 
   /* S13: Consolidated cost base — top 20 */
@@ -9646,18 +9757,13 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       month: moFull(cur), totalExpenses: grpE, prevTotalExpenses: prevE, changePct: momPct(grpE, prevE), top3SharePct: pctOf(top3, grpE),
       topLines: items.map(([account, amount]) => ({ account, amount, shareOfExpensesPct: pctOf(amount, grpE), prevAmount: prevMap[account] || 0, change: amount - (prevMap[account] || 0) })),
     }, rules);
-    const barItems = items.map(([acc, amt]) => ({ label: acc.length > 43 ? acc.slice(0, 40) + "…" : acc, value: amt, color: COVER_BG }));
-    // Smaller bars when the insight strip needs room, so all 20 lines still fit on the page
-    const bars = c ? { barH: 12, gap: 5 } : { barH: 15, gap: 6 };
+    const barItems = items.map(([acc, amt]) => ({ label: acc, value: amt, color: COVER_BG }));
     return slide(slHdr("Consolidated cost base — top 20 expenses", moFull(cur).toUpperCase() + " · ALL ENTITIES")
-      + "<div style='display:flex;gap:14px;align-items:flex-start'>"
-      + "<div style='flex:1;overflow:hidden;max-height:470px'>" + svgHBar(barItems, { w: 580, ...bars, lw: 240, rw: 85 }) + "</div>"
-      + cmtPanel("COST BASE", fm(grpE), "Oper. expenses all entities", TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
+      + bodyRow(hbarCol(barItems, c, { pad: 5, label: "Top 20 expenses" }), cmtPanel("COST BASE", fm(grpE), "Oper. expenses all entities", TEAL, bulletsFor(c, rules))) + insightStrip(c));
   }
 
   /* S14/16/18: Profitability per entity */
   function sProfit(entKey, entLabel, head, group) {
-    const mLbls = months.map(moLabel);
     const series = [
       { label: "Trading income",  color: COVER_BG, values: months.map(m => plv(entKey, m, "tradingIncome")) },
       { label: "Oper. expenses",  color: "#5B4E8A", values: months.map(m => plv(entKey, m, "totalExpenses")) },
@@ -9677,8 +9783,7 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       months: months.map(m => ({ month: moFull(m), tradingIncome: plv(entKey, m, "tradingIncome"), operatingExpenses: plv(entKey, m, "totalExpenses"), netResult: plv(entKey, m, "netProfit") })),
     }, rules);
     return slide(slHdr("Profitability — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
-      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel(head, fm(cn), "Net result in month", cn < 0 ? "#FF8080" : TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
+      + bodyRow(lineCol(series, "AUD", c), cmtPanel(head, fm(cn), "Net result in month", cn < 0 ? "#FF8080" : TEAL, bulletsFor(c, rules))) + insightStrip(c));
   }
 
   /* S15/17/19: Cost drivers per entity */
@@ -9688,7 +9793,6 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       return r ? (r.lineItems || []).filter(li => li.category === "expenses" && kws.some(kw => li.account.toLowerCase().includes(kw))).reduce((s, li) => s + li.amount, 0) : 0;
     }
     const KW = { commissions: ["commission", "agent"], rent: ["rent"], wages: ["wage", "salary", "salaries"] };
-    const mLbls = months.map(moLabel);
     const series = [
       { label: "Agent commissions", color: COVER_BG, values: months.map(m => lineSum(entKey, m, KW.commissions)) },
       { label: "Rent",              color: "#5B4E8A", values: months.map(m => lineSum(entKey, m, KW.rent)) },
@@ -9710,47 +9814,29 @@ function generateFinancePack({ plRecords = [], cashRecords = [], commentary = nu
       months: months.map((m, i) => ({ month: moFull(m), agentCommissions: series[0].values[i], rent: series[1].values[i], wagesAndSalaries: series[2].values[i] })),
     }, rules);
     return slide(slHdr("Cost drivers — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
-      + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel(head, fm(plv(entKey, cur, "totalExpenses")), "Oper. expenses " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c)
-      + "<p style='font-size:9px;color:#8E8E93;margin-top:6px'>Wages and salaries combines direct wages, management-fee wage recharges and any on-costs. Rent combines rent and rent recharges.</p>");
+      + bodyRow(lineCol(series, "AUD", c), cmtPanel(head, fm(plv(entKey, cur, "totalExpenses")), "Oper. expenses " + moFull(cur), TEAL, bulletsFor(c, rules))) + insightStrip(c)
+      + "<p class='note'>Wages and salaries combines direct wages, management-fee wage recharges and any on-costs. Rent combines rent and rent recharges.</p>");
   }
 
-  /* CSS */
-  const css = "*{box-sizing:border-box;margin:0;padding:0}"
-    + "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F0F0F5}"
-    + ".slide{width:297mm;height:210mm;position:relative;overflow:hidden;padding:22px 28px 16px;display:flex;flex-direction:column;background:#fff;page-break-after:always;break-after:page}"
-    + ".sl-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:1px solid #E5E5EA;padding-bottom:9px}"
-    + ".sl-title{font-size:19px;font-weight:700;color:#1D1D1F;letter-spacing:-0.02em}"
-    + ".sl-sub{font-size:9.5px;color:#8E8E93;margin-top:2px;letter-spacing:0.04em}"
-    + ".mo-badge{background:#F5F5F7;border:1px solid #E5E5EA;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:700;color:#3A3A3C;white-space:nowrap}"
-    + ".kpi-row{display:flex;gap:9px;margin-bottom:11px}"
-    + ".kpi-card{flex:1;border:1px solid #E5E5EA;border-radius:7px;padding:9px 11px}"
-    + ".kpi-v{font-size:20px;font-weight:700;letter-spacing:-0.03em}"
-    + ".kpi-l{font-size:9.5px;color:#3A3A3C;font-weight:600;margin-top:3px}"
-    + ".kpi-s{font-size:7.5px;color:#8E8E93;margin-top:2px}"
-    + ".ent-row{display:flex;gap:7px}"
-    + ".ent-card{flex:1;border:1px solid #E5E5EA;border-radius:6px;padding:8px 9px}"
-    + ".ent-nm{font-size:8.5px;font-weight:700;letter-spacing:0.08em;color:#6E6E73;margin-bottom:3px}"
-    + ".cmt-panel{width:205px;flex-shrink:0;background:" + COVER_BG + ";color:#fff;border-radius:9px;padding:13px}"
-    + ".cp-head{font-size:7.5px;font-weight:700;letter-spacing:0.1em;color:rgba(255,255,255,0.55);margin-bottom:7px}"
-    + ".cp-kpi{font-size:24px;font-weight:700;letter-spacing:-0.03em}"
-    + ".cp-kpi-lbl{font-size:8.5px;color:rgba(255,255,255,0.7);margin-top:2px;margin-bottom:9px}"
-    + ".cp-buls{padding-left:12px;font-size:9px;line-height:1.55;color:rgba(255,255,255,0.85)}"
-    + ".cp-buls li{margin-bottom:3px}"
-    + ".ins-row{display:flex;gap:12px;margin-top:10px}"
-    + ".ins-col{flex:1;border-top:2px solid " + TEAL + ";padding-top:6px}"
-    + ".ins-h{font-size:7.5px;font-weight:700;letter-spacing:0.1em;color:#6E6E73;text-transform:uppercase;margin-bottom:3px}"
-    + ".ins-col ul,.key-msgs ul{padding-left:12px;font-size:9px;line-height:1.5;color:#3A3A3C}"
-    + ".ins-col li,.key-msgs li{margin-bottom:2px}"
-    + ".key-msgs{margin-top:11px;border:1px solid #E5E5EA;border-left:3px solid " + COVER_BG + ";border-radius:6px;padding:8px 11px}"
-    + ".key-msgs ul{font-size:10px}"
-    + ".dt{width:100%;border-collapse:collapse;font-size:11px}"
-    + ".dt th{background:#F5F5F7;padding:5px 7px;text-align:left;font-size:8.5px;color:#6E6E73;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid #E5E5EA}"
-    + ".dt td{padding:4px 7px;border-bottom:1px solid #F2F2F2}"
-    + ".pg-num{position:absolute;bottom:9px;right:26px;font-size:8px;color:#AEAEB2}"
-    + ".branding{position:absolute;bottom:9px;left:26px;font-size:8px;color:#AEAEB2}"
-    + "@media print{body{background:#fff}@page{size:A4 landscape;margin:0}.slide{width:100vw;height:100vh}}"
-    + "@media screen{.slide{margin:14px auto;box-shadow:0 4px 24px rgba(0,0,0,0.12)}}";
+  /* CSS: shared slide styles + the Finance Pack's own pieces */
+  const css = packBaseCss(COVER_BG, TEAL)
+    + ".ent-grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:12px;width:450px;flex-shrink:0}"
+    + ".ent-row{display:flex;gap:12px;flex-shrink:0}.ent-row .ent-card{flex:1}"
+    + ".ent-card{border:1px solid #E5E5EA;border-radius:10px;padding:12px 15px;min-height:0;overflow:hidden}"
+    + ".ent-nm{font-size:12px;font-weight:800;letter-spacing:0.08em;color:#6E6E73;margin-bottom:6px}"
+    + ".ent-vals{display:flex;gap:22px;margin-bottom:8px}"
+    + ".ent-v{font-size:23px;font-weight:700;letter-spacing:-0.02em;font-variant-numeric:tabular-nums}"
+    + ".ent-l{font-size:11.5px;color:#6E6E73;margin-top:1px}"
+    + ".ent-buls{margin:0;padding-left:16px;font-size:13px;color:#3A3A3C;line-height:1.45}"
+    + ".chart-h{font-size:13px;font-weight:700;color:#3A3A3C;margin-bottom:6px;flex-shrink:0}"
+    + ".ins-row{display:flex;gap:20px;margin-top:14px;flex-shrink:0}"
+    + ".ins-col{flex:1;border-top:3px solid " + TEAL + ";padding-top:8px}"
+    + ".ins-h{font-size:11.5px;font-weight:800;letter-spacing:0.1em;color:#6E6E73;text-transform:uppercase;margin-bottom:5px}"
+    + ".ins-col ul,.key-msgs ul{padding-left:17px;font-size:13px;line-height:1.45;color:#3A3A3C}"
+    + ".ins-col li,.key-msgs li{margin-bottom:3px}"
+    + ".key-msgs{margin-top:14px;border:1px solid #E5E5EA;border-left:4px solid " + COVER_BG + ";border-radius:8px;padding:11px 15px;flex-shrink:0}"
+    + ".key-msgs ul{font-size:14px}"
+    + ".dt.compact th{padding:7px 12px}.dt.compact td{padding:5px 12px}";
 
   /* Assemble */
   const slides = [
@@ -10120,7 +10206,7 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
   const GREEN    = "#28CD41";
   const AMBER    = "#FF9F0A";
   const LINE_COLORS = [COVER_BG, "#1ABCCD", "#FF9F0A", "#E54B4B", "#5A4490", "#28CD41"];
-  const ROWS_PER_PAGE = 18;
+  const ROWS_PER_PAGE = 13;
   const nowMs = Date.now();
 
   // ── Month helpers ─────────────────────────────────────────
@@ -10250,53 +10336,13 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
 
   const activeProjects = projects.filter(p => p.type !== "pursuit" && p.status === "active");
 
-  // ── SVG charts (viewBox so they scale to the column) ──────
-  const SVG_OPEN = (w, h) => "<svg viewBox='0 0 " + w + " " + h + "' width='100%' xmlns='http://www.w3.org/2000/svg' font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">";
-  function legend(series) {
-    return "<div class='legend'>" + series.map(s => "<span><i style='background:" + s.color + "'></i>" + esc(s.label) + "</span>").join("") + "</div>";
+  // ── Charts: shared drawing (packLineChart / packHBarChart) ──
+  const moAxis = mo => moLabel(mo).replace("-", " ");
+  function svgLine(series, labels, { fmt = fm, yTitle = "", h = 520 } = {}) {
+    return "<div class='chart-col'>" + packLineChart({ series, labels, fmt, tickFmt: fmt === fm ? packMoney : fmt, yTitle, w: 760, h }) + packLegend(series) + "</div>";
   }
-  function svgLine(series, labels, { w = 800, h = 300, fmt = fm, floorZero = false } = {}) {
-    const PL = 64, PR = 56, PT = 14, PB = 34;
-    const cW = w - PL - PR, cH = h - PT - PB, n = labels.length;
-    const allV = series.flatMap(s => s.values.filter(v => v != null));
-    if (!n || !allV.length) return "<div class='empty'>No data in this period.</div>";
-    const lo = Math.min(...allV), hi = Math.max(...allV);
-    const pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.1 || 1;
-    const vLo = floorZero ? Math.max(0, lo - pad) : lo - pad, vHi = hi + pad, vR = vHi - vLo || 1;
-    const px = i => PL + (n > 1 ? i / (n - 1) * cW : cW / 2);
-    const py = v => PT + cH - (v - vLo) / vR * cH;
-    let out = SVG_OPEN(w, h);
-    for (let i = 0; i <= 5; i++) {
-      const tv = vLo + vR * i / 5, ty = py(tv);
-      out += "<line x1='" + PL + "' y1='" + ty + "' x2='" + (PL + cW) + "' y2='" + ty + "' stroke='#E5E5EA'/>"
-        + "<text x='" + (PL - 6) + "' y='" + (ty + 4) + "' text-anchor='end' font-size='10' fill='#8E8E93'>" + fmt(tv) + "</text>";
-    }
-    if (vLo < 0 && vHi > 0) out += "<line x1='" + PL + "' y1='" + py(0) + "' x2='" + (PL + cW) + "' y2='" + py(0) + "' stroke='#AEAEB2' stroke-dasharray='4,3'/>";
-    labels.forEach((l, i) => { out += "<text x='" + px(i) + "' y='" + (PT + cH + 18) + "' text-anchor='middle' font-size='10' fill='#8E8E93'>" + l + "</text>"; });
-    series.forEach(s => {
-      const pts = s.values.map((v, i) => v != null ? px(i) + "," + py(v) : null).filter(Boolean).join(" ");
-      out += "<polyline points='" + pts + "' fill='none' stroke='" + s.color + "' stroke-width='" + (s.bold ? 3 : 2) + "' stroke-linejoin='round'" + (s.dash ? " stroke-dasharray='5,4'" : "") + "/>";
-      s.values.forEach((v, i) => { if (v != null) out += "<circle cx='" + px(i) + "' cy='" + py(v) + "' r='2.5' fill='" + s.color + "'/>"; });
-      const li = s.values.length - 1, lv = s.values[li];
-      if (lv != null) out += "<text x='" + (px(li) + 6) + "' y='" + (py(lv) + 4) + "' font-size='10' fill='" + s.color + "' font-weight='700'>" + fmt(lv) + "</text>";
-    });
-    return out + "</svg>" + legend(series);
-  }
-  function svgHBar(items, { w = 800, barH = 20, gap = 9, lw = 190, rw = 70, fmt = fm, pct = false } = {}) {
-    if (!items.length) return "<div class='empty'>No data in this period.</div>";
-    const h = items.length * (barH + gap) + 6, chartW = w - lw - rw;
-    const maxV = pct ? 100 : Math.max(...items.map(x => Math.abs(x.value)), 1);
-    let out = SVG_OPEN(w, h);
-    items.forEach((it, i) => {
-      const y = 3 + i * (barH + gap);
-      const bw = Math.max(2, Math.min(Math.abs(it.value), maxV) / maxV * chartW);
-      out += "<text x='" + (lw - 8) + "' y='" + (y + barH * 0.7) + "' text-anchor='end' font-size='12' fill='#3A3A3C'>" + esc(it.label) + "</text>";
-      if (pct) out += "<rect x='" + lw + "' y='" + y + "' width='" + chartW + "' height='" + barH + "' fill='#F2F2F7' rx='3'/>";
-      out += "<rect x='" + lw + "' y='" + y + "' width='" + bw + "' height='" + barH + "' fill='" + it.color + "' rx='3'/>"
-        + "<text x='" + (lw + (pct ? chartW : bw) + 8) + "' y='" + (y + barH * 0.7) + "' font-size='12' font-weight='700' fill='" + (it.value < 0 ? RED_NEG : "#1D1D1F") + "'>" + fmt(it.value) + "</text>";
-    });
-    if (pct) { const tx = lw + TP / 100 * chartW; out += "<line x1='" + tx + "' y1='0' x2='" + tx + "' y2='" + h + "' stroke='#1D1D1F' stroke-dasharray='3,3' stroke-width='1'/>"; }
-    return out + "</svg>";
+  function svgHBar(items, { fmt = fm, pct = false } = {}) {
+    return "<div class='chart-col'>" + packHBarChart({ items, fmt, w: 760, fitH: 540, labelW: 280, pct, target: pct ? TP : null }) + "</div>";
   }
 
   // ── Layout helpers ────────────────────────────────────────
@@ -10311,7 +10357,8 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
       + (badgeMo ? "<div class='mo-badge'>" + moLabel(badgeMo).toUpperCase() + "</div>" : "") + "</div>";
   }
   function cmtPanel(head, val, valLbl, valCol, bullets) {
-    return "<div class='cmt-panel'><div class='cp-head'>" + esc(head) + "</div>"
+    const list = bullets.filter(Boolean);
+    return "<div class='cmt-panel" + (list.join("").length > 320 ? " dense" : "") + "'><div class='cp-head'>" + esc(head) + "</div>"
       + "<div class='cp-kpi' style='color:" + (valCol || "#fff") + "'>" + esc(val) + "</div>"
       + "<div class='cp-kpi-lbl'>" + esc(valLbl) + "</div>"
       + "<ul class='cp-buls'>" + bullets.filter(Boolean).map(b => "<li>" + esc(b) + "</li>").join("") + "</ul></div>";
@@ -10362,8 +10409,8 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
       + kpiCard("Group OKR rate", fp(grpRateCur), moLabel(okrCur) + (dRate != null ? " · " + signed(dRate, "pp") + " MoM" : ""), statusColor(getStatus(grpRateCur)))
       + kpiCard("Active projects", String(activeProjects.length), "excludes pursuits", "#1D1D1F")
       + "</div>";
-    const top = ranked.filter(m => m.rate != null).slice(0, 5);
-    const red = ranked.filter(m => m.status === "red").slice(-5).reverse();
+    const top = ranked.filter(m => m.rate != null).slice(0, 8);
+    const red = ranked.filter(m => m.status === "red").slice(-8).reverse();
     const list = (arr, st, emptyTxt) => arr.length
       ? arr.map(m => "<div class='li'>" + statusDot(st || m.status) + "<b>" + esc(m.name) + "</b><span>" + esc(m.deptName) + " · " + fp(m.rate) + "</span></div>").join("")
       : "<div class='li muted'>" + emptyTxt + "</div>";
@@ -10396,6 +10443,12 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
         + "<td class='num' style='color:#8E8E93'>" + (plMap[e.key + "|" + plPrev] ? fm(pnp) : "—") + "</td></tr>";
     }).join("");
     const best = [...ents].sort((a, b) => plv(b.key, plCur, "netProfit") - plv(a.key, plCur, "netProfit"))[0];
+    const plWin = window13(plCur), hasPl = m => ENTS.some(e => plMap[e.key + "|" + m]);
+    const plTrend = [
+      { label: "Trading income", color: COVER_BG, values: plWin.map(m => hasPl(m) ? grpPl(m, "tradingIncome") : null), bold: true },
+      { label: "Oper. expenses", color: "#5A4490", values: plWin.map(m => hasPl(m) ? grpPl(m, "totalExpenses") : null) },
+      { label: "Net result",     color: "#1ABCCD", values: plWin.map(m => hasPl(m) ? grpPl(m, "netProfit") : null) },
+    ];
     const buls = [
       "Trading income " + fm(I) + (O ? " plus other income " + fm(O) : "") + ".",
       cir != null ? "Cost-to-income ratio " + cir + "%" + (cir > 100 ? ", so the group traded at a loss." : ".") : null,
@@ -10409,7 +10462,8 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
       + kpiCard("Net result", fm(N), "", fmColor(N))
       + kpiCard("Cost-to-income", cir != null ? cir + "%" : "—", cir != null && cir > 100 ? "above 100% means a loss" : "", cir != null && cir > 100 ? RED_NEG : "#1D1D1F")
       + "</div>"
-      + withPanel("<table class='dt'><thead><tr><th>Entity</th><th class='num'>Trading income</th><th class='num'>Expenses</th><th class='num'>Net result</th><th class='num'>Net " + moLabel(plPrev) + "</th></tr></thead><tbody>" + rows + "</tbody></table>",
+      + withPanel("<table class='dt'><thead><tr><th>Entity</th><th class='num'>Trading income</th><th class='num'>Expenses</th><th class='num'>Net result</th><th class='num'>Net " + moLabel(plPrev) + "</th></tr></thead><tbody>" + rows + "</tbody></table>"
+        + "<div class='chart-h' style='margin-top:14px'>Group result — 13 months</div>" + svgLine(plTrend, window13(plCur).map(moAxis), { yTitle: "AUD", h: 230 }),
         cmtPanel("FINANCIAL READ", fm(N), "Group net result " + moLabel(plCur), N < 0 ? "#FF8080" : TEAL, buls)));
   }
 
@@ -10428,7 +10482,7 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
       ...extraBullets,
     ];
     return slide(slHdr("FINANCIAL", title, moLabel(cashWin[0]) + " – " + moLabel(cashCur), cashCur)
-      + withPanel(svgLine(series, cashWin.map(moLabel), { floorZero: true }), cmtPanel(head, fm(c), "Group, " + moFull(cashCur), TEAL, buls)));
+      + withPanel(svgLine(series, cashWin.map(moAxis), { yTitle: field === "newStudents" ? "New-enrolment cash (AUD)" : "Cash received (AUD)" }), cmtPanel(head, fm(c), "Group, " + moFull(cashCur), TEAL, buls)));
   }
 
   // ── OKR ───────────────────────────────────────────────────
@@ -10463,7 +10517,7 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
       showDepts ? null : "Department lines hidden (" + depts.length + " departments); see the comparison table.",
     ];
     return slide(slHdr("OKR", "OKR Completion Trend", moLabel(okrWin[0]) + " – " + moLabel(okrCur) + " · GROUP = AVERAGE OF DEPARTMENTS", okrCur)
-      + withPanel(svgLine(series, okrWin.map(moLabel), { fmt: fp, floorZero: true }), cmtPanel("TREND", fp(grpRateCur), "Group OKR rate " + moFull(okrCur), TEAL, buls)));
+      + withPanel(svgLine(series, okrWin.map(moAxis), { fmt: fp, yTitle: "OKR completion (%)" }), cmtPanel("TREND", fp(grpRateCur), "Group OKR rate " + moFull(okrCur), TEAL, buls)));
   }
 
   function sOkrRankings() {
@@ -10543,56 +10597,18 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
       { note: activeProjects.length + " active project" + (activeProjects.length !== 1 ? "s" : "") + " · expected income " + fm(totalIncome) + ". Pursuits are excluded.", empty: "No active projects." });
   }
 
-  // ── CSS ───────────────────────────────────────────────────
-  const css = "*{box-sizing:border-box;margin:0;padding:0}"
-    + "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#ECECF1;color:#1D1D1F;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
-    + ".slide{width:297mm;height:210mm;position:relative;overflow:hidden;padding:20px 28px 30px;display:flex;flex-direction:column;background:#fff;page-break-after:always;break-after:page}"
-    + ".sl-hdr{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;border-bottom:1px solid #E5E5EA;padding-bottom:9px}"
-    + ".eyebrow{font-size:9px;font-weight:800;letter-spacing:0.14em;margin-bottom:2px}"
-    + ".sl-title{font-size:20px;font-weight:700;letter-spacing:-0.02em}"
-    + ".sl-sub{font-size:9.5px;color:#8E8E93;margin-top:2px;letter-spacing:0.05em}"
-    + ".mo-badge{background:#F5F5F7;border:1px solid #E5E5EA;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:700;color:#3A3A3C;white-space:nowrap}"
-    + ".kpi-row{display:flex;gap:9px;margin-bottom:12px}"
-    + ".kpi-card{flex:1;border:1px solid #E5E5EA;border-radius:8px;padding:10px 12px}"
-    + ".kpi-v{font-size:21px;font-weight:700;letter-spacing:-0.03em;font-variant-numeric:tabular-nums}"
-    + ".kpi-l{font-size:10px;color:#3A3A3C;font-weight:600;margin-top:3px}"
-    + ".kpi-s{font-size:8.5px;color:#8E8E93;margin-top:2px}"
-    + ".body-row{display:flex;gap:16px;align-items:flex-start;flex:1;min-height:0}"
-    + ".main-col{flex:1;min-width:0}"
-    + ".two-col{display:flex;gap:10px}"
-    + ".box{flex:1;border:1px solid #E5E5EA;border-radius:8px;padding:10px 12px}"
-    + ".box-h{font-size:8.5px;font-weight:800;letter-spacing:0.1em;color:#6E6E73;margin-bottom:6px}"
-    + ".li{display:flex;align-items:center;gap:4px;font-size:11px;padding:4px 0;border-bottom:1px solid #F2F2F7}"
-    + ".li b{font-weight:600}.li span{margin-left:auto;color:#6E6E73;font-size:10px}.li.muted{color:#8E8E93}"
-    + ".cmt-panel{width:215px;flex-shrink:0;background:" + COVER_BG + ";color:#fff;border-radius:10px;padding:14px}"
-    + ".cp-head{font-size:8px;font-weight:800;letter-spacing:0.12em;color:rgba(255,255,255,0.6);margin-bottom:7px}"
-    + ".cp-kpi{font-size:25px;font-weight:700;letter-spacing:-0.03em;font-variant-numeric:tabular-nums}"
-    + ".cp-kpi-lbl{font-size:9px;color:rgba(255,255,255,0.7);margin:2px 0 10px}"
-    + ".cp-buls{padding-left:13px;font-size:9.5px;line-height:1.55;color:rgba(255,255,255,0.88)}"
-    + ".cp-buls li{margin-bottom:4px}"
-    + ".legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:10px;color:#3A3A3C}"
-    + ".legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}"
-    + ".dt{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}"
-    + ".dt th{background:#F5F5F7;padding:6px 8px;text-align:left;font-size:8.5px;color:#6E6E73;letter-spacing:0.05em;text-transform:uppercase;border-bottom:1px solid #E5E5EA}"
-    + ".dt td{padding:6px 8px;border-bottom:1px solid #F2F2F7;vertical-align:middle}"
-    + ".dt .num{text-align:right}"
-    + ".chip{display:inline-block;background:#FDECEC;color:" + RED_NEG + ";border-radius:4px;padding:1px 6px;font-size:9.5px;font-weight:600;margin:1px 0}"
-    + ".prog{display:inline-block;width:70px;height:6px;background:#F2F2F7;border-radius:3px;vertical-align:middle;overflow:hidden}"
+  // ── CSS: shared slide styles + the Performance Pack's own pieces ──
+  const css = packBaseCss(COVER_BG, TEAL)
+    + ".two-col{display:flex;gap:16px;flex:1;min-height:0}"
+    + ".box{flex:1;border:1px solid #E5E5EA;border-radius:10px;padding:14px 18px;overflow:hidden}"
+    + ".box-h{font-size:12px;font-weight:800;letter-spacing:0.1em;color:#6E6E73;margin-bottom:8px}"
+    + ".li{display:flex;align-items:center;gap:6px;font-size:15px;padding:7px 0;border-bottom:1px solid #F2F2F7}"
+    + ".li b{font-weight:600}.li > span:last-child{margin-left:auto;color:#6E6E73;font-size:13.5px}.li.muted{color:#8E8E93}"
+    + ".chart-h{font-size:13px;font-weight:700;color:#3A3A3C;margin-bottom:6px;flex-shrink:0}"
+    + ".chip{display:inline-block;background:#FDECEC;color:" + RED_NEG + ";border-radius:5px;padding:2px 8px;font-size:12.5px;font-weight:600;margin:1px 0}"
+    + ".prog{display:inline-block;width:90px;height:8px;background:#F2F2F7;border-radius:4px;vertical-align:middle;overflow:hidden}"
     + ".prog i{display:block;height:100%;background:" + GREEN + "}"
-    + ".prog-t{font-size:10px;color:#6E6E73;margin-left:6px}"
-    + ".empty{padding:40px 0;color:#8E8E93;font-size:13px}"
-    + ".note{font-size:9.5px;color:#8E8E93;margin-top:8px}"
-    + ".cover{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:18px}"
-    + ".cv-1{font-size:48px;font-weight:300;letter-spacing:0.18em}"
-    + ".cv-2{font-size:13px;letter-spacing:0.32em;color:rgba(255,255,255,0.7)}"
-    + ".cv-rule{width:56px;height:1px;background:" + TEAL + "}"
-    + ".cv-3{font-size:11px;letter-spacing:0.2em;color:rgba(255,255,255,0.55)}"
-    + ".cv-4{font-size:15px;letter-spacing:0.14em;color:" + TEAL + ";font-weight:600}"
-    + ".pg-num{position:absolute;bottom:10px;right:28px;font-size:8.5px;color:#AEAEB2}"
-    + ".branding{position:absolute;bottom:10px;left:28px;font-size:8.5px;color:#AEAEB2}"
-    + "@page{size:A4 landscape;margin:0}"
-    + "@media print{body{background:#fff}.slide{box-shadow:none;margin:0}}"
-    + "@media screen{.slide{margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,0.12)}}";
+    + ".prog-t{font-size:13px;color:#6E6E73;margin-left:8px}";
 
   // ── Assemble: grouped by data type ────────────────────────
   const slides = [
