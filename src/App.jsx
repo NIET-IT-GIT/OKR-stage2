@@ -2935,6 +2935,75 @@ function readPilotDraft() {
   return { id: Date.now(), messages: [] };
 }
 
+// Owners whose pursuits a manager or member sees on the Pursuits / Pipeline page and in the Pilot: their department
+function pursuitOwnerIds(user, users) {
+  return new Set((user.deptId ? users.filter(u => u.deptId === user.deptId) : [user]).map(u => u.id));
+}
+
+// NIET Pilot context — projects (pursuits excluded; they have their own section)
+function pilotProjectSection({ projects, users, depts, fmtMoney }) {
+  const real = projects.filter(p => p.type !== "pursuit");
+  const activeProjects = real.filter(p => p.status === "active");
+  const pendingApprovalProjects = real.filter(p => p.status === "pending approval");
+  const completedProjects = real.filter(p => p.status === "completed");
+  const fmtProject = p => {
+    const mgr = users.find(u => u.id === p.mgrId);
+    const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
+    const mgrName = mgr?.name || "—";
+    const overdue = isPastDue(p.due) && p.status === "active" ? " [OVERDUE]" : "";
+    let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
+    if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
+    if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)${p.contributeRate != null && p.contributeRate < 100 ? ` [Owner's KR share: ${p.contributeRate}%]` : ""}`;
+    const logEntries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
+    if (logEntries.length) line += `\n    Latest Log: ${logEntries[0].text.slice(0, 100)}${logEntries[0].text.length > 100 ? "…" : ""}`;
+    return line;
+  };
+  return [
+    `PROJECTS: Total ${real.length} (${activeProjects.length} active, ${pendingApprovalProjects.length} pending approval, ${completedProjects.length} completed)`,
+    activeProjects.length ? `Active (${activeProjects.length}):\n${activeProjects.map(fmtProject).join("\n")}` : "Active: none",
+    pendingApprovalProjects.length ? `Pending Approval (${pendingApprovalProjects.length}) — awaiting System Admin sign-off:\n${pendingApprovalProjects.map(fmtProject).join("\n")}` : "",
+    completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// NIET Pilot context — Pursuits / Pipeline. Same figures as the Pursuits page: weighted value counts a pursuit
+// without a probability at full value. allowed=false sends nothing but a note, so the Pilot can't reveal any of it.
+function pilotPursuitSection({ pursuits, users, depts, fmtMoney, allowed }) {
+  if (!allowed) return "PURSUITS / PIPELINE: not available — this user does not have Pursuits / Pipeline access. If asked about pursuits or the pipeline, say so and do not guess.";
+  const outcomeOf = p => p.outcome || "active";
+  const active = pursuits.filter(p => outcomeOf(p) === "active");
+  const closed = o => pursuits.filter(p => outcomeOf(p) === o);
+  const won = closed("won"), lost = closed("lost"), deferred = closed("deferred");
+  const val = p => Number(p.estimatedValue) || 0;
+  const weighted = p => val(p) * (p.probability != null && p.probability !== "" ? Number(p.probability) / 100 : 1);
+  const sum = (arr, fn = val) => arr.reduce((t, p) => t + fn(p), 0);
+  const owner = p => users.find(u => u.id === p.mgrId);
+  const deptOf = p => { const o = owner(p); return o ? (depts.find(d => d.id === o.deptId)?.name || "—") : "—"; };
+  const stageLabel = id => (PURSUIT_STAGES.find(st => st.id === (id || "opportunity")) || PURSUIT_STAGES[0]).label;
+  const line = p => {
+    let l = `  "${p.name}" | ${deptOf(p)} | Owner: ${owner(p)?.name || "—"} | Stage: ${stageLabel(p.stage)}`;
+    l += ` | Est. value: ${p.estimatedValue != null && p.estimatedValue !== "" ? fmtMoney(val(p)) : "not set"}`;
+    if (p.probability != null && p.probability !== "") l += ` | Probability: ${p.probability}% | Weighted: ${fmtMoney(Math.round(weighted(p)))}`;
+    l += ` | Deadline: ${p.deadline || "none"}${outcomeOf(p) === "active" && isPastDue(p.deadline) ? " [OVERDUE]" : ""}`;
+    if (p.nextAction) l += ` | Next action: ${String(p.nextAction).slice(0, 120)}`;
+    if (p.notes) l += `\n    Notes: ${String(p.notes).slice(0, 100)}${String(p.notes).length > 100 ? "…" : ""}`;
+    return l;
+  };
+  const brief = arr => arr.slice(0, 20).map(p => `"${p.name}" (${p.estimatedValue != null && p.estimatedValue !== "" ? fmtMoney(val(p)) : "no value"}, ${deptOf(p)})`).join(", ") + (arr.length > 20 ? `, and ${arr.length - 20} more` : "");
+  const decided = won.length + lost.length;
+  const byStage = PURSUIT_STAGES.map(st => { const items = active.filter(p => (p.stage || "opportunity") === st.id); return items.length ? `${st.label} ${items.length} (${fmtMoney(sum(items))})` : null; }).filter(Boolean);
+  return [
+    "PURSUITS / PIPELINE — business opportunities being pursued; they are not projects yet and are not counted in PROJECTS. When a question is about projects, add a short pipeline summary after the projects; when it is about pursuits or the pipeline, answer in detail.",
+    `Active: ${active.length} | Estimated value ${fmtMoney(sum(active))} | Weighted by probability ${fmtMoney(Math.round(sum(active, weighted)))}`,
+    byStage.length ? `By stage: ${byStage.join("; ")}` : "",
+    `Closed: Won ${won.length} (${fmtMoney(sum(won))}), Lost ${lost.length} (${fmtMoney(sum(lost))}), Deferred ${deferred.length} (${fmtMoney(sum(deferred))})${decided ? ` | Win rate ${Math.round(won.length / decided * 100)}% (won ÷ won + lost)` : ""}`,
+    active.length ? `Active pursuits (${active.length}):\n${active.map(line).join("\n")}` : "Active pursuits: none",
+    won.length ? `Won: ${brief(won)}` : "",
+    lost.length ? `Lost: ${brief(lost)}` : "",
+    deferred.length ? `Deferred: ${brief(deferred)}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 const PURSUIT_STAGES = [
   { id: "opportunity",   label: "Opportunity Identified",       color: "#60a5fa" },
   { id: "qualification", label: "Qualification & Go/No-Go",    color: "#a78bfa" },
@@ -3349,28 +3418,9 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
       pendingSection = `PENDING SUBMISSIONS (answered by member, awaiting admin approval):\n${byDept.join("\n")}\n  Total: ${allPending.length}`;
     }
 
-    // Projects — grouped by status, dept derived from mgrId
-    const activeProjects = projects.filter(p => p.status === "active");
-    const pendingApprovalProjects = projects.filter(p => p.status === "pending approval");
-    const completedProjects = projects.filter(p => p.status === "completed");
-    const fmtProject = p => {
-      const mgr = users.find(u => u.id === p.mgrId);
-      const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
-      const mgrName = mgr?.name || "—";
-      const overdue = isPastDue(p.due) && p.status === "active" ? " [OVERDUE]" : "";
-      let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
-      if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
-      if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)${p.contributeRate != null && p.contributeRate < 100 ? ` [Owner's KR share: ${p.contributeRate}%]` : ""}`;
-      const logEntries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
-      if (logEntries.length) line += `\n    Latest Log: ${logEntries[0].text.slice(0, 100)}${logEntries[0].text.length > 100 ? "…" : ""}`;
-      return line;
-    };
-    const projectSection = [
-      `PROJECTS: Total ${projects.length} (${activeProjects.length} active, ${pendingApprovalProjects.length} pending approval, ${completedProjects.length} completed)`,
-      activeProjects.length ? `Active (${activeProjects.length}):\n${activeProjects.map(fmtProject).join("\n")}` : "Active: none",
-      pendingApprovalProjects.length ? `Pending Approval (${pendingApprovalProjects.length}) — awaiting System Admin sign-off:\n${pendingApprovalProjects.map(fmtProject).join("\n")}` : "",
-      completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
-    ].filter(Boolean).join("\n");
+    // Projects (pursuits excluded) and the Pursuits / Pipeline — admins see every pursuit
+    const projectSection = pilotProjectSection({ projects, users, depts, fmtMoney });
+    const pursuitSection = pilotPursuitSection({ pursuits: projects.filter(p => p.type === "pursuit"), users, depts, fmtMoney, allowed: true });
 
     // Weekly Enrolment data
     let enrolmentSection;
@@ -3541,6 +3591,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
       `\n${cashContextSection}`,
       `\n${pendingSection}`,
       `\n${projectSection}`,
+      `\n${pursuitSection}`,
       `\n${enrolmentSection}`,
       `\n${coeSection}`,
       `\n${buildGrvContextStr(grv)}`,
@@ -8962,27 +9013,12 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     }).filter(Boolean);
     pendingSection = `PENDING SUBMISSIONS (answered by member, awaiting admin approval):\n${byDept.join("\n")}\n  Total: ${allPending.length}`;
   }
-  const activeProjects = projects.filter(p => p.status === "active");
-  const pendingApprovalProjects = projects.filter(p => p.status === "pending approval");
-  const completedProjects = projects.filter(p => p.status === "completed");
-  const fmtProject = p => {
-    const mgr = users.find(u => u.id === p.mgrId);
-    const dept = mgr ? (depts.find(d => d.id === mgr.deptId)?.name || "—") : "—";
-    const mgrName = mgr?.name || "—";
-    const overdue = isPastDue(p.due) && p.status === "active" ? " [OVERDUE]" : "";
-    let line = `  "${p.name}" | ${dept} | Mgr: ${mgrName} | Progress: ${p.progress}%${p.startDate ? ` | Start: ${p.startDate}` : ""} | Due: ${p.due || "TBD"}${overdue}`;
-    if (p.income != null) line += ` | Income: ${fmtMoney(p.income)}`;
-    if (p.income != null && p.margin != null) line += ` | Profit: ${fmtMoney(Math.round(p.income * p.margin / 100))} (Margin: ${p.margin}%)${p.contributeRate != null && p.contributeRate < 100 ? ` [Owner's KR share: ${p.contributeRate}%]` : ""}`;
-    const logEntries = Array.isArray(p.log) ? p.log : (p.log ? [{ text: p.log, date: "" }] : []);
-    if (logEntries.length) line += `\n    Latest Log: ${logEntries[0].text.slice(0, 100)}${logEntries[0].text.length > 100 ? "…" : ""}`;
-    return line;
-  };
-  const projectSection = [
-    `PROJECTS: Total ${projects.length} (${activeProjects.length} active, ${pendingApprovalProjects.length} pending approval, ${completedProjects.length} completed)`,
-    activeProjects.length ? `Active (${activeProjects.length}):\n${activeProjects.map(fmtProject).join("\n")}` : "Active: none",
-    pendingApprovalProjects.length ? `Pending Approval (${pendingApprovalProjects.length}) — awaiting System Admin sign-off:\n${pendingApprovalProjects.map(fmtProject).join("\n")}` : "",
-    completedProjects.length ? `Completed (${completedProjects.length}):\n${completedProjects.map(fmtProject).join("\n")}` : "",
-  ].filter(Boolean).join("\n");
+  const projectSection = pilotProjectSection({ projects, users, depts, fmtMoney });
+  // Pursuits follow the Pursuits / Pipeline page: all for admins, the department's for users with pursuit access
+  const pursuitSection = pilotPursuitSection({
+    pursuits: (state.projects || []).filter(p => p.type === "pursuit" && (!scope || (scope.pursuitOwnerIds || []).includes(p.mgrId))),
+    users: state.users, depts: state.depts, fmtMoney, allowed: !scope || !!scope.pursuits,
+  });
   let enrolmentSection;
   if (!admissionsEnabled) {
     enrolmentSection = "WEEKLY APPLICATIONS (pre-enrolment pipeline): Not available for this account.";
@@ -9153,6 +9189,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     ...(financeAllowed ? [`\n${topDivisions}`, `\n${cashSection}`] : []),
     `\n${pendingSection}`,
     `\n${projectSection}`,
+    `\n${pursuitSection}`,
     `\n${enrolmentSection}`,
     `\n${coeSection}`,
     `\n${buildGrvContextStr(grvData)}`,
@@ -10873,6 +10910,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
       const scopeDeptNames = depts.filter(d => scopeDeptIds.includes(d.id)).map(d => d.name).join(", ") || "no department";
       const scope = {
         detailUserIds: scopeIds, aggregateUserIds: scopeIds, deptIds: scopeDeptIds, finance: !!user.financeAccess,
+        pursuits: !!user.pursuitAccess, pursuitOwnerIds: user.pursuitAccess ? [...pursuitOwnerIds(user, state.users)] : [],
         description: `This is the view of ${user.name}, a manager in ${scopeDeptNames}${user.teamIds?.length ? " (limited to the teams they oversee)" : ""}. It contains only the people this manager oversees, their projects, and published company reports.`,
       };
       const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!dept?.admissionsAccess, plRecords: user.financeAccess ? mgrPlRecords : [], cashRecords: user.financeAccess ? mgrCashRecords : [], grvData: await waitForGrv(), scope });
@@ -11758,8 +11796,7 @@ function ManagerPortal({ user, onLogout, state, dispatch, onReload }) {
         </>)}
 
         {page === "pursuits" && user.pursuitAccess && (() => {
-          const deptUsers = user.deptId ? users.filter(u => u.deptId === user.deptId) : [user];
-          const deptUserIds = new Set(deptUsers.map(u => u.id));
+          const deptUserIds = pursuitOwnerIds(user, users);
           const allPursuits = projects.filter(p => p.type === "pursuit" && deptUserIds.has(p.mgrId));
           const activePursuits = allPursuits.filter(p => !p.outcome || p.outcome === "active");
           const wonPursuits = allPursuits.filter(p => p.outcome === "won");
@@ -12899,6 +12936,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
       const deptPeers = state.users.filter(u => u.deptId === user.deptId && (u.role === "member" || u.role === "manager")).map(u => u.id);
       const scope = {
         detailUserIds: [user.id], aggregateUserIds: deptPeers, deptIds: [user.deptId].filter(Boolean), finance: false,
+        pursuits: !!user.pursuitAccess, pursuitOwnerIds: user.pursuitAccess ? [...pursuitOwnerIds(user, state.users)] : [],
         description: `This is the view of ${user.name}, a staff member in ${myDept?.name || "no department"}. It contains this person's own OKRs, check-ins and projects in full, their department's overall completion figures (no individual colleagues' results), and published company reports.`,
       };
       const ctx = buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled: !!myDept?.admissionsAccess, plRecords: [], grvData: await waitForGrv(), scope });
@@ -14128,7 +14166,7 @@ function MemberPortal({ user, onLogout, state, dispatch, onReload }) {
         </>)}
 
         {page === "pursuits" && user.pursuitAccess && (() => {
-          const myDeptUserIds = new Set((myDept ? users.filter(u => u.deptId === myDept.id) : [user]).map(u => u.id));
+          const myDeptUserIds = pursuitOwnerIds(user, users);
           const allPursuits = projects.filter(p => p.type === "pursuit" && myDeptUserIds.has(p.mgrId));
           const activePursuits = allPursuits.filter(p => !p.outcome || p.outcome === "active");
           const wonPursuits = allPursuits.filter(p => p.outcome === "won");
