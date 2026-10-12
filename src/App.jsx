@@ -2144,6 +2144,221 @@ function inlineFmt(text, key) {
     return p;
   });
 }
+/* ─────────────────────────────────────────────────────────────
+   PILOT CHARTS — drawn from a chart block in a NIET Pilot answer
+   ───────────────────────────────────────────────────────────── */
+const PILOT_CHART_COLORS = ["#2D1B69", "#1ABCCD", "#FF9F0A", "#E54B4B", "#5A4490", "#28CD41"];
+
+// Checks a chart block from the assistant; returns the chart, or null when it can't be drawn safely
+function parsePilotChart(raw) {
+  let c;
+  try { c = JSON.parse(raw); } catch { return null; }
+  if (!c || typeof c !== "object" || !["line", "bar", "hbar"].includes(c.type)) return null;
+  const maxLabels = c.type === "hbar" ? 15 : 24;
+  if (!Array.isArray(c.labels) || !c.labels.length || c.labels.length > maxLabels) return null;
+  if (!Array.isArray(c.series) || !c.series.length || c.series.length > 6) return null;
+  const series = c.series.map(sr => ({
+    name: String(sr?.name ?? "").slice(0, 40),
+    values: Array.isArray(sr?.values) ? sr.values.map(v => (typeof v === "number" && Number.isFinite(v) ? v : null)) : null,
+  }));
+  if (series.some(sr => !sr.values || sr.values.length !== c.labels.length)) return null;
+  if (!series.some(sr => sr.values.some(v => v != null))) return null;
+  const checked = c.checked && typeof c.checked === "object" ? {
+    total: Number(c.checked.total) || 0,
+    unmatchedCount: Number(c.checked.unmatchedCount) || 0,
+    unmatched: Array.isArray(c.checked.unmatched) ? c.checked.unmatched.filter(v => typeof v === "number").slice(0, 12) : [],
+  } : null;
+  return {
+    type: c.type, title: String(c.title ?? "").slice(0, 120), unit: ["$", "%"].includes(c.unit) ? c.unit : "",
+    labels: c.labels.map(l => String(l ?? "").slice(0, 40)), series, checked,
+  };
+}
+
+function pilotChartFmt(v, unit, compact = true) {
+  if (v == null) return "–";
+  const a = Math.abs(v), sign = v < 0 ? "-" : "";
+  if (unit === "%") return (Math.round(v * 10) / 10) + "%";
+  if (unit === "$") {
+    if (!compact || a < 1000) return sign + "$" + Math.round(a).toLocaleString("en-AU");
+    if (a < 1e6) return sign + "$" + (Math.round(a / 100) / 10) + "k";
+    return sign + "$" + (Math.round(a / 1e4) / 100) + "m";
+  }
+  if (compact && a >= 1e6) return sign + (Math.round(a / 1e4) / 100) + "m";
+  if (compact && a >= 1e4) return sign + (Math.round(a / 100) / 10) + "k";
+  return (Math.round(v * 10) / 10).toLocaleString("en-AU");
+}
+
+// Rounded axis ticks covering [lo, hi], always including 0
+function pilotChartTicks(lo, hi) {
+  lo = Math.min(0, lo); hi = Math.max(0, hi);
+  if (lo === hi) hi = lo + 1;
+  const raw = (hi - lo) / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(st => st >= raw);
+  const ticks = [];
+  for (let t = Math.floor(lo / step) * step; t <= hi + step * 0.001; t += step) ticks.push(Math.round(t * 1e6) / 1e6);
+  if (ticks[ticks.length - 1] < hi) ticks.push(ticks[ticks.length - 1] + step);
+  return ticks;
+}
+
+function PilotChart({ raw }) {
+  const chart = useMemo(() => (raw == null ? null : parsePilotChart(raw)), [raw]);
+  const [hover, setHover] = useState(null);
+  // Draw at the real width so text stays readable in a narrow chat bubble or on a phone
+  const [W, setW] = useState(600);
+  const boxRef = useRef(null);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => { const w = Math.round(e.contentRect.width); if (w > 0) setW(Math.max(260, Math.min(680, w))); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [chart]);
+  if (!chart) {
+    return <div style={{ margin: "10px 0", padding: "8px 12px", fontSize: 12, color: T.textMuted, background: T.raised, borderRadius: 8 }}>Chart couldn't be shown.</div>;
+  }
+  const { type, title, unit, labels, series, checked } = chart;
+  const all = series.flatMap(sr => sr.values).filter(v => v != null);
+  const ticks = pilotChartTicks(Math.min(...all), Math.max(...all));
+  const lo = ticks[0], hi = ticks[ticks.length - 1];
+  const multi = series.length > 1;
+  const legend = multi && (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginTop: 6 }}>
+      {series.map((sr, i) => (
+        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textSoft }}>
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: PILOT_CHART_COLORS[i] }} />{sr.name || "Series " + (i + 1)}
+        </span>
+      ))}
+    </div>
+  );
+  const axisText = { fontSize: 11, fill: T.textMuted, fontFamily: F.body };
+  let svg;
+
+  if (type === "hbar") {
+    const rowH = multi ? 12 * series.length + 10 : 26, labelW = Math.round(Math.min(170, W * 0.34)), valW = 62, top = 6;
+    const maxChars = Math.max(8, Math.floor((labelW - 10) / 6.2));
+    const H = top + labels.length * rowH + 6;
+    // Negative bars grow left, so keep room for their value labels between the names and the bars
+    const negRoom = all.some(v => v < 0) ? valW : 0;
+    const x = v => labelW + negRoom + ((v - lo) / (hi - lo)) * (W - labelW - negRoom - valW);
+    svg = (
+      <svg viewBox={"0 0 " + W + " " + H} width="100%" role="img" aria-label={title || "Chart"} style={{ display: "block" }}>
+        <line x1={x(0)} x2={x(0)} y1={top} y2={H - 6} stroke={T.textDim} />
+        {labels.map((lab, li) => {
+          const y0 = top + li * rowH;
+          return (
+            <g key={li}>
+              <text x={labelW - 8} y={y0 + rowH / 2 + 4} textAnchor="end" style={{ ...axisText, fill: T.textSoft }}>{lab.length > maxChars ? lab.slice(0, maxChars - 1) + "…" : lab}<title>{lab}</title></text>
+              {series.map((sr, si) => {
+                const v = sr.values[li]; if (v == null) return null;
+                const bh = multi ? 10 : 16, by = y0 + (multi ? 5 + si * 12 : (rowH - bh) / 2);
+                const x1 = Math.min(x(0), x(v)), w = Math.max(1, Math.abs(x(v) - x(0)));
+                return (
+                  <g key={si}>
+                    <rect x={x1} y={by} width={w} height={bh} rx={3} fill={PILOT_CHART_COLORS[si]}><title>{(sr.name ? sr.name + " · " : "") + lab + ": " + pilotChartFmt(v, unit, false)}</title></rect>
+                    <text x={v < 0 ? x1 - 4 : x1 + w + 4} y={by + bh / 2 + 4} textAnchor={v < 0 ? "end" : "start"} style={{ ...axisText, fill: T.textSoft, fontWeight: 600 }}>{pilotChartFmt(v, unit)}</text>
+                  </g>
+                );
+              })}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  } else {
+    const H = W < 420 ? 220 : 260, left = 52, right = 14, top = 14, bottom = 36;
+    const plotW = W - left - right, plotH = H - top - bottom;
+    const y = v => top + plotH - ((v - lo) / (hi - lo)) * plotH;
+    const n = labels.length;
+    const every = Math.ceil(n / Math.max(2, Math.floor(plotW / 62)));
+    const slot = plotW / n;
+    const cx = i => (type === "line" ? left + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW) : left + slot * (i + 0.5));
+    const grid = ticks.map((t, i) => (
+      <g key={"t" + i}>
+        <line x1={left} x2={W - right} y1={y(t)} y2={y(t)} stroke={t === 0 ? T.textDim : "rgba(0,0,0,0.06)"} />
+        <text x={left - 6} y={y(t) + 4} textAnchor="end" style={axisText}>{pilotChartFmt(t, unit)}</text>
+      </g>
+    ));
+    // Every few labels when crowded; the last is always shown, so drop a regular one that would sit on top of it
+    const showX = i => i === n - 1 || (i % every === 0 && n - 1 - i >= Math.max(1, every * 0.75));
+    const xLabels = labels.map((lab, i) => showX(i) ? (
+      <text key={"x" + i} x={cx(i)} y={H - bottom + 16} textAnchor={type === "line" && n > 1 && i === n - 1 ? "end" : type === "line" && n > 1 && i === 0 ? "start" : "middle"} style={axisText}>{lab.length > 12 ? lab.slice(0, 11) + "…" : lab}<title>{lab}</title></text>
+    ) : null);
+    let marks;
+    if (type === "line") {
+      marks = series.map((sr, si) => {
+        // Break the line where a value is missing
+        const segs = []; let cur = [];
+        sr.values.forEach((v, i) => { if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push([cx(i), y(v)]); });
+        if (cur.length) segs.push(cur);
+        const lastIdx = sr.values.map((v, i) => (v == null ? -1 : i)).filter(i => i >= 0).pop();
+        return (
+          <g key={si}>
+            {!multi && segs.map((pts, k) => pts.length > 1 && (
+              <path key={"a" + k} d={"M" + pts.map(p => p.join(",")).join("L") + "L" + pts[pts.length - 1][0] + "," + y(Math.max(lo, 0)) + "L" + pts[0][0] + "," + y(Math.max(lo, 0)) + "Z"} fill={PILOT_CHART_COLORS[si]} opacity={0.08} />
+            ))}
+            {segs.map((pts, k) => <path key={k} d={"M" + pts.map(p => p.join(",")).join("L")} fill="none" stroke={PILOT_CHART_COLORS[si]} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" />)}
+            {sr.values.map((v, i) => v != null && (
+              <circle key={i} cx={cx(i)} cy={y(v)} r={i === lastIdx ? 4 : hover === i ? 3.5 : n > 16 ? 0 : 2.5} fill={i === lastIdx ? PILOT_CHART_COLORS[si] : "#fff"} stroke={PILOT_CHART_COLORS[si]} strokeWidth={1.6} />
+            ))}
+            {lastIdx != null && !multi && <text x={Math.min(cx(lastIdx), W - right - 2)} y={y(sr.values[lastIdx]) - 9} textAnchor={cx(lastIdx) > W - 60 ? "end" : "middle"} style={{ ...axisText, fill: T.text, fontWeight: 700 }}>{pilotChartFmt(sr.values[lastIdx], unit)}</text>}
+          </g>
+        );
+      });
+    } else {
+      const groupW = Math.min(slot * 0.72, 48 * series.length), bw = groupW / series.length;
+      const showVals = n * series.length <= 16;
+      marks = series.map((sr, si) => sr.values.map((v, i) => {
+        if (v == null) return null;
+        const bx = left + slot * i + (slot - groupW) / 2 + bw * si, y0 = y(0), y1 = y(v);
+        return (
+          <g key={si + "-" + i}>
+            <rect x={bx + 1} y={Math.min(y0, y1)} width={Math.max(1, bw - 2)} height={Math.max(1, Math.abs(y1 - y0))} rx={3} fill={PILOT_CHART_COLORS[si]} />
+            {showVals && <text x={bx + bw / 2} y={v < 0 ? y1 + 13 : y1 - 5} textAnchor="middle" style={{ ...axisText, fill: T.textSoft, fontWeight: 600, fontSize: 10.5 }}>{pilotChartFmt(v, unit)}</text>}
+          </g>
+        );
+      }));
+    }
+    // Hover column: shows every series' value for that label
+    const hoverBox = hover != null && (() => {
+      const rows = series.map((sr, si) => ({ si, name: sr.name, v: sr.values[hover] })).filter(r => r.v != null);
+      if (!rows.length) return null;
+      const bw = 170, bh = 22 + rows.length * 16, bx = Math.min(Math.max(cx(hover) + 10, left), W - right - bw), by = top + 4;
+      return (
+        <g pointerEvents="none">
+          <line x1={cx(hover)} x2={cx(hover)} y1={top} y2={top + plotH} stroke="rgba(0,0,0,0.18)" strokeDasharray="3 3" />
+          <rect x={bx} y={by} width={bw} height={bh} rx={6} fill="#fff" stroke="rgba(0,0,0,0.12)" />
+          <text x={bx + 10} y={by + 15} style={{ ...axisText, fill: T.text, fontWeight: 700 }}>{labels[hover].slice(0, 26)}</text>
+          {rows.map((r, k) => (
+            <text key={k} x={bx + 10} y={by + 31 + k * 16} style={{ ...axisText, fill: T.textSoft }}>
+              <tspan fill={PILOT_CHART_COLORS[r.si]}>■ </tspan>{(multi ? (r.name || "Series " + (r.si + 1)).slice(0, 14) + ": " : "") + pilotChartFmt(r.v, unit, false)}
+            </text>
+          ))}
+        </g>
+      );
+    })();
+    svg = (
+      <svg viewBox={"0 0 " + W + " " + H} width="100%" role="img" aria-label={title || "Chart"} style={{ display: "block" }} onMouseLeave={() => setHover(null)}>
+        {grid}{xLabels}{marks}
+        {labels.map((_, i) => <rect key={"h" + i} x={type === "line" ? cx(i) - (n === 1 ? plotW : plotW / Math.max(1, n - 1)) / 2 : left + slot * i} y={top} width={type === "line" ? (n === 1 ? plotW : plotW / Math.max(1, n - 1)) : slot} height={plotH} fill="transparent" onMouseEnter={() => setHover(i)} />)}
+        {hoverBox}
+      </svg>
+    );
+  }
+
+  return (
+    <figure style={{ margin: "12px 0", padding: "12px 14px 10px", border: "1px solid " + T.border, borderRadius: 10, background: T.surface, maxWidth: 680 }}>
+      {title && <figcaption style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>{title}</figcaption>}
+      <div ref={boxRef}>{svg}</div>
+      {legend}
+      {checked && checked.unmatchedCount > 0 && (
+        <div style={{ marginTop: 8, fontSize: 12, color: T.warn, background: T.warnDim, borderRadius: 6, padding: "5px 9px", lineHeight: 1.5 }}>
+          {checked.unmatchedCount} of {checked.total} values couldn't be checked against the data{checked.unmatched.length ? ": " + checked.unmatched.map(v => pilotChartFmt(v, unit, false)).join(", ") + (checked.unmatchedCount > checked.unmatched.length ? "…" : "") : ""}. Treat {checked.unmatchedCount === 1 ? "it" : "them"} with care.
+        </div>
+      )}
+    </figure>
+  );
+}
+
 function MdMsg({ text }) {
   const lines = text.split("\n");
   const out = [];
@@ -2151,6 +2366,20 @@ function MdMsg({ text }) {
   while (i < lines.length) {
     const line = lines[i];
     const trim = line.trim();
+    // chart block written by the Pilot; an unclosed block (answer cut off) can't be drawn,
+    // so skip only to the next blank line and keep showing whatever follows (such as the cut-off note)
+    if (/^```chart\s*$/.test(trim)) {
+      const end = lines.findIndex((l, k) => k > i && l.trim() === "```");
+      if (end >= 0) {
+        out.push(<PilotChart key={i} raw={lines.slice(i + 1, end).join("\n")} />);
+        i = end + 1;
+      } else {
+        out.push(<PilotChart key={i} raw={null} />);
+        i++;
+        while (i < lines.length && lines[i].trim()) i++;
+      }
+      continue;
+    }
     // table
     if (trim.startsWith("|") && i + 1 < lines.length && lines[i + 1].trim().startsWith("|---")) {
       const headers = trim.split("|").filter(c => c.trim()).map(c => c.trim());

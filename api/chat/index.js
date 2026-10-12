@@ -8,6 +8,19 @@ const MODEL = "claude-opus-5-5";
 const MAX_TOKENS = 8000;
 const DEFAULT_SYSTEM = "You are an OKR analytics assistant. Answer questions based on the provided data. Be concise and use specific numbers. Reply in the same language as the question.";
 
+// Always added after the (admin-editable) system prompt, so charts work even with a custom prompt
+const CHART_GUIDE = `Charts: when a trend over time, a comparison across entities or a ranking is easier to see than to read, you may add up to 2 charts to your answer. Skip charts for simple facts, single numbers or text-only answers.
+Write each chart as its own fenced block, on its own lines, exactly like this:
+\`\`\`chart
+{"type":"line","title":"Cash collected by RTO","unit":"$","labels":["Jul 2026","Aug 2026"],"series":[{"name":"NIET","values":[412300,398100]}]}
+\`\`\`
+- type: "line" for trends over time, "bar" to compare a few entities (optionally several series side by side), "hbar" for rankings or long names.
+- unit: "$" for money, "%" for percentages, "" for counts or ratings.
+- labels: up to 24. series: 1 to 6, each with exactly one value per label (use null when a value is missing).
+- Values are plain numbers in full units (412300, not "412k" or "$412,300"; 66.7 for 66.7%).
+- Use only numbers that appear in the data. Never add, average or estimate a value for a chart; each value is checked against the data and unmatched values are flagged to the reader.
+- Still state the key numbers in the text; the chart supports the answer, it does not replace it.`;
+
 const TOOLS = [{
   name: "propose_bulk_action",
   description: "Call this tool when the user wants to approve or reject OKR submissions. Never perform or describe the approval in text — always use this tool so the admin can review a full submission summary before confirming. Use this for any approve/reject/bulk-approve/bulk-reject request.",
@@ -74,11 +87,11 @@ export default async function handler(req, res) {
       // Opus 5.5 always thinks first and the thinking counts towards this limit, so leave room for long answers
       max_tokens: MAX_TOKENS,
       output_config: { effort: "medium" },
-      system: systemPrompt || DEFAULT_SYSTEM,
+      system: `${systemPrompt || DEFAULT_SYSTEM}\n\n${CHART_GUIDE}`,
       tools: TOOLS,
       messages: [{ role: "user", content: contextData ? `${contextData}\n\nQuestion: ${question}` : question }],
     });
-    return res.status(200).json(toResult(response));
+    return res.status(200).json(toResult(response, contextData));
   } catch (err) {
     if (err instanceof Anthropic.APIError) console.error("[chat] API error", err.status, err.message);
     else console.error("[chat] error", err.message);
@@ -92,7 +105,7 @@ export default async function handler(req, res) {
 export const CUT_OFF_NOTE = "*The answer was cut off because it was too long. Ask about one part at a time for the full detail.*";
 
 // Turns a Messages API response into what the Pilot shows: an approval card, or the full answer text
-export function toResult(response) {
+export function toResult(response, contextData = "") {
   if (response.stop_reason === "refusal") {
     console.warn("[chat] refusal:", response.stop_details?.category);
     return { answer: "The assistant can't help with this request." };
@@ -100,10 +113,48 @@ export function toResult(response) {
   const toolUse = response.content.find(b => b.type === "tool_use" && b.name === "propose_bulk_action");
   // A tool call cut off by the length limit has incomplete input, so it is never turned into an approval card
   if (toolUse && response.stop_reason === "tool_use") return { action: toolUse.input };
-  const text = response.content.filter(b => b.type === "text").map(b => b.text).join("\n\n").trim();
+  const text = checkCharts(response.content.filter(b => b.type === "text").map(b => b.text).join("\n\n").trim(), contextData);
   if (response.stop_reason === "max_tokens") {
     console.warn("[chat] answer hit max_tokens");
     return { answer: text ? `${text}\n\n${CUT_OFF_NOTE}` : CUT_OFF_NOTE };
   }
   return { answer: text || "No response." };
+}
+
+// Every number written in the data the assistant was given (full units; "412k" / "1.2m" also as 412000 / 1200000)
+function dataNumbers(contextData) {
+  const nums = [];
+  const re = /(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([kKmM])?(?![\w])/g;
+  let m;
+  while ((m = re.exec(String(contextData || "")))) {
+    const n = parseFloat(m[1].replace(/,/g, ""));
+    nums.push(n);
+    if (m[2]) nums.push(n * (/k/i.test(m[2]) ? 1e3 : 1e6));
+  }
+  return Float64Array.from(nums).sort();
+}
+
+// True when the data contains a number within rounding distance of v (whole units, or 0.5% for large values)
+function inData(sorted, v) {
+  const a = Math.abs(v), tol = Math.max(0.5, a * 0.005);
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < a - tol) lo = mid + 1; else hi = mid; }
+  return lo < sorted.length && sorted[lo] <= a + tol;
+}
+
+// Adds a "checked" summary to each chart block: how many values there are and which aren't in the data.
+// The browser shows unmatched values under the chart. Blocks that aren't valid JSON are left for the browser to reject.
+export function checkCharts(text, contextData) {
+  if (!text.includes("```chart")) return text;
+  let sorted = null;
+  return text.replace(/```chart[^\S\n]*\n([\s\S]*?)\n?```/g, (block, body) => {
+    let chart;
+    try { chart = JSON.parse(body); } catch { return block; }
+    if (!chart || typeof chart !== "object" || !Array.isArray(chart.series)) return block;
+    sorted = sorted || dataNumbers(contextData);
+    const values = chart.series.flatMap(s => (Array.isArray(s?.values) ? s.values : [])).filter(v => typeof v === "number" && Number.isFinite(v));
+    const unmatched = values.filter(v => !inData(sorted, v));
+    chart.checked = { total: values.length, unmatched: [...new Set(unmatched)].slice(0, 12) , unmatchedCount: unmatched.length };
+    return "```chart\n" + JSON.stringify(chart) + "\n```";
+  });
 }
