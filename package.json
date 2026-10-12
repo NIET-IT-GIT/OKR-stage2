@@ -11,6 +11,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@azure/msal-browser": "^5.8.0",
     "@azure/msal-react": "^5.3.1",
     "@supabase/supabase-js": "^2.105.3",

@@ -1,6 +1,16 @@
 {
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
   "functions": {
-    "api/chat/index.js": { "maxDuration": 30 }
+    "api/chat/index.js": {
+      "maxDuration": 30
+    },
+    "api/finance-commentary.js": {
+      "maxDuration": 60
+    }
   }
 }

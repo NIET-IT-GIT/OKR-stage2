@@ -2807,6 +2807,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
   }, [coeLoaded, coeLoading]);
   // P&L Reports state
   const [plTab, setPlTab] = useState("overview");
+  const [fpOpen, setFpOpen] = useState(false);
   const [plRecords, setPlRecords] = useState([]);
   const [plLoaded, setPlLoaded] = useState(false);
   const [plLoading, setPlLoading] = useState(false);
@@ -6669,13 +6670,9 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
                 ))}
                 <div style={{ flex: 1 }} />
                 {plRecords.length > 0 && (
-                  <Btn small onClick={() => {
-                    const html = generateFinancePack({ plRecords, cashRecords, enrRecords });
-                    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-                    if (!window.open(url, "_blank")) window.alert("The pack was blocked by your browser's pop-up blocker. Allow pop-ups for this site and try again.");
-                    setTimeout(() => URL.revokeObjectURL(url), 10000);
-                  }}>⬡ Generate Finance Pack</Btn>
+                  <Btn small disabled={!cashLoaded} onClick={() => setFpOpen(true)}>{cashLoaded ? "⬡ Generate Finance Pack" : "Loading data…"}</Btn>
                 )}
+                {fpOpen && <FinancePackReview plRecords={plRecords} cashRecords={cashRecords} user={user} onClose={() => setFpOpen(false)} />}
                 <select value={plFilterRto} onChange={e => setPlFilterRto(e.target.value)} style={selCss}>
                   <option value="all">All RTOs</option>
                   {RTO_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -8807,7 +8804,22 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
 /* ─────────────────────────────────────────────────────────────
    FINANCE PACK GENERATOR
    ───────────────────────────────────────────────────────────── */
-function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
+// Commentary groups: each is one AI request, small enough to finish well inside the API time limit.
+const FINANCE_PACK_GROUPS = [
+  { key: "overview", label: "Overview" },
+  { key: "cash", label: "Cash collections" },
+  { key: "enrolments", label: "Enrolments & collections" },
+  { key: "revenue", label: "Revenue by course" },
+  { key: "costs", label: "Cost base" },
+  { key: "niet", label: "NIET profitability" },
+  { key: "cb", label: "Charlton Brown profitability" },
+  { key: "educare", label: "Educare profitability" },
+];
+
+// Builds the pack. Returns the HTML plus, for every slide that carries commentary, the facts the AI may use
+// and the rule-based bullets used when there is no AI commentary. `commentary` maps slide id →
+// { observations, drivers, watch } (already reviewed); slides without an entry fall back to the rules.
+function generateFinancePack({ plRecords = [], cashRecords = [], commentary = null }) {
   const ENTS = [
     { key: "NIET",    label: "NIET",           color: "#3B2F6E" },
     { key: "CB",      label: "Charlton Brown",  color: "#2D1B69" },
@@ -8850,11 +8862,16 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
   const months = allMonths.slice(-13);
   const cur  = months[months.length - 1] || "";
   const prev = months[months.length - 2] || "";
+  const yearAgo = months.length === 13 ? months[0] : "";
 
   function plv(rto, mo, f) { const r = plM.find(x => x.rto === rto && x.month === mo); return r ? (r[f] || 0) : 0; }
   function csv(rto, mo, f) { const r = csM.find(x => x.rto === rto && x.month === mo); return r ? (r[f] || 0) : 0; }
   function grpPl(mo, f)    { return entKeys.reduce((s, k) => s + plv(k, mo, f), 0); }
   function grpCs(mo, f)    { return entKeys.reduce((s, k) => s + csv(k, mo, f), 0); }
+  function lineAmount(rto, mo, account, category) {
+    const r = plM.find(x => x.rto === rto && x.month === mo);
+    return (r?.lineItems || []).filter(li => li.account === account && (!category || li.category === category)).reduce((s, li) => s + li.amount, 0);
+  }
 
   function fm(v) {
     if (v == null || isNaN(v)) return "—";
@@ -8874,7 +8891,24 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     return ["January","February","March","April","May","June","July","August","September","October","November","December"][+m-1] + " " + y;
   }
   function momPct(c, p) { return p ? (c - p) / Math.abs(p) * 100 : null; }
-  function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function pctOf(part, whole) { return whole ? part / whole * 100 : null; }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;").replace(/"/g,"&quot;"); }
+
+  // ── Facts and commentary per slide ──
+  const slideMeta = [];
+  function register(id, group, title, facts, rules) {
+    slideMeta.push({ id, group, title, facts: roundFacts(facts), rules: rules.filter(Boolean) });
+    const c = commentary?.[id];
+    return c && (c.observations?.length || c.drivers?.length || c.watch?.length) ? c : null;
+  }
+  const bulletsFor = (c, rules) => (c?.observations?.length ? c.observations : rules).filter(Boolean);
+  function insightStrip(c) {
+    if (!c || (!c.drivers?.length && !c.watch?.length)) return "";
+    const col = (title, items) => items?.length
+      ? "<div class='ins-col'><div class='ins-h'>" + title + "</div><ul>" + items.map(t => "<li>" + esc(t) + "</li>").join("") + "</ul></div>"
+      : "";
+    return "<div class='ins-row'>" + col("What drove it", c.drivers) + col("Watch", c.watch) + "</div>";
+  }
 
   /* SVG line chart */
   function svgLine(series, labels, { w = 640, h = 285 } = {}) {
@@ -8981,7 +9015,7 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
       + "<div class='mo-badge'>" + moLabel(cur).toUpperCase() + "</div></div>";
   }
   function cmtPanel(head, val, valLbl, valCol, bullets) {
-    const buls = bullets.filter(Boolean).map(b => "<li>" + b + "</li>").join("");
+    const buls = bullets.filter(Boolean).map(b => "<li>" + esc(b) + "</li>").join("");
     return "<div class='cmt-panel'><div class='cp-head'>" + esc(head) + "</div>"
       + "<div class='cp-kpi' style='color:" + (valCol || "#fff") + "'>" + esc(val) + "</div>"
       + "<div class='cp-kpi-lbl'>" + esc(valLbl) + "</div>"
@@ -8992,6 +9026,12 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
       + "<div class='kpi-l'>" + esc(lbl) + "</div>"
       + (sub ? "<div class='kpi-s'>" + esc(sub) + "</div>" : "") + "</div>";
   }
+  const entityPl = e => {
+    const ti = plv(e.key, cur, "tradingIncome"), pti = plv(e.key, prev, "tradingIncome");
+    const te = plv(e.key, cur, "totalExpenses"), np = plv(e.key, cur, "netProfit"), pnp = plv(e.key, prev, "netProfit");
+    return { entity: e.label, tradingIncome: ti, prevTradingIncome: pti, incomeChangePct: momPct(ti, pti), operatingExpenses: te,
+      prevOperatingExpenses: plv(e.key, prev, "totalExpenses"), netResult: np, prevNetResult: pnp, costToIncomePct: pctOf(te, ti) };
+  };
 
   /* S1: Cover */
   function s1() {
@@ -9009,20 +9049,26 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
 
   /* S2: Executive Summary */
   function s2() {
-    const grpI = entKeys.reduce((s, k) => s + plv(k, cur, "tradingIncome"), 0);
-    const grpE = entKeys.reduce((s, k) => s + plv(k, cur, "totalExpenses"), 0);
-    const grpN = entKeys.reduce((s, k) => s + plv(k, cur, "netProfit"), 0);
+    const grpI = grpPl(cur, "tradingIncome"), grpE = grpPl(cur, "totalExpenses"), grpN = grpPl(cur, "netProfit");
+    const pI = grpPl(prev, "tradingIncome"), pE = grpPl(prev, "totalExpenses"), pN = grpPl(prev, "netProfit");
     const cir  = grpI > 0 ? Math.round(grpE / grpI * 100) : null;
+    const c = register("exec", "overview", "Executive Summary", {
+      month: moFull(cur), previousMonth: moFull(prev),
+      group: { tradingIncome: grpI, prevTradingIncome: pI, incomeChangePct: momPct(grpI, pI), operatingExpenses: grpE, prevOperatingExpenses: pE,
+        expensesChangePct: momPct(grpE, pE), netResult: grpN, prevNetResult: pN, netResultChange: grpN - pN, costToIncomePct: pctOf(grpE, grpI),
+        ...(yearAgo ? { sameMonthLastYear: moFull(yearAgo), lastYearTradingIncome: grpPl(yearAgo, "tradingIncome"), lastYearNetResult: grpPl(yearAgo, "netProfit"),
+          incomeYoyPct: momPct(grpI, grpPl(yearAgo, "tradingIncome")) } : {}) },
+      entities: ENTS.map(entityPl),
+    }, []);
     const kpis = "<div class='kpi-row'>"
       + kpiCard("Trading income",     fm(grpI), "all entities",                                                         "#1D1D1F")
       + kpiCard("Operating expenses", fm(grpE), "",                                                                     "#1D1D1F")
-      + kpiCard("Net result",         fm(grpN), prev ? "from " + fm(grpPl(prev, "netProfit")) + " in " + moLabel(prev) : "", fmColor(grpN))
+      + kpiCard("Net result",         fm(grpN), prev ? "from " + fm(pN) + " in " + moLabel(prev) : "", fmColor(grpN))
       + kpiCard("Cost-to-income",     cir != null ? cir + "%" : "—", cir != null && cir > 100 ? "above 100% — trading at a loss" : "", cir != null && cir > 100 ? RED_NEG : "#1D1D1F")
       + "</div>";
     const entCards = ENTS.map(e => {
       const ti = plv(e.key, cur, "tradingIncome"), np = plv(e.key, cur, "netProfit");
-      const pti = plv(e.key, prev, "tradingIncome");
-      const mm = momPct(ti, pti);
+      const mm = momPct(ti, plv(e.key, prev, "tradingIncome"));
       const buls = [
         mm != null ? "Income " + (mm >= 0 ? "up +" : "down ") + Math.abs(mm).toFixed(1) + "% on " + moLabel(prev) + "." : null,
         np < 0 ? "Loss of " + fm(Math.abs(np)) + " for the month." : np > 0 ? "Net profit " + fm(np) + "." : null,
@@ -9032,10 +9078,13 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
         + "<div style='display:flex;gap:16px;margin:5px 0'>"
         + "<div><div style='font-size:15px;font-weight:700'>" + fm(ti) + "</div><div style='font-size:8px;color:#6E6E73'>Trading income</div></div>"
         + "<div><div style='font-size:15px;font-weight:700;color:" + fmColor(np) + "'>" + fm(np) + "</div><div style='font-size:8px;color:#6E6E73'>Net result</div></div>"
-        + "</div><ul style='margin:0;padding-left:13px;font-size:8.5px;color:#3A3A3C;line-height:1.55'>" + buls.map(b => "<li>" + b + "</li>").join("") + "</ul></div>";
+        + "</div><ul style='margin:0;padding-left:13px;font-size:8.5px;color:#3A3A3C;line-height:1.55'>" + buls.map(b => "<li>" + esc(b) + "</li>").join("") + "</ul></div>";
     }).join("");
+    const keyMsgs = c?.observations?.length
+      ? "<div class='key-msgs'><div class='ins-h'>Key messages</div><ul>" + c.observations.map(t => "<li>" + esc(t) + "</li>").join("") + "</ul></div>"
+      : "";
     return slide(slHdr("Executive Summary", "GROUP POSITION — " + moFull(cur).toUpperCase())
-      + kpis + "<div class='ent-row'>" + entCards + "</div>");
+      + kpis + "<div class='ent-row'>" + entCards + "</div>" + keyMsgs + insightStrip(c));
   }
 
   /* S3: Group result by entity */
@@ -9047,15 +9096,19 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     const grpN = grpPl(cur, "netProfit"), grpI = grpPl(cur, "tradingIncome");
     const sorted = [...ENTS].sort((a, b) => plv(b.key, cur, "tradingIncome") - plv(a.key, cur, "tradingIncome"));
     const topPct = grpI ? Math.round(plv(sorted[0].key, cur, "tradingIncome") / grpI * 100) : 0;
-    const buls = [
+    const rules = [
       sorted[0].label + " is " + topPct + "% of group trading income.",
       "Group net result: " + fm(grpN) + ".",
       grpI > 0 ? "Cost-to-income ratio: " + Math.round(grpPl(cur, "totalExpenses") / grpI * 100) + "%." : null,
     ];
+    const c = register("group", "overview", "Group result by entity", {
+      month: moFull(cur), groupTradingIncome: grpI, groupNetResult: grpN, groupCostToIncomePct: pctOf(grpPl(cur, "totalExpenses"), grpI),
+      entities: ENTS.map(e => ({ ...entityPl(e), shareOfGroupIncomePct: pctOf(plv(e.key, cur, "tradingIncome"), grpI) })),
+    }, rules);
     return slide(slHdr("Group result by entity", moFull(cur).toUpperCase() + " — ALL ENTITIES")
       + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + chart + "</div>"
-      + cmtPanel("GROUP READ", fm(grpN), "Group net result", grpN < 0 ? "#FF8080" : TEAL, buls)
-      + "</div><p style='font-size:9px;color:#8E8E93;margin-top:6px'>Not a statutory consolidation.</p>");
+      + cmtPanel("GROUP READ", fm(grpN), "Group net result", grpN < 0 ? "#FF8080" : TEAL, bulletsFor(c, rules))
+      + "</div>" + insightStrip(c) + "<p style='font-size:9px;color:#8E8E93;margin-top:6px'>Not a statutory consolidation.</p>");
   }
 
   /* S4: Cash collections — monthly total */
@@ -9066,13 +9119,22 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     series.push({ label: "Group", color: "#8E8E93", values: grpVals });
     const ct = grpVals[grpVals.length - 1] || 0, pt = grpVals[grpVals.length - 2] || 0;
     const mm = momPct(ct, pt);
-    const buls = [
+    const rules = [
       "Group cash: " + fm(ct) + " in " + moFull(cur) + ".",
       mm != null ? (mm >= 0 ? "Up +" : "Down ") + Math.abs(mm).toFixed(1) + "% on " + moLabel(prev) + "." : null,
     ];
+    const hiIdx = grpVals.indexOf(Math.max(...grpVals)), loIdx = grpVals.indexOf(Math.min(...grpVals));
+    const c = register("cash-monthly", "cash", "Cash collections — monthly total", {
+      month: moFull(cur),
+      group: { received: ct, prevReceived: pt, changePct: mm, ...(yearAgo ? { lastYearReceived: grpVals[0], yoyPct: momPct(ct, grpVals[0]) } : {}),
+        thirteenMonthAverage: grpVals.reduce((s, v) => s + v, 0) / (grpVals.length || 1),
+        highestMonth: moFull(months[hiIdx]), highestReceived: grpVals[hiIdx], lowestMonth: moFull(months[loIdx]), lowestReceived: grpVals[loIdx] },
+      entities: ENTS.map(e => { const v = csv(e.key, cur, "totalReceived"), p = csv(e.key, prev, "totalReceived");
+        return { entity: e.label, received: v, prevReceived: p, changePct: momPct(v, p), ...(yearAgo ? { yoyPct: momPct(v, csv(e.key, yearAgo, "totalReceived")) } : {}) }; }),
+    }, rules);
     return slide(slHdr("Cash collections — monthly total", moLabel(months[0]) + " – " + moLabel(cur))
       + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel("TREND", fm(ct), "Group cash " + moFull(cur), TEAL, buls) + "</div>");
+      + cmtPanel("TREND", fm(ct), "Group cash " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
   }
 
   /* S5: Cash collections — daily average */
@@ -9082,16 +9144,21 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     const series = ENTS.map(e => ({ label: e.label, color: e.color, values: months.map(m => { const d = days(m); return d ? csv(e.key, m, "totalReceived") / d : null; }) }));
     const grpVals = months.map(m => { const d = days(m); return d ? grpCs(m, "totalReceived") / d : null; });
     series.push({ label: "Group", color: "#8E8E93", values: grpVals });
-    const cta = grpVals[grpVals.length - 1] || 0, ya = grpVals[0] || 0;
+    const cta = grpVals[grpVals.length - 1] || 0, pta = grpVals[grpVals.length - 2] || 0, ya = grpVals[0] || 0;
     const yoy = momPct(cta, ya);
-    const buls = [
+    const rules = [
       "Group daily avg: " + fm(cta) + " in " + moFull(cur) + ".",
       yoy != null ? "Year-on-year: " + (yoy >= 0 ? "+" : "") + yoy.toFixed(1) + "%." : null,
       "Daily averages remove month-length effects for a cleaner run-rate read.",
     ];
+    const c = register("cash-daily", "cash", "Cash collections — daily average", {
+      month: moFull(cur), daysInMonth: cur ? days(cur) : null,
+      group: { dailyAverage: cta, prevDailyAverage: pta, changePct: momPct(cta, pta), ...(yearAgo ? { lastYearDailyAverage: ya, yoyPct: yoy } : {}) },
+      entities: ENTS.map(e => ({ entity: e.label, dailyAverage: cur ? csv(e.key, cur, "totalReceived") / days(cur) : 0, prevDailyAverage: prev ? csv(e.key, prev, "totalReceived") / days(prev) : 0 })),
+    }, rules);
     return slide(slHdr("Cash collections — daily average", moLabel(months[0]) + " – " + moLabel(cur))
       + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel("RUN-RATE", fm(cta), "Group daily avg " + moFull(cur), TEAL, buls) + "</div>");
+      + cmtPanel("RUN-RATE", fm(cta), "Group daily avg " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
   }
 
   /* S6: Cash collections — from new enrolments */
@@ -9102,41 +9169,51 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     series.push({ label: "Group", color: "#8E8E93", values: grpVals });
     const ct = grpVals[grpVals.length - 1] || 0, pt = grpVals[grpVals.length - 2] || 0;
     const mm = momPct(ct, pt);
-    const buls = [
+    const rules = [
       "New-enrolment cash: " + fm(ct) + " in " + moFull(cur) + ".",
       mm != null ? (mm >= 0 ? "Up +" : "Down ") + Math.abs(mm).toFixed(1) + "% on " + moLabel(prev) + "." : null,
       "New-enrolment cash is a leading indicator — it lands before revenue is recognised.",
     ];
+    const c = register("cash-new", "cash", "Cash collections — from new enrolments", {
+      month: moFull(cur),
+      group: { newEnrolmentCash: ct, prevNewEnrolmentCash: pt, changePct: mm, newStudents: grpCs(cur, "newStudentCount"), prevNewStudents: grpCs(prev, "newStudentCount"),
+        shareOfTotalReceivedPct: pctOf(ct, grpCs(cur, "totalReceived")), ...(yearAgo ? { lastYearNewEnrolmentCash: grpVals[0], yoyPct: momPct(ct, grpVals[0]) } : {}) },
+      entities: ENTS.map(e => { const v = csv(e.key, cur, "newStudents"), p = csv(e.key, prev, "newStudents");
+        return { entity: e.label, newEnrolmentCash: v, prevNewEnrolmentCash: p, changePct: momPct(v, p), newStudents: csv(e.key, cur, "newStudentCount"), prevNewStudents: csv(e.key, prev, "newStudentCount") }; }),
+    }, rules);
     return slide(slHdr("Cash collections — from new enrolments", moLabel(months[0]) + " – " + moLabel(cur))
       + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel("PIPELINE SIGNAL", fm(ct), "New-enrolment cash " + moFull(cur), TEAL, buls) + "</div>");
+      + cmtPanel("PIPELINE SIGNAL", fm(ct), "New-enrolment cash " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
   }
 
   /* S7–S9: Enrolments & collections per entity */
   function sEnrol(entKey, entLabel, head) {
-    const rows = months.map((m, i) => {
-      const pm = months[i - 1];
-      const nc = csv(entKey, m, "newStudentCount"), ns = csv(entKey, m, "newStudents");
-      const os = csv(entKey, m, "ongoingStudents"), tt = csv(entKey, m, "totalReceived");
-      const pt = pm ? csv(entKey, pm, "totalReceived") : null;
-      const mm = pt ? momPct(tt, pt) : null;
-      const mmStr = mm != null ? "<span style='color:" + (mm >= 0 ? "#28CD41" : RED_NEG) + "'>" + (mm >= 0 ? "+" : "") + mm.toFixed(1) + "%</span>" : "";
-      return "<tr><td>" + moLabel(m) + "</td><td>" + (nc ? Math.round(nc) : "—") + "</td>"
-        + "<td>" + (ns ? fm(ns) : "—") + "</td><td>" + (os ? fm(os) : "—") + "</td>"
-        + "<td style='font-weight:600'>" + fm(tt) + "</td><td>" + mmStr + "</td></tr>";
+    const rowFacts = months.map((m, i) => {
+      const tt = csv(entKey, m, "totalReceived"), pt = i > 0 ? csv(entKey, months[i - 1], "totalReceived") : null;
+      return { month: moFull(m), newEnrolments: csv(entKey, m, "newStudentCount"), newEnrolmentCash: csv(entKey, m, "newStudents"),
+        existingStudentCash: csv(entKey, m, "ongoingStudents"), totalReceived: tt, changePct: pt ? momPct(tt, pt) : null };
+    });
+    const rows = rowFacts.map(r => {
+      const mmStr = r.changePct != null ? "<span style='color:" + (r.changePct >= 0 ? "#28CD41" : RED_NEG) + "'>" + (r.changePct >= 0 ? "+" : "") + r.changePct.toFixed(1) + "%</span>" : "";
+      return "<tr><td>" + esc(r.month.slice(0, 3) + "-" + r.month.slice(-2)) + "</td><td>" + (r.newEnrolments ? Math.round(r.newEnrolments) : "—") + "</td>"
+        + "<td>" + (r.newEnrolmentCash ? fm(r.newEnrolmentCash) : "—") + "</td><td>" + (r.existingStudentCash ? fm(r.existingStudentCash) : "—") + "</td>"
+        + "<td style='font-weight:600'>" + fm(r.totalReceived) + "</td><td>" + mmStr + "</td></tr>";
     }).join("");
     const ct = csv(entKey, cur, "totalReceived"), ya = csv(entKey, months[0], "totalReceived");
     const yoy = momPct(ct, ya), nc = csv(entKey, cur, "newStudentCount");
-    const buls = [
+    const rules = [
       moFull(cur) + " collections: " + fm(ct) + ".",
       yoy != null ? "Year-on-year: " + (yoy >= 0 ? "+" : "") + yoy.toFixed(1) + "%." : null,
       nc ? Math.round(nc) + " new enrolments in " + moFull(cur) + "." : null,
     ];
+    const c = register("enrol-" + entKey, "enrolments", "Enrolments & collections — " + entLabel, {
+      entity: entLabel, month: moFull(cur), months: rowFacts, ...(yearAgo ? { yoyPct: yoy } : {}),
+    }, rules);
     return slide(slHdr("Enrolments & collections — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
       + "<div style='display:flex;gap:14px;align-items:flex-start'>"
       + "<div style='flex:1;overflow-x:auto'><table class='dt'><thead><tr><th>Month</th><th>New enrol.</th><th>New cash</th><th>Existing cash</th><th>Total received</th><th>MoM</th></tr></thead>"
       + "<tbody>" + rows + "</tbody></table></div>"
-      + cmtPanel(head, fm(ct), "Collections " + moFull(cur), TEAL, buls) + "</div>");
+      + cmtPanel(head, fm(ct), "Collections " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
   }
 
   /* S10–S12: Revenue by course */
@@ -9144,49 +9221,59 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     const r = plM.find(x => x.rto === entKey && x.month === cur);
     const items = (r?.lineItems || []).filter(li => li.category === "trading_income" || li.category === "other_income").sort((a, b) => b.amount - a.amount);
     const total = plv(entKey, cur, "tradingIncome") + plv(entKey, cur, "otherIncome");
+    const prevTotal = plv(entKey, prev, "tradingIncome") + plv(entKey, prev, "otherIncome");
     const top = items.slice(0, 13), rest = items.slice(13);
     const disp = rest.length ? [...top, { account: "Other lines (" + rest.length + ")", amount: rest.reduce((s, x) => s + x.amount, 0) }] : top;
     const barItems = disp.map(li => ({ label: li.account.length > 43 ? li.account.slice(0, 40) + "…" : li.account, value: li.amount, color: COVER_BG }));
     const top1 = items[0];
     const topPct = total ? Math.round((top1?.amount || 0) / total * 100) : 0;
-    const buls = [
+    const rules = [
       "Trading income: " + fm(total) + ".",
       top1 ? "Largest line: " + top1.account + " at " + fm(top1.amount) + " (" + topPct + "%)." : null,
       items.length + " revenue line" + (items.length !== 1 ? "s" : "") + " this month.",
     ];
+    const c = register("rev-" + entKey, "revenue", "Revenue by course — " + entLabel, {
+      entity: entLabel, month: moFull(cur), totalIncome: total, prevTotalIncome: prevTotal, changePct: momPct(total, prevTotal), revenueLines: items.length,
+      topLines: top.map(li => { const p = lineAmount(entKey, prev, li.account, li.category);
+        return { account: li.account, amount: li.amount, shareOfIncomePct: pctOf(li.amount, total), prevAmount: p, change: li.amount - p }; }),
+      ...(rest.length ? { otherLines: { count: rest.length, amount: rest.reduce((s, x) => s + x.amount, 0) } } : {}),
+    }, rules);
     return slide(slHdr("Revenue by course — " + entLabel, moFull(cur).toUpperCase())
       + "<div style='display:flex;gap:14px;align-items:flex-start'>"
-      + "<div style='flex:1;overflow-y:auto;max-height:470px'>" + svgHBar(barItems, { w: 580, barH: 15, gap: 6, lw: 240, rw: 85 }) + "</div>"
-      + cmtPanel(head, fm(total), "Trading income " + moFull(cur), TEAL, buls) + "</div>");
+      + "<div style='flex:1;overflow:hidden;max-height:" + (c ? 380 : 470) + "px'>" + svgHBar(barItems, { w: 580, barH: 15, gap: 6, lw: 240, rw: 85 }) + "</div>"
+      + cmtPanel(head, fm(total), "Trading income " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
   }
 
   /* S13: Consolidated cost base — top 20 */
   function s13() {
-    const expMap = {};
-    plM.filter(x => x.month === cur).forEach(r => {
-      (r.lineItems || []).filter(li => li.category === "expenses").forEach(li => {
-        expMap[li.account] = (expMap[li.account] || 0) + li.amount;
-      });
-    });
+    const expMap = {}, prevMap = {};
+    plM.filter(x => x.month === cur).forEach(r => (r.lineItems || []).filter(li => li.category === "expenses").forEach(li => { expMap[li.account] = (expMap[li.account] || 0) + li.amount; }));
+    plM.filter(x => x.month === prev).forEach(r => (r.lineItems || []).filter(li => li.category === "expenses").forEach(li => { prevMap[li.account] = (prevMap[li.account] || 0) + li.amount; }));
     const items = Object.entries(expMap).sort((a, b) => b[1] - a[1]).slice(0, 20);
     const top3 = items.slice(0, 3).reduce((s, [, v]) => s + v, 0);
-    const grpE = grpPl(cur, "totalExpenses");
+    const grpE = grpPl(cur, "totalExpenses"), prevE = grpPl(prev, "totalExpenses");
     const top3Pct = grpE ? Math.round(top3 / grpE * 100) : 0;
-    const barItems = items.map(([acc, amt]) => ({ label: acc.length > 43 ? acc.slice(0, 40) + "…" : acc, value: amt, color: COVER_BG }));
     const top1 = items[0];
-    const buls = [
+    const rules = [
       "Total operating expenses: " + fm(grpE) + ".",
       top1 ? "Largest: " + top1[0] + " at " + fm(top1[1]) + "." : null,
       "Top 3 expense lines: " + top3Pct + "% of total.",
     ];
+    const c = register("cost-base", "costs", "Consolidated cost base — top 20 expenses", {
+      month: moFull(cur), totalExpenses: grpE, prevTotalExpenses: prevE, changePct: momPct(grpE, prevE), top3SharePct: pctOf(top3, grpE),
+      topLines: items.map(([account, amount]) => ({ account, amount, shareOfExpensesPct: pctOf(amount, grpE), prevAmount: prevMap[account] || 0, change: amount - (prevMap[account] || 0) })),
+    }, rules);
+    const barItems = items.map(([acc, amt]) => ({ label: acc.length > 43 ? acc.slice(0, 40) + "…" : acc, value: amt, color: COVER_BG }));
+    // Smaller bars when the insight strip needs room, so all 20 lines still fit on the page
+    const bars = c ? { barH: 12, gap: 5 } : { barH: 15, gap: 6 };
     return slide(slHdr("Consolidated cost base — top 20 expenses", moFull(cur).toUpperCase() + " · ALL ENTITIES")
       + "<div style='display:flex;gap:14px;align-items:flex-start'>"
-      + "<div style='flex:1;overflow-y:auto;max-height:470px'>" + svgHBar(barItems, { w: 580, barH: 15, gap: 6, lw: 240, rw: 85 }) + "</div>"
-      + cmtPanel("COST BASE", fm(grpE), "Oper. expenses all entities", TEAL, buls) + "</div>");
+      + "<div style='flex:1;overflow:hidden;max-height:470px'>" + svgHBar(barItems, { w: 580, ...bars, lw: 240, rw: 85 }) + "</div>"
+      + cmtPanel("COST BASE", fm(grpE), "Oper. expenses all entities", TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
   }
 
   /* S14/16/18: Profitability per entity */
-  function sProfit(entKey, entLabel, head) {
+  function sProfit(entKey, entLabel, head, group) {
     const mLbls = months.map(moLabel);
     const series = [
       { label: "Trading income",  color: COVER_BG, values: months.map(m => plv(entKey, m, "tradingIncome")) },
@@ -9196,47 +9283,59 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     const cn = plv(entKey, cur, "netProfit");
     const cumN = months.reduce((s, m) => s + plv(entKey, m, "netProfit"), 0);
     const profMos = months.filter(m => plv(entKey, m, "netProfit") > 0).length;
-    const buls = [
+    const rules = [
       "Net result " + moFull(cur) + ": " + fm(cn) + ".",
       "Cumulative (" + months.length + " months): " + fm(cumN) + ".",
       profMos + " of " + months.length + " months were profitable.",
     ];
+    const c = register("profit-" + entKey, group, "Profitability — " + entLabel, {
+      entity: entLabel, month: moFull(cur), netResult: cn, prevNetResult: plv(entKey, prev, "netProfit"), netResultChange: cn - plv(entKey, prev, "netProfit"),
+      cumulativeNetResult: cumN, profitableMonths: profMos, monthsShown: months.length,
+      months: months.map(m => ({ month: moFull(m), tradingIncome: plv(entKey, m, "tradingIncome"), operatingExpenses: plv(entKey, m, "totalExpenses"), netResult: plv(entKey, m, "netProfit") })),
+    }, rules);
     return slide(slHdr("Profitability — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
       + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel(head, fm(cn), "Net result in month", cn < 0 ? "#FF8080" : TEAL, buls) + "</div>");
+      + cmtPanel(head, fm(cn), "Net result in month", cn < 0 ? "#FF8080" : TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c));
   }
 
   /* S15/17/19: Cost drivers per entity */
-  function sCostDrv(entKey, entLabel, head) {
+  function sCostDrv(entKey, entLabel, head, group) {
     function lineSum(rto, mo, kws) {
       const r = plM.find(x => x.rto === rto && x.month === mo);
       return r ? (r.lineItems || []).filter(li => li.category === "expenses" && kws.some(kw => li.account.toLowerCase().includes(kw))).reduce((s, li) => s + li.amount, 0) : 0;
     }
+    const KW = { commissions: ["commission", "agent"], rent: ["rent"], wages: ["wage", "salary", "salaries"] };
     const mLbls = months.map(moLabel);
     const series = [
-      { label: "Agent commissions", color: COVER_BG, values: months.map(m => lineSum(entKey, m, ["commission", "agent"])) },
-      { label: "Rent",              color: "#5B4E8A", values: months.map(m => lineSum(entKey, m, ["rent"])) },
-      { label: "Wages & salaries",  color: TEAL,      values: months.map(m => lineSum(entKey, m, ["wage", "salary", "salaries"])) },
+      { label: "Agent commissions", color: COVER_BG, values: months.map(m => lineSum(entKey, m, KW.commissions)) },
+      { label: "Rent",              color: "#5B4E8A", values: months.map(m => lineSum(entKey, m, KW.rent)) },
+      { label: "Wages & salaries",  color: TEAL,      values: months.map(m => lineSum(entKey, m, KW.wages)) },
     ];
-    const cc = lineSum(entKey, cur, ["commission", "agent"]);
-    const cr = lineSum(entKey, cur, ["rent"]);
-    const cw = lineSum(entKey, cur, ["wage", "salary", "salaries"]);
+    const cc = lineSum(entKey, cur, KW.commissions), cr = lineSum(entKey, cur, KW.rent), cw = lineSum(entKey, cur, KW.wages);
+    const pc = lineSum(entKey, prev, KW.commissions), pr = lineSum(entKey, prev, KW.rent), pw = lineSum(entKey, prev, KW.wages);
     const ci = plv(entKey, cur, "tradingIncome");
-    const buls = [
+    const rules = [
       cc ? "Agent commissions: " + fm(cc) + "." : null,
       cr ? "Rent: " + fm(cr) + "." : null,
       cw ? "Wages: " + fm(cw) + (ci ? " (" + Math.round(cw / ci * 100) + "% of trading income)." : ".") : null,
     ];
+    const c = register("costdrv-" + entKey, group, "Cost drivers — " + entLabel, {
+      entity: entLabel, month: moFull(cur), operatingExpenses: plv(entKey, cur, "totalExpenses"), tradingIncome: ci,
+      current: { agentCommissions: cc, rent: cr, wagesAndSalaries: cw, commissionsPctOfIncome: pctOf(cc, ci), wagesPctOfIncome: pctOf(cw, ci) },
+      previousMonth: { agentCommissions: pc, rent: pr, wagesAndSalaries: pw },
+      changeOnPreviousMonth: { agentCommissions: cc - pc, rent: cr - pr, wagesAndSalaries: cw - pw },
+      months: months.map((m, i) => ({ month: moFull(m), agentCommissions: series[0].values[i], rent: series[1].values[i], wagesAndSalaries: series[2].values[i] })),
+    }, rules);
     return slide(slHdr("Cost drivers — " + entLabel, moLabel(months[0]) + " – " + moLabel(cur))
       + "<div style='display:flex;gap:14px;align-items:flex-start'><div style='flex:1'>" + svgLine(series, mLbls, { w: 640, h: 280 }) + "</div>"
-      + cmtPanel(head, fm(plv(entKey, cur, "totalExpenses")), "Oper. expenses " + moFull(cur), TEAL, buls) + "</div>"
+      + cmtPanel(head, fm(plv(entKey, cur, "totalExpenses")), "Oper. expenses " + moFull(cur), TEAL, bulletsFor(c, rules)) + "</div>" + insightStrip(c)
       + "<p style='font-size:9px;color:#8E8E93;margin-top:6px'>Wages and salaries combines direct wages, management-fee wage recharges and any on-costs. Rent combines rent and rent recharges.</p>");
   }
 
   /* CSS */
   const css = "*{box-sizing:border-box;margin:0;padding:0}"
     + "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F0F0F5}"
-    + ".slide{width:297mm;height:210mm;position:relative;overflow:hidden;padding:22px 28px 16px;display:flex;flex-direction:column;page-break-after:always;break-after:page}"
+    + ".slide{width:297mm;height:210mm;position:relative;overflow:hidden;padding:22px 28px 16px;display:flex;flex-direction:column;background:#fff;page-break-after:always;break-after:page}"
     + ".sl-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:1px solid #E5E5EA;padding-bottom:9px}"
     + ".sl-title{font-size:19px;font-weight:700;color:#1D1D1F;letter-spacing:-0.02em}"
     + ".sl-sub{font-size:9.5px;color:#8E8E93;margin-top:2px;letter-spacing:0.04em}"
@@ -9253,11 +9352,18 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     + ".cp-head{font-size:7.5px;font-weight:700;letter-spacing:0.1em;color:rgba(255,255,255,0.55);margin-bottom:7px}"
     + ".cp-kpi{font-size:24px;font-weight:700;letter-spacing:-0.03em}"
     + ".cp-kpi-lbl{font-size:8.5px;color:rgba(255,255,255,0.7);margin-top:2px;margin-bottom:9px}"
-    + ".cp-buls{padding-left:12px;font-size:9px;line-height:1.6;color:rgba(255,255,255,0.85)}"
+    + ".cp-buls{padding-left:12px;font-size:9px;line-height:1.55;color:rgba(255,255,255,0.85)}"
     + ".cp-buls li{margin-bottom:3px}"
+    + ".ins-row{display:flex;gap:12px;margin-top:10px}"
+    + ".ins-col{flex:1;border-top:2px solid " + TEAL + ";padding-top:6px}"
+    + ".ins-h{font-size:7.5px;font-weight:700;letter-spacing:0.1em;color:#6E6E73;text-transform:uppercase;margin-bottom:3px}"
+    + ".ins-col ul,.key-msgs ul{padding-left:12px;font-size:9px;line-height:1.5;color:#3A3A3C}"
+    + ".ins-col li,.key-msgs li{margin-bottom:2px}"
+    + ".key-msgs{margin-top:11px;border:1px solid #E5E5EA;border-left:3px solid " + COVER_BG + ";border-radius:6px;padding:8px 11px}"
+    + ".key-msgs ul{font-size:10px}"
     + ".dt{width:100%;border-collapse:collapse;font-size:11px}"
     + ".dt th{background:#F5F5F7;padding:5px 7px;text-align:left;font-size:8.5px;color:#6E6E73;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid #E5E5EA}"
-    + ".dt td{padding:5px 7px;border-bottom:1px solid #F2F2F2}"
+    + ".dt td{padding:4px 7px;border-bottom:1px solid #F2F2F2}"
     + ".pg-num{position:absolute;bottom:9px;right:26px;font-size:8px;color:#AEAEB2}"
     + ".branding{position:absolute;bottom:9px;left:26px;font-size:8px;color:#AEAEB2}"
     + "@media print{body{background:#fff}@page{size:A4 landscape;margin:0}.slide{width:100vw;height:100vh}}"
@@ -9273,22 +9379,329 @@ function generateFinancePack({ plRecords, cashRecords, enrRecords }) {
     sRev("CB",      "Charlton Brown",  "CHARLTON BROWN"),
     sRev("Educare", "Educare",         "EDUCARE"),
     s13(),
-    sProfit("NIET",    "NIET",           "NIET PROFITABILITY"),
-    sCostDrv("NIET",   "NIET",           "NIET COST DRIVERS"),
-    sProfit("CB",      "Charlton Brown",  "CB PROFITABILITY"),
-    sCostDrv("CB",     "Charlton Brown",  "CB COST DRIVERS"),
-    sProfit("Educare", "Educare",         "EDUCARE PROFITABILITY"),
-    sCostDrv("Educare","Educare",         "EDUCARE COST DRIVERS"),
+    sProfit("NIET",    "NIET",           "NIET PROFITABILITY", "niet"),
+    sCostDrv("NIET",   "NIET",           "NIET COST DRIVERS", "niet"),
+    sProfit("CB",      "Charlton Brown",  "CB PROFITABILITY", "cb"),
+    sCostDrv("CB",     "Charlton Brown",  "CB COST DRIVERS", "cb"),
+    sProfit("Educare", "Educare",         "EDUCARE PROFITABILITY", "educare"),
+    sCostDrv("Educare","Educare",         "EDUCARE COST DRIVERS", "educare"),
   ];
 
   const slidesHtml = slides.map((s, i) =>
-    s.replace("</section>", "<div class='branding'>NIET Group · Finance Pack</div><div class='pg-num'>" + (i + 1) + " / " + slides.length + "</div></section>")
+    s.replace(/<\/section>$/, "<div class='branding'>NIET Group · Finance Pack</div><div class='pg-num'>" + (i + 1) + " / " + slides.length + "</div></section>")
   ).join("\n");
 
-  return "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-    + "<title>NIET Group Finance Pack — " + moFull(cur) + "</title>"
+  const html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+    + "<title>NIET Group Finance Pack — " + esc(moFull(cur)) + "</title>"
     + "<style>" + css + "</style></head><body>"
     + slidesHtml + "</body></html>";
+  return { html, month: cur, monthLabel: moFull(cur), slides: slideMeta };
+}
+
+// Facts sent to the AI: whole dollars, one decimal for percentages and small values
+function roundFacts(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10) : null;
+  if (Array.isArray(v)) return v.map(roundFacts);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, roundFacts(x)]));
+  return v;
+}
+
+// Stable short hash of a slide's facts, used to tell when saved commentary was written for different numbers
+function factsHash(facts) {
+  const str = JSON.stringify(facts);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
+// Numbers in commentary text that can't be traced to the slide's facts (allowing for display rounding).
+// Years, and bare numbers under 10, are ignored.
+function unverifiedNumbers(text, facts) {
+  const values = [];
+  (function walk(v) {
+    if (typeof v === "number") values.push(v);
+    else if (typeof v === "string") (v.match(/\d[\d,]*(?:\.\d+)?/g) || []).forEach(n => values.push(parseFloat(n.replace(/,/g, ""))));
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  })(facts);
+  const absVals = values.map(Math.abs);
+  const matches = (target, tol) => absVals.some(v => Math.abs(v - target) <= tol);
+  const flagged = [];
+  // A comma only counts as a thousands separator when three digits follow ("2026," is a year then punctuation)
+  const re = /(-?\$?\(?)(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(m\b|k\b|%|million\b|thousand\b|pp\b)?/gi;
+  let m;
+  while ((m = re.exec(String(text || "")))) {
+    const raw = m[0].trim();
+    const num = parseFloat(m[2].replace(/,/g, ""));
+    if (!Number.isFinite(num)) continue;
+    const unit = (m[3] || "").toLowerCase();
+    const isMoney = m[1].includes("$");
+    const decimals = (m[2].split(".")[1] || "").length;
+    if (!isMoney && !unit && /^(19|20)\d{2}$/.test(m[2])) continue;
+    if (!isMoney && !unit && num < 10) continue;
+    let target = num, tol;
+    if (unit === "m" || unit === "million") { target = num * 1e6; tol = 0.5 * Math.pow(10, -decimals) * 1e6; }
+    else if (unit === "k" || unit === "thousand") { target = num * 1e3; tol = 0.5 * Math.pow(10, -decimals) * 1e3; }
+    else if (unit === "%" || unit === "pp") { tol = decimals ? 0.5 * Math.pow(10, -decimals) + 0.05 : 0.5; }
+    else { tol = decimals ? 0.5 * Math.pow(10, -decimals) : 0.5; }
+    if (!matches(target, tol + 1e-9)) flagged.push(raw);
+  }
+  return [...new Set(flagged)];
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FINANCE PACK REVIEW (AI commentary, reviewed before export)
+   ───────────────────────────────────────────────────────────── */
+const FP_SECTIONS = [["observations", "Key observations", 4], ["drivers", "What drove it", 3], ["watch", "Watch", 2]];
+const fpToLines = text => String(text || "").split("\n").map(s => s.replace(/^[\s•\-*]+/, "").trim()).filter(Boolean);
+const fpHasText = e => !!e && FP_SECTIONS.some(([k]) => fpToLines(e[k]).length);
+
+function FinancePackReview({ plRecords, cashRecords, user, onClose }) {
+  const pack = useMemo(() => generateFinancePack({ plRecords, cashRecords }), [plRecords, cashRecords]);
+  const docId = `fc_${pack.month}`;
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [notes, setNotes] = useState("");
+  const [draft, setDraft] = useState({});
+  const [groupStatus, setGroupStatus] = useState({});
+  const [message, setMessage] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  // Generation takes a while; merge results into what is on screen then, not what was there at the click
+  const draftRef = useRef(draft); draftRef.current = draft;
+  const notesRef = useRef(notes); notesRef.current = notes;
+
+  useEffect(() => {
+    let alive = true;
+    dbFetchCollections(["finance_commentary"]).then(r => {
+      if (!alive) return;
+      const doc = r.finance_commentary.find(d => d.id === docId);
+      if (doc) {
+        setNotes(doc.notes || "");
+        setDraft(Object.fromEntries(Object.entries(doc.slides || {}).map(([id, e]) => [id, {
+          observations: (e.observations || []).join("\n"), drivers: (e.drivers || []).join("\n"), watch: (e.watch || []).join("\n"),
+          source: e.source || "ai", factsHash: e.factsHash || "", generatedAt: e.generatedAt || null,
+        }])));
+      }
+      setLoaded(true);
+    }).catch(err => { if (alive) { setLoadError(err.message); setLoaded(true); } });
+    return () => { alive = false; };
+  }, [docId]);
+
+  const slideInfo = pack.slides.map(s => {
+    const e = draft[s.id];
+    const hasText = fpHasText(e);
+    const stale = hasText && e.factsHash !== factsHash(s.facts);
+    const flagged = hasText ? unverifiedNumbers(FP_SECTIONS.map(([k]) => e[k]).join("\n"), s.facts) : [];
+    return { ...s, entry: e, hasText, stale, flagged, needsAttention: !hasText || stale || flagged.length > 0 };
+  });
+  const attentionCount = slideInfo.filter(s => s.needsAttention).length;
+  const running = Object.values(groupStatus).some(g => g.state === "running");
+
+  function docFromDraft(d = draft, n = notes) {
+    const slides = {};
+    for (const s of pack.slides) {
+      const e = d[s.id];
+      if (!fpHasText(e)) continue;
+      slides[s.id] = { observations: fpToLines(e.observations).slice(0, 4), drivers: fpToLines(e.drivers).slice(0, 3), watch: fpToLines(e.watch).slice(0, 2),
+        source: e.source, factsHash: e.factsHash, generatedAt: e.generatedAt };
+    }
+    return { id: docId, month: pack.month, notes: n, slides, updatedAt: new Date().toISOString(), updatedBy: user.id };
+  }
+  async function save(d, n) {
+    await dbUpsert("finance_commentary", docFromDraft(d, n));
+  }
+
+  async function requestGroup(slides) {
+    const call = () => apiFetch("/api/finance-commentary", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: pack.month, monthLabel: pack.monthLabel, notes, slides: slides.map(s => ({ id: s.id, title: s.title, facts: s.facts })) }),
+    }).then(async res => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { const e = new Error(data.error || `Request failed (${res.status})`); e.retryable = res.status >= 500 || res.status === 429; throw e; }
+      return data.slides;
+    });
+    try { return await call(); }
+    catch (err) { if (err.retryable) return call(); throw err; }
+  }
+
+  // Generates commentary for the given slides, one request per group, all groups in parallel
+  async function generate(targetSlides) {
+    if (!targetSlides.length || running) return;
+    const edited = targetSlides.filter(s => draft[s.id]?.source === "edited" && fpHasText(draft[s.id]));
+    if (edited.length && !window.confirm(`${edited.length} slide${edited.length > 1 ? "s have" : " has"} text you edited. Generating again will replace ${edited.length > 1 ? "them" : "it"}. Continue?`)) return;
+    setMessage(null);
+    const byGroup = FINANCE_PACK_GROUPS.map(g => ({ g, slides: targetSlides.filter(s => s.group === g.key) })).filter(x => x.slides.length);
+    setGroupStatus(prev => ({ ...prev, ...Object.fromEntries(byGroup.map(({ g }) => [g.key, { state: "running" }])) }));
+    const results = await Promise.all(byGroup.map(async ({ g, slides }) => {
+      try {
+        const out = await requestGroup(slides);
+        setGroupStatus(prev => ({ ...prev, [g.key]: { state: "done" } }));
+        return { slides, out };
+      } catch (err) {
+        setGroupStatus(prev => ({ ...prev, [g.key]: { state: "error", error: err.message } }));
+        return { slides, out: null };
+      }
+    }));
+    const now = new Date().toISOString();
+    const next = { ...draftRef.current };
+    for (const { slides, out } of results) {
+      if (!out) continue;
+      for (const o of out) {
+        const s = slides.find(x => x.id === o.id);
+        if (!s) continue;
+        next[o.id] = { observations: o.observations.join("\n"), drivers: o.drivers.join("\n"), watch: o.watch.join("\n"), source: "ai", factsHash: factsHash(s.facts), generatedAt: now };
+      }
+    }
+    setDraft(next);
+    const failed = results.filter(r => !r.out).length;
+    try {
+      await save(next, notesRef.current);
+      setDirty(false);
+      setMessage(failed ? { kind: "warn", text: `${failed} section${failed > 1 ? "s" : ""} failed. Those slides keep their previous text. Try them again from the slide.` } : { kind: "ok", text: "Analysis generated and saved. Review the slides below before exporting." });
+    } catch (err) {
+      setMessage({ kind: "bad", text: `The analysis was generated but couldn't be saved: ${err.message}` });
+    }
+  }
+
+  function updateEntry(id, key, value) {
+    setDirty(true);
+    setDraft(prev => ({ ...prev, [id]: { ...(prev[id] || { observations: "", drivers: "", watch: "", factsHash: "", generatedAt: null }), [key]: value, source: "edited" } }));
+  }
+  function keepDespiteChange(s) {
+    setDirty(true);
+    setDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], factsHash: factsHash(s.facts) } }));
+  }
+  function revertToRules(id) {
+    setDirty(true);
+    setDraft(prev => { const n = { ...prev }; delete n[id]; return n; });
+  }
+
+  async function saveDraft() {
+    setBusy(true);
+    try { await save(draft, notes); setDirty(false); setMessage({ kind: "ok", text: "Saved." }); }
+    catch (err) { setMessage({ kind: "bad", text: `Couldn't save: ${err.message}` }); }
+    setBusy(false);
+  }
+
+  async function exportPack() {
+    // Open the window inside the click, or the browser's pop-up blocker stops it after the save
+    const win = window.open("", "_blank");
+    if (!win) { window.alert("The pack was blocked by your browser's pop-up blocker. Allow pop-ups for this site and try again."); return; }
+    setBusy(true);
+    try { await save(draft, notes); setDirty(false); }
+    catch (err) { setMessage({ kind: "warn", text: `Exported, but the commentary couldn't be saved: ${err.message}` }); }
+    const doc = docFromDraft();
+    const { html } = generateFinancePack({ plRecords, cashRecords, commentary: doc.slides });
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    win.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    setBusy(false);
+  }
+
+  const missingOrStale = slideInfo.filter(s => !s.hasText || s.stale);
+  const visible = showAll ? slideInfo : slideInfo.filter(s => s.needsAttention);
+  const taCss = { width: "100%", boxSizing: "border-box", padding: "7px 9px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontFamily: F.body, lineHeight: 1.5, color: T.text, background: T.surface, resize: "vertical" };
+  const badge = (label, color, bg) => <span style={{ fontSize: 11, fontWeight: 700, color, background: bg, borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap" }}>{label}</span>;
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Review finance pack commentary" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "32px 16px", overflowY: "auto" }}>
+      <div style={{ background: T.bg, borderRadius: 14, width: "100%", maxWidth: 1000, boxShadow: "0 24px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", position: "sticky", top: 0, background: T.bg, borderRadius: "14px 14px 0 0", zIndex: 1 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Finance Pack · {pack.monthLabel || "no P&L data"}</div>
+            <div style={{ fontSize: 13, color: T.textMuted }}>Review the commentary for each slide, then export. Charts and figures come straight from the imported data.</div>
+          </div>
+          <Btn small onClick={saveDraft} disabled={busy || running || !loaded}>Save draft</Btn>
+          <Btn small primary onClick={exportPack} disabled={busy || running || !loaded || !pack.month}>Export pack</Btn>
+          <Btn small onClick={() => { if (!dirty || window.confirm("You have unsaved changes. Close without saving them?")) onClose(); }} disabled={running}>Close</Btn>
+        </div>
+
+        <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 16 }}>
+          {!loaded && <div style={{ color: T.textMuted, fontSize: 14 }}>Loading saved commentary…</div>}
+          {loadError && <div style={{ color: T.bad, fontSize: 13 }}>Saved commentary couldn't be loaded ({loadError}). You can still generate new commentary.</div>}
+
+          <Card style={{ padding: 16 }}>
+            <label htmlFor="fp-notes" style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Context for this month (optional)</label>
+            <div style={{ fontSize: 12, color: T.textMuted, margin: "2px 0 8px" }}>Anything the numbers can't show, such as a campus closure, a large one-off cost or a timing difference. The AI uses it to explain movements.</div>
+            <textarea id="fp-notes" value={notes} onChange={e => { setNotes(e.target.value); setDirty(true); }} rows={3} maxLength={4000} placeholder="e.g. Southport campus closed for two weeks in September for refurbishment." style={taCss} />
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <Btn primary small disabled={!loaded || running || !pack.month || !missingOrStale.length} onClick={() => generate(missingOrStale)}>
+                {running ? "Generating…" : missingOrStale.length ? `Generate analysis for ${missingOrStale.length} slide${missingOrStale.length > 1 ? "s" : ""}` : "All slides have analysis"}
+              </Btn>
+              <Btn small disabled={!loaded || running || !pack.month} onClick={() => generate(pack.slides)}>Regenerate all</Btn>
+              <span style={{ fontSize: 12, color: T.textMuted }}>Uses Claude Opus 5.5 · about 20–40 seconds</span>
+            </div>
+            {Object.keys(groupStatus).length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                {FINANCE_PACK_GROUPS.filter(g => groupStatus[g.key]).map(g => {
+                  const st = groupStatus[g.key];
+                  const look = st.state === "running" ? [T.brand, T.brandDim] : st.state === "done" ? [T.ok, T.okDim] : [T.bad, T.badDim];
+                  return <span key={g.key} title={st.error || ""} style={{ fontSize: 12, fontWeight: 600, color: look[0], background: look[1], borderRadius: 6, padding: "3px 9px" }}>
+                    {st.state === "running" ? "⟳ " : st.state === "done" ? "✓ " : "✕ "}{g.label}
+                  </span>;
+                })}
+              </div>
+            )}
+            {message && <div style={{ marginTop: 10, fontSize: 13, color: message.kind === "ok" ? T.ok : message.kind === "warn" ? T.warn : T.bad }}>{message.text}</div>}
+          </Card>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, flex: 1 }}>
+              {attentionCount ? `${attentionCount} of ${slideInfo.length} slides need a look` : `All ${slideInfo.length} slides look ready`}
+            </div>
+            <Btn small primary={!showAll} onClick={() => setShowAll(false)}>Needs attention ({attentionCount})</Btn>
+            <Btn small primary={showAll} onClick={() => setShowAll(true)}>All slides ({slideInfo.length})</Btn>
+            {!showAll && attentionCount > 0 && slideInfo.every(s => s.hasText) && (
+              <span style={{ fontSize: 12, color: T.textMuted }}>Checked them? Export when ready.</span>
+            )}
+          </div>
+
+          {visible.length === 0 && <EmptyState text="Nothing needs attention. Switch to All slides to read everything, or export the pack." />}
+          {visible.map(s => {
+            const e = s.entry;
+            return (
+              <Card key={s.id} style={{ padding: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text, flex: 1, minWidth: 180 }}>{s.title}</div>
+                  {!s.hasText && badge("Rule-based text", T.textMuted, T.raised)}
+                  {s.hasText && e.source === "ai" && badge("AI", T.brand, T.brandDim)}
+                  {s.hasText && e.source === "edited" && badge("Edited", T.ok, T.okDim)}
+                  {s.stale && badge("Data changed since written", T.warn, T.warnDim)}
+                  {s.flagged.length > 0 && badge(`${s.flagged.length} number${s.flagged.length > 1 ? "s" : ""} to check`, T.warn, T.warnDim)}
+                  {s.stale && <Btn small onClick={() => keepDespiteChange(s)}>Keep</Btn>}
+                  <Btn small disabled={running} onClick={() => generate([s])}>{s.hasText ? "Regenerate" : "Generate"}</Btn>
+                  {s.hasText && <Btn small onClick={() => revertToRules(s.id)}>Use rule text</Btn>}
+                </div>
+                {s.flagged.length > 0 && (
+                  <div style={{ fontSize: 12, color: T.warn, background: T.warnDim, borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+                    These figures don't match this slide's data: <strong>{s.flagged.join(", ")}</strong>. Check or correct them before exporting.
+                  </div>
+                )}
+                {!s.hasText ? (
+                  <div style={{ fontSize: 13, color: T.textMuted }}>
+                    <div style={{ marginBottom: 4 }}>No analysis yet. The slide will use these generated points:</div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>{s.rules.length ? s.rules.map((r, i) => <li key={i}>{r}</li>) : <li>Key figures only (no commentary).</li>}</ul>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+                    {FP_SECTIONS.map(([key, label, max]) => (
+                      <div key={key}>
+                        <label htmlFor={`fp-${s.id}-${key}`} style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label} <span style={{ fontWeight: 400, textTransform: "none" }}>· one per line, up to {max}</span></label>
+                        <textarea id={`fp-${s.id}-${key}`} value={e[key] || ""} onChange={ev => updateEntry(s.id, key, ev.target.value)} rows={key === "observations" ? 5 : 3} style={{ ...taCss, marginTop: 4 }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {groupStatus[s.group]?.state === "error" && <div style={{ fontSize: 12, color: T.bad, marginTop: 8 }}>Last attempt failed: {groupStatus[s.group].error}</div>}
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ─────────────────────────────────────────────────────────────
