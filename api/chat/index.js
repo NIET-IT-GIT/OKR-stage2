@@ -1,9 +1,12 @@
-import https from "https";
+import Anthropic from "@anthropic-ai/sdk";
 import { requireUser, sendAuthError } from "../_lib/auth.js";
 
 const MAX_QUESTION = 4000;
 const MAX_SYSTEM = 20000;
 const MAX_CONTEXT = 800000;
+const MODEL = "claude-opus-5-5";
+const MAX_TOKENS = 8000;
+const DEFAULT_SYSTEM = "You are an OKR analytics assistant. Answer questions based on the provided data. Be concise and use specific numbers. Reply in the same language as the question.";
 
 const TOOLS = [{
   name: "propose_bulk_action",
@@ -63,60 +66,44 @@ export default async function handler(req, res) {
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) { console.error("[chat] CLAUDE_API_KEY not configured"); return res.status(500).json({ error: "The assistant is not configured." }); }
 
+  // One attempt within the function's 60-second limit, so a slow answer ends with a clear message, not a platform timeout
+  const client = new Anthropic({ apiKey, timeout: 55000, maxRetries: 0 });
   try {
-    const result = await callClaude(apiKey, systemPrompt, contextData, question);
-    res.status(200).json(result);
+    const response = await client.messages.create({
+      model: MODEL,
+      // Opus 5.5 always thinks first and the thinking counts towards this limit, so leave room for long answers
+      max_tokens: MAX_TOKENS,
+      output_config: { effort: "medium" },
+      system: systemPrompt || DEFAULT_SYSTEM,
+      tools: TOOLS,
+      messages: [{ role: "user", content: contextData ? `${contextData}\n\nQuestion: ${question}` : question }],
+    });
+    return res.status(200).json(toResult(response));
   } catch (err) {
-    console.error("[chat] Claude API error:", err.message);
-    res.status(502).json({ error: "The assistant could not answer right now. Try again shortly." });
+    if (err instanceof Anthropic.APIError) console.error("[chat] API error", err.status, err.message);
+    else console.error("[chat] error", err.message);
+    const timedOut = err instanceof Anthropic.APIConnectionTimeoutError;
+    return res.status(timedOut ? 504 : 502).json({ error: timedOut
+      ? "The assistant took too long to answer. Ask about one part at a time and try again."
+      : "The assistant could not answer right now. Try again shortly." });
   }
 }
 
-function callClaude(apiKey, systemPrompt, contextData, question) {
-  const system = systemPrompt || "You are an OKR analytics assistant. Answer questions based on the provided data. Be concise and use specific numbers. Reply in the same language as the question.";
-  const userMessage = contextData ? `${contextData}\n\nQuestion: ${question}` : question;
+export const CUT_OFF_NOTE = "*The answer was cut off because it was too long. Ask about one part at a time for the full detail.*";
 
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
-      model: "claude-opus-5-5",
-      max_tokens: 2048,
-      system,
-      tools: TOOLS,
-      messages: [{ role: "user", content: userMessage }],
-    });
-
-    const options = {
-      hostname: "api.anthropic.com",
-      path: "/v1/messages",
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "Content-Length": Buffer.byteLength(body),
-      },
-    };
-
-    const req = https.request(options, r => {
-      let data = "";
-      r.on("data", chunk => { data += chunk; });
-      r.on("end", () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) return reject(new Error(parsed.error.message));
-          // Check for tool_use block first
-          const toolUse = parsed.content?.find(b => b.type === "tool_use" && b.name === "propose_bulk_action");
-          if (toolUse) {
-            resolve({ action: toolUse.input });
-          } else {
-            const textBlock = parsed.content?.find(b => b.type === "text");
-            resolve({ answer: textBlock?.text || "No response." });
-          }
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on("error", reject);
-    req.write(body);
-    req.end();
-  });
+// Turns a Messages API response into what the Pilot shows: an approval card, or the full answer text
+export function toResult(response) {
+  if (response.stop_reason === "refusal") {
+    console.warn("[chat] refusal:", response.stop_details?.category);
+    return { answer: "The assistant can't help with this request." };
+  }
+  const toolUse = response.content.find(b => b.type === "tool_use" && b.name === "propose_bulk_action");
+  // A tool call cut off by the length limit has incomplete input, so it is never turned into an approval card
+  if (toolUse && response.stop_reason === "tool_use") return { action: toolUse.input };
+  const text = response.content.filter(b => b.type === "text").map(b => b.text).join("\n\n").trim();
+  if (response.stop_reason === "max_tokens") {
+    console.warn("[chat] answer hit max_tokens");
+    return { answer: text ? `${text}\n\n${CUT_OFF_NOTE}` : CUT_OFF_NOTE };
+  }
+  return { answer: text || "No response." };
 }
