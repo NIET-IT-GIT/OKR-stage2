@@ -9225,45 +9225,72 @@ function packText(x, y, txt, { size = 13, fill = "#6E6E73", anchor = "start", we
   return "<text x='" + x + "' y='" + y + "' font-size='" + size + "' fill='" + fill + "' text-anchor='" + anchor + "'" + (weight !== 400 ? " font-weight='" + weight + "'" : "") + extra + ">" + txt + "</text>";
 }
 
-// Line chart: y axis with round ticks and a title, month labels and a title on x, end-of-line values that never overlap
+// Line chart: y axis with round ticks and a title, every month on x (year under the first month and each January),
+// a value above every point (stacked per month so none overlap) and a bold current value at the end of each line.
+// A series with noPointLabels only gets its end value.
 function packLineChart({ series, labels, fmt, tickFmt = fmt, yTitle = "", xTitle = "Month", w = 760, h = 520 }) {
   const vals = series.flatMap(s => s.values.filter(v => v != null && isFinite(v)));
   if (!labels.length || !vals.length) return "<div class='empty'>No data in this period.</div>";
   const ticks = packNiceTicks(Math.min(...vals), Math.max(...vals));
   const lo = ticks[0], hi = ticks[ticks.length - 1], n = labels.length;
-  const PL = 84, PR = 78, PT = 14, PB = 58, cW = w - PL - PR, cH = h - PT - PB;
-  const px = i => PL + (n > 1 ? i / (n - 1) * cW : cW / 2);
+  const PL = 84, PR = 78, PT = 30, PB = 68, cW = w - PL - PR, cH = h - PT - PB;
+  // Inset the first and last month so their values clear the y-axis labels
+  const inset = n > 1 ? Math.min(24, cW / (n - 1) / 2) : 0;
+  const px = i => PL + inset + (n > 1 ? i / (n - 1) * (cW - 2 * inset) : cW / 2 - inset);
   const py = v => PT + cH - (v - lo) / (hi - lo) * cH;
+  const isNum = v => v != null && isFinite(v);
   let out = packSvgOpen(w, h, yTitle);
   ticks.forEach(t => {
     out += "<line x1='" + PL + "' y1='" + py(t) + "' x2='" + (PL + cW) + "' y2='" + py(t) + "' stroke='" + (t === 0 ? "#AEAEB2" : "#E5E5EA") + "' stroke-width='" + (t === 0 ? 1.5 : 1) + "'/>"
       + packText(PL - 8, py(t) + 4.5, tickFmt(t), { anchor: "end" });
   });
   if (yTitle) out += packText(18, PT + cH / 2, packEsc(yTitle), { anchor: "middle", fill: "#3A3A3C", weight: 600, extra: " transform='rotate(-90 18 " + (PT + cH / 2) + ")'" });
-  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(cW / 56))));
+  // Month labels like "Sep 25" become "Sep" with "2025" underneath at the first month and every January
+  const gap = n > 1 ? (cW - 2 * inset) / (n - 1) : cW;
+  const every = gap >= 26 ? 1 : Math.ceil(26 / gap);
   labels.forEach((l, i) => {
     if (i % every && i !== n - 1) return;
-    out += packText(px(i), PT + cH + 22, packEsc(l), { anchor: n > 1 && i === n - 1 ? "end" : n > 1 && i === 0 ? "start" : "middle" });
+    const m = /^([A-Za-z]{3})[ -](\d{2})$/.exec(String(l));
+    out += packText(px(i), PT + cH + 20, packEsc(m ? m[1] : l), { anchor: "middle" });
+    if (m && (i === 0 || m[1] === "Jan")) out += packText(px(i), PT + cH + 35, "20" + m[2], { anchor: "middle", size: 11.5, fill: "#8E8E93" });
   });
   if (xTitle) out += packText(PL + cW / 2, h - 8, packEsc(xTitle), { anchor: "middle", fill: "#3A3A3C", weight: 600 });
-  const ends = [];
-  series.forEach(s => {
+  const ends = [], lastIdx = [];
+  series.forEach((s, si) => {
     // Break the line where a month has no value
     let seg = [];
-    const flush = () => { if (seg.length > 1) out += "<polyline points='" + seg.join(" ") + "' fill='none' stroke='" + s.color + "' stroke-width='" + (s.bold ? 3.5 : 2.5) + "' stroke-linejoin='round' stroke-linecap='round'" + (s.dash ? " stroke-dasharray='6,5'" : "") + "/>"; seg = []; };
-    s.values.forEach((v, i) => { if (v == null || !isFinite(v)) flush(); else seg.push(px(i) + "," + py(v)); });
+    const flush = () => { if (seg.length > 1) out += "<polyline points='" + seg.join(" ") + "' fill='none' stroke='" + s.color + "' stroke-width='" + (s.bold ? 3 : 2.2) + "' stroke-linejoin='round' stroke-linecap='round'" + (s.dash ? " stroke-dasharray='6,5'" : "") + "/>"; seg = []; };
+    s.values.forEach((v, i) => { if (!isNum(v)) flush(); else seg.push(px(i) + "," + py(v)); });
     flush();
-    s.values.forEach((v, i) => { if (v != null && isFinite(v)) out += "<circle cx='" + px(i) + "' cy='" + py(v) + "' r='3.5' fill='" + s.color + "'/>"; });
+    s.values.forEach((v, i) => { if (isNum(v)) out += "<circle cx='" + px(i) + "' cy='" + py(v) + "' r='3' fill='" + s.color + "'/>"; });
     let li = s.values.length - 1;
-    while (li >= 0 && (s.values[li] == null || !isFinite(s.values[li]))) li--;
+    while (li >= 0 && !isNum(s.values[li])) li--;
+    lastIdx[si] = li;
     if (li >= 0) ends.push({ x: px(li) + 9, y: py(s.values[li]) + 4.5, txt: fmt(s.values[li]), color: s.color });
   });
+  // Point values: above each point (below a dip, where the line would cross the text), stacked per month so none overlap
+  const FS = gap >= 44 ? 10.5 : 9.5, LH = FS + 2;
+  const halo = " stroke='#fff' stroke-width='3' stroke-linejoin='round' paint-order='stroke'";
+  for (let i = 0; i < n; i++) {
+    const col = series.map((s, si) => ({ s, si, v: s.values[i] }))
+      .filter(x => isNum(x.v) && !x.s.noPointLabels && i !== lastIdx[x.si])
+      .map(x => {
+        const p = x.s.values[i - 1], q = x.s.values[i + 1];
+        const dip = (isNum(p) || isNum(q)) && (!isNum(p) || x.v < p) && (!isNum(q) || x.v < q);
+        return { y: dip && py(x.v) + 17 <= PT + cH - 2 ? py(x.v) + 17 : py(x.v) - 8, txt: fmt(x.v), color: x.s.color };
+      })
+      .sort((a, b) => a.y - b.y);
+    for (let k = 1; k < col.length; k++) if (col[k].y - col[k - 1].y < LH) col[k].y = col[k - 1].y + LH;
+    const over = col.length ? col[col.length - 1].y - (PT + cH - 3) : 0;
+    if (over > 0) col.forEach(c => { c.y -= over; });
+    col.forEach(c => { out += packText(px(i), c.y, packEsc(c.txt), { anchor: "middle", size: FS, fill: c.color, weight: 600, extra: halo }); });
+  }
   // Push end labels apart so each stays readable
   ends.sort((a, b) => a.y - b.y);
   for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 16) ends[i].y = ends[i - 1].y + 16;
   const over = ends.length ? ends[ends.length - 1].y - (PT + cH + 4) : 0;
   if (over > 0) ends.forEach(e => { e.y -= over; });
-  ends.forEach(e => { out += packText(e.x, e.y, packEsc(e.txt), { fill: e.color, weight: 700 }); });
+  ends.forEach(e => { out += packText(e.x, e.y, packEsc(e.txt), { fill: e.color, weight: 700, extra: halo }); });
   return out + "</svg>";
 }
 
@@ -10505,7 +10532,7 @@ function generatePerformancePack({ state, plRecords = [], cashRecords = [] }) {
     const grp = okrWin.map(groupRate);
     const series = [{ label: "Group", color: COVER_BG, values: grp, bold: true }];
     const showDepts = depts.length <= LINE_COLORS.length - 1;
-    if (showDepts) depts.forEach((d, i) => series.push({ label: d.name, color: LINE_COLORS[i + 1], values: okrWin.map(m => deptRate(d, m)) }));
+    if (showDepts) depts.forEach((d, i) => series.push({ label: d.name, color: LINE_COLORS[i + 1], values: okrWin.map(m => deptRate(d, m)), noPointLabels: true }));
     const withVals = okrWin.map((m, i) => ({ m, v: grp[i] })).filter(x => x.v != null);
     const peak = withVals.reduce((b, x) => (!b || x.v > b.v ? x : b), null);
     const low  = withVals.reduce((b, x) => (!b || x.v < b.v ? x : b), null);
