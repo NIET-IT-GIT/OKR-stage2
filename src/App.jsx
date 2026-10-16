@@ -3733,6 +3733,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
     { id: "pursuits",         icon: "⬡", label: "Pursuits / Pipeline" },
     { id: "finance", type: "group", icon: "⬡", label: "Finance", children: [{ id: "pl-reports", icon: "⬡", label: "P&L Reports" }, { id: "financial", icon: "⬡", label: "Financial Performance" }, { id: "cash-statement", icon: "⬡", label: "Cash Statement" }] },
     { id: "marketing", type: "group", icon: "⬡", label: "Marketing", children: [{ id: "admissions", icon: "⬡", label: "Applications" }, { id: "coe", icon: "⬡", label: "COE" }] },
+    { id: "trainer-attendance", icon: "⬡", label: "Trainer Attendance" },
     { id: "leaderboard",      icon: "⬡", label: "Leaderboard"       },
     { id: "users",            icon: "⬡", label: "User Management"   },
     { id: "email-templates",  icon: "⬡", label: "Email Templates"   },
@@ -8440,6 +8441,8 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
           );
         })()}
 
+        {page === "trainer-attendance" && <TrainerAttendancePage />}
+
         {page === "login-logs" && (() => {
           const now = new Date();
           const filtered = loginLogs.filter(log => {
@@ -9989,6 +9992,241 @@ function unverifiedNumbers(text, facts) {
 const FP_SECTIONS = [["observations", "Key observations", 4], ["drivers", "What drove it", 3], ["watch", "Watch", 2]];
 const fpToLines = text => String(text || "").split("\n").map(s => s.replace(/^[\s•\-*]+/, "").trim()).filter(Boolean);
 const fpHasText = e => !!e && FP_SECTIONS.some(([k]) => fpToLines(e[k]).length);
+
+/* ─────────────────────────────────────────────────────────────
+   TRAINER ATTENDANCE (admin) — HSP/PSP attendance from the Charlton Brown portal, read through /api/attendance
+   ───────────────────────────────────────────────────────────────── */
+const ATT_GOOD = 90, ATT_WARN = 80, ATT_GAP = 5;
+function attStatus(rate) { return rate == null ? null : rate >= ATT_GOOD ? "green" : rate >= ATT_WARN ? "yellow" : "red"; }
+function attRate(num, den) { return den > 0 ? Math.round(num / den * 1000) / 10 : null; }
+// Sessions scheduled but never marked show up as a gap between the two rates
+function attHasGap(r) { return r.attendanceRatePct != null && r.markedRatePct != null && r.markedRatePct - r.attendanceRatePct >= ATT_GAP; }
+function attPresetRange(id, today = new Date()) {
+  const y = today.getFullYear(), m = today.getMonth();
+  if (id === "this-month") return [localDateKey(new Date(y, m, 1)), localDateKey(today)];
+  if (id === "last-month") return [localDateKey(new Date(y, m - 1, 1)), localDateKey(new Date(y, m, 0))];
+  if (id === "last-30") return [localDateKey(new Date(y, m, today.getDate() - 29)), localDateKey(today)];
+  if (id === "this-year") return [localDateKey(new Date(y, 0, 1)), localDateKey(today)];
+  return null;
+}
+// Adds up classes first, then works out the rates (the portal's rule for trainer figures)
+function attRollUp(classes) {
+  const t = classes.reduce((s, c) => ({
+    studentCount: s.studentCount + (c.studentCount || 0),
+    sessionsPresent: s.sessionsPresent + (c.sessionsPresent || 0), sessionsScheduled: s.sessionsScheduled + (c.sessionsScheduled || 0),
+    sessionsMarkedPresent: s.sessionsMarkedPresent + (c.sessionsMarkedPresent || 0), sessionsMarkedAbsent: s.sessionsMarkedAbsent + (c.sessionsMarkedAbsent || 0),
+  }), { studentCount: 0, sessionsPresent: 0, sessionsScheduled: 0, sessionsMarkedPresent: 0, sessionsMarkedAbsent: 0 });
+  return { ...t, classCount: classes.length,
+    attendanceRatePct: attRate(t.sessionsPresent, t.sessionsScheduled),
+    markedRatePct: attRate(t.sessionsMarkedPresent, t.sessionsMarkedPresent + t.sessionsMarkedAbsent) };
+}
+
+function TrainerAttendancePage() {
+  const { isMobile } = useContext(MobileContext);
+  const [preset, setPreset] = useState("this-month");
+  const [range, setRange] = useState(() => attPresetRange("this-month"));
+  const [draft, setDraft] = useState(() => attPresetRange("this-month"));
+  const [reload, setReload] = useState(0);
+  // The latest answer, tagged with the request it belongs to; loading = no answer yet for the current request
+  const [result, setResult] = useState(null);
+  const reqKey = range[0] + "|" + range[1] + "|" + reload;
+  const loading = !result || result.key !== reqKey;
+  const data = result?.data || null;
+  const error = result && result.key === reqKey ? result.error : null;
+  const [program, setProgram] = useState("all");
+  const [campus, setCampus] = useState("all");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState({ key: "attendanceRatePct", dir: 1 });
+  const [open, setOpen] = useState(() => new Set());
+
+  useEffect(() => {
+    let alive = true;
+    const key = range[0] + "|" + range[1] + "|" + reload;
+    apiFetch(`/api/attendance?from=${range[0]}&to=${range[1]}`)
+      .then(async res => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+        if (alive) setResult({ key, data: body, error: null });
+      })
+      .catch(err => { if (alive) setResult({ key, data: null, error: err.message }); });
+    return () => { alive = false; };
+  }, [range, reload]);
+
+  const choosePreset = id => { const r = attPresetRange(id); setPreset(id); setDraft(r); setRange(r); };
+  const draftOk = /^\d{4}-\d{2}-\d{2}$/.test(draft[0]) && /^\d{4}-\d{2}-\d{2}$/.test(draft[1]) && draft[0] <= draft[1];
+  const applyDraft = () => { if (draftOk) { setPreset("custom"); setRange([...draft]); } };
+
+  const classes = data?.classes || [];
+  const programs = [...new Set(classes.map(c => c.program).filter(Boolean))].sort();
+  const campuses = [...new Set(classes.map(c => c.campus).filter(Boolean))].sort();
+  const filtering = program !== "all" || campus !== "all";
+  const shownClasses = classes.filter(c => (program === "all" || c.program === program) && (campus === "all" || c.campus === campus));
+  const classesOf = id => shownClasses.filter(c => c.trainerId === id);
+  // With a programme or campus filter, trainer figures are rebuilt from just the matching classes
+  const trainers = (filtering
+    ? [...new Set(shownClasses.map(c => c.trainerId))].map(id => ({ trainerId: id, trainerName: shownClasses.find(c => c.trainerId === id)?.trainerName, ...attRollUp(classesOf(id)) }))
+    : (data?.trainers || []))
+    .filter(t => !search.trim() || String(t.trainerName || "").toLowerCase().includes(search.trim().toLowerCase()));
+  const sorted = [...trainers].sort((a, b) => {
+    const va = a[sort.key], vb = b[sort.key];
+    if (va == null && vb == null) return String(a.trainerName).localeCompare(String(b.trainerName));
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    const c = typeof va === "string" ? va.localeCompare(vb) : va - vb;
+    return c * sort.dir || String(a.trainerName).localeCompare(String(b.trainerName));
+  });
+  const visibleIds = new Set(trainers.map(t => t.trainerId));
+  const kpi = attRollUp(shownClasses.filter(c => visibleIds.has(c.trainerId)));
+  const noRecord = shownClasses.filter(c => visibleIds.has(c.trainerId) && c.noAttendanceRecorded).length;
+  const gapCount = trainers.filter(attHasGap).length;
+
+  const pct = v => (v == null ? "No data" : `${v}%`);
+  const toggle = id => setOpen(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const sortBy = key => setSort(s => (s.key === key ? { key, dir: -s.dir } : { key, dir: key === "trainerName" ? 1 : key === "attendanceRatePct" || key === "markedRatePct" ? 1 : -1 }));
+
+  const exportCsv = () => {
+    const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const head = ["Row", "Trainer", "Program", "Campus", "Level group", "Classes", "Students", "Sessions present", "Sessions scheduled", "Attendance rate %", "Marked present", "Marked absent", "Marked rate %", "Counted from", "Note"];
+    const rows = [];
+    sorted.forEach(t => {
+      rows.push(["Trainer", t.trainerName, "", "", "", t.classCount, t.studentCount, t.sessionsPresent, t.sessionsScheduled, t.attendanceRatePct, t.sessionsMarkedPresent, t.sessionsMarkedAbsent, t.markedRatePct, "", attHasGap(t) ? "Unmarked sessions" : ""]);
+      classesOf(t.trainerId).forEach(c => rows.push(["Class", c.trainerName, c.program, c.campus, c.levelGroup, 1, c.studentCount, c.sessionsPresent, c.sessionsScheduled, c.attendanceRatePct, c.sessionsMarkedPresent, c.sessionsMarkedAbsent, c.markedRatePct, c.countedFrom, c.noAttendanceRecorded ? "No attendance recorded" : attHasGap(c) ? "Unmarked sessions" : ""]));
+    });
+    const csv = [head, ...rows].map(r => r.map(q).join(",")).join("\n");
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })), download: `trainer-attendance_${range[0]}_to_${range[1]}.csv` });
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  const sel = { padding: "8px 10px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 13, fontFamily: F.body };
+  const th = { padding: "10px 12px", textAlign: "left", borderBottom: `2px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", background: T.raised };
+  const td = { padding: "10px 12px", borderBottom: `1px solid ${T.border}`, fontSize: 13, verticalAlign: "middle" };
+  const sortTh = (key, label, right) => (
+    <th style={{ ...th, textAlign: right ? "right" : "left", cursor: "pointer", userSelect: "none" }} onClick={() => sortBy(key)} aria-sort={sort.key === key ? (sort.dir > 0 ? "ascending" : "descending") : "none"}>
+      {label}{sort.key === key ? (sort.dir > 0 ? " ▲" : " ▼") : ""}
+    </th>
+  );
+  const rateCell = (v, bar) => {
+    const st = attStatus(v), col = st ? STATUS_THEME[st].color : T.textMuted;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: bar ? "flex-start" : "flex-end" }}>
+        {bar && <div style={{ width: 90, height: 8, background: T.raised, borderRadius: 4, overflow: "hidden", flexShrink: 0 }}><div style={{ width: `${Math.max(0, Math.min(100, v || 0))}%`, height: "100%", background: col }} /></div>}
+        <span style={{ fontFamily: F.mono, fontWeight: 700, color: col, minWidth: 54, textAlign: "right" }}>{pct(v)}</span>
+      </div>
+    );
+  };
+  const chip = (text, color, bg) => <span style={{ fontSize: 11, fontWeight: 700, color, background: bg, borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap" }}>{text}</span>;
+  const PRESETS = [["this-month", "This month"], ["last-month", "Last month"], ["last-30", "Last 30 days"], ["this-year", "This year"]];
+
+  return (<>
+    <Header title="Trainer Attendance" sub="HSP / PSP attendance by trainer and class — from the Charlton Brown attendance portal"
+      right={<div style={{ display: "flex", gap: 8 }}>
+        <Btn small onClick={() => setReload(n => n + 1)} disabled={loading}>{loading ? "Loading…" : "↻ Refresh"}</Btn>
+        <Btn small onClick={exportCsv} disabled={!sorted.length}>Export CSV</Btn>
+      </div>} />
+    <Pane>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {PRESETS.map(([id, label]) => <Btn key={id} small primary={preset === id} onClick={() => choosePreset(id)}>{label}</Btn>)}
+        <span style={{ width: 8 }} />
+        <label style={{ fontSize: 12, color: T.textMuted }}>From <input type="date" value={draft[0]} onChange={e => setDraft([e.target.value, draft[1]])} style={sel} /></label>
+        <label style={{ fontSize: 12, color: T.textMuted }}>To <input type="date" value={draft[1]} onChange={e => setDraft([draft[0], e.target.value])} style={sel} /></label>
+        <Btn small primary={preset === "custom"} onClick={applyDraft} disabled={!draftOk || (draft[0] === range[0] && draft[1] === range[1])}>Apply</Btn>
+        {!draftOk && <span style={{ fontSize: 12, color: T.bad }}>The end date must be on or after the start date.</span>}
+      </div>
+
+      {error && <div style={{ padding: "12px 16px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 10, fontSize: 13, color: T.bad, lineHeight: 1.5 }}>{error}</div>}
+      {loading && !data && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading attendance from the portal…</div>}
+
+      {data && (<>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Metric label="Attendance rate" value={pct(kpi.attendanceRatePct)} sub={`${kpi.sessionsPresent.toLocaleString()} of ${kpi.sessionsScheduled.toLocaleString()} sessions`} status={attStatus(kpi.attendanceRatePct)} />
+          <Metric label="Marked rate" value={pct(kpi.markedRatePct)} sub="marked sessions only" status={attStatus(kpi.markedRatePct)} />
+          <Metric label="Trainers" value={trainers.length} sub={gapCount ? `${gapCount} with unmarked sessions` : "all rolls marked"} />
+          <Metric label="Students" value={kpi.studentCount} sub={`${kpi.classCount} classes`} />
+          <Metric label="No attendance yet" value={noRecord} sub="classes never marked" status={noRecord ? "yellow" : undefined} />
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <select value={program} onChange={e => setProgram(e.target.value)} style={sel} aria-label="Program">
+            <option value="all">All programs</option>{programs.map(p => <option key={p} value={p}>{p.replace("_", " + ")}</option>)}
+          </select>
+          <select value={campus} onChange={e => setCampus(e.target.value)} style={sel} aria-label="Campus">
+            <option value="all">All campuses</option>{campuses.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search trainer…" style={{ fontSize: 13, padding: "8px 12px", width: isMobile ? "100%" : 220 }} />
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 12, color: T.textMuted }}>
+            {data.from} to {data.to}{data.generatedAt ? ` · read ${new Date(data.generatedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}
+          </span>
+        </div>
+
+        {!sorted.length
+          ? <EmptyState text={classes.length ? "No trainers match these filters." : "The portal returned no classes for this period."} />
+          : (
+            <div style={{ overflowX: "auto", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+                <thead><tr>
+                  {sortTh("trainerName", "Trainer")}
+                  {sortTh("classCount", "Classes", true)}
+                  {sortTh("studentCount", "Students", true)}
+                  {sortTh("attendanceRatePct", "Attendance rate")}
+                  {sortTh("markedRatePct", "Marked rate", true)}
+                  <th style={th}>Flags</th>
+                </tr></thead>
+                <tbody>
+                  {sorted.map(t => {
+                    const isOpen = open.has(t.trainerId), own = classesOf(t.trainerId);
+                    return (
+                      <Fragment key={t.trainerId}>
+                        <tr onClick={() => toggle(t.trainerId)} style={{ cursor: "pointer", background: isOpen ? T.raised : "transparent" }}>
+                          <td style={{ ...td, fontWeight: 600 }}><span style={{ display: "inline-block", width: 16, color: T.textMuted }}>{isOpen ? "▾" : "▸"}</span>{t.trainerName || "—"}</td>
+                          <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.classCount}</td>
+                          <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.studentCount}</td>
+                          <td style={td}>{rateCell(t.attendanceRatePct, true)}</td>
+                          <td style={td}>{rateCell(t.markedRatePct, false)}</td>
+                          <td style={td}>
+                            {t.attendanceRatePct == null && chip("No data", T.textMuted, T.raised)}
+                            {attHasGap(t) && chip("Unmarked sessions", T.warn, T.warnDim)}
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr><td colSpan={6} style={{ padding: "4px 12px 14px 40px", background: T.raised, borderBottom: `1px solid ${T.border}` }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, borderRadius: 8 }}>
+                              <thead><tr>{["Program", "Campus", "Level", "Students", "Attendance", "Marked", "Counted from", ""].map((h, i) => <th key={i} style={{ ...th, background: "transparent", textAlign: i >= 3 && i <= 5 ? "right" : "left" }}>{h}</th>)}</tr></thead>
+                              <tbody>
+                                {own.map((c, i) => (
+                                  <tr key={i}>
+                                    <td style={td}>{String(c.program || "—").replace("_", " + ")}</td>
+                                    <td style={td}>{c.campus || "—"}</td>
+                                    <td style={td}>{c.levelGroup || "—"}</td>
+                                    <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{c.studentCount}</td>
+                                    <td style={td}>{rateCell(c.attendanceRatePct, false)}</td>
+                                    <td style={td}>{rateCell(c.markedRatePct, false)}</td>
+                                    <td style={{ ...td, color: T.textMuted }}>{c.countedFrom || "—"}</td>
+                                    <td style={td}>
+                                      {c.noAttendanceRecorded ? chip("No attendance recorded", T.textMuted, T.raised) : attHasGap(c) ? chip("Unmarked sessions", T.warn, T.warnDim) : null}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {!own.length && <tr><td colSpan={8} style={{ ...td, color: T.textMuted }}>No classes for this trainer in the current filter.</td></tr>}
+                              </tbody>
+                            </table>
+                          </td></tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>
+          Sessions 1–3 only; Late and Excursion count as present; public holidays are left out. Attendance rate counts a scheduled session nobody marked against the class; marked rate uses only marked sessions, so a gap of {ATT_GAP}+ points means rolls were missed.
+          Colours: {ATT_GOOD}%+ green, {ATT_WARN}–{ATT_GOOD}% amber, below {ATT_WARN}% red. Each student counts from the later of their start date and the class's first marked day.
+        </div>
+      </>)}
+    </Pane>
+  </>);
+}
 
 function FinancePackReview({ plRecords, cashRecords, user, onClose }) {
   const pack = useMemo(() => generateFinancePack({ plRecords, cashRecords }), [plRecords, cashRecords]);

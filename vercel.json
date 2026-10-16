@@ -11,6 +11,9 @@
     },
     "api/finance-commentary.js": {
       "maxDuration": 60
+    },
+    "api/attendance.js": {
+      "maxDuration": 30
     }
   }
 }
