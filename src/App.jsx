@@ -10059,8 +10059,10 @@ function TrainerAttendancePage() {
   const classes = data?.classes || [];
   const programs = [...new Set(classes.map(c => c.program).filter(Boolean))].sort();
   const campuses = [...new Set(classes.map(c => c.campus).filter(Boolean))].sort();
-  const filtering = program !== "all" || campus !== "all";
-  const shownClasses = classes.filter(c => (program === "all" || c.program === program) && (campus === "all" || c.campus === campus));
+  // A programme or campus that isn't in this period's data falls back to "all"
+  const progSel = programs.includes(program) ? program : "all", campSel = campuses.includes(campus) ? campus : "all";
+  const filtering = progSel !== "all" || campSel !== "all";
+  const shownClasses = classes.filter(c => (progSel === "all" || c.program === progSel) && (campSel === "all" || c.campus === campSel));
   const classesOf = id => shownClasses.filter(c => c.trainerId === id);
   // With a programme or campus filter, trainer figures are rebuilt from just the matching classes
   const trainers = (filtering
@@ -10108,20 +10110,28 @@ function TrainerAttendancePage() {
   const rateCell = (v, bar) => {
     const st = attStatus(v), col = st ? STATUS_THEME[st].color : T.textMuted;
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: bar ? "flex-start" : "flex-end" }}>
-        {bar && <div style={{ width: 90, height: 8, background: T.raised, borderRadius: 4, overflow: "hidden", flexShrink: 0 }}><div style={{ width: `${Math.max(0, Math.min(100, v || 0))}%`, height: "100%", background: col }} /></div>}
-        <span style={{ fontFamily: F.mono, fontWeight: 700, color: col, minWidth: 54, textAlign: "right" }}>{pct(v)}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
+        {bar && <div style={{ flex: 1, maxWidth: 120, height: 8, background: T.raised, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${Math.max(0, Math.min(100, v || 0))}%`, height: "100%", background: col }} /></div>}
+        <span style={{ fontFamily: F.mono, fontWeight: 700, color: col, width: 64, textAlign: "right", flexShrink: 0 }}>{pct(v)}</span>
       </div>
     );
   };
   const chip = (text, color, bg) => <span style={{ fontSize: 11, fontWeight: 700, color, background: bg, borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap" }}>{text}</span>;
   const PRESETS = [["this-month", "This month"], ["last-month", "Last month"], ["last-30", "Last 30 days"], ["this-year", "This year"]];
+  const fmtDay = (s, withYear) => new Date(s + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
+  const rangeLabel = r => (r[0].slice(0, 4) === r[1].slice(0, 4) ? `${fmtDay(r[0])} – ${fmtDay(r[1], true)}` : `${fmtDay(r[0], true)} – ${fmtDay(r[1], true)}`);
+  const presetName = (PRESETS.find(([id]) => id === preset) || [])[1];
+  const loadingText = `Loading ${presetName ? presetName.toLowerCase() + " (" + rangeLabel(range) + ")" : rangeLabel(range)}…`;
+  const spinner = <span className="att-spin" aria-hidden="true" style={{ width: 22, height: 22, border: `3px solid ${T.brandBorder}`, borderTopColor: T.brand, borderRadius: "50%", display: "inline-block", animation: "attspin 0.8s linear infinite", flexShrink: 0 }} />;
+  // Same columns for trainer rows and their class rows, so everything lines up
+  const COLS = ["34%", "9%", "9%", "24%", "10%", "14%"];
 
   return (<>
+    <style>{"@keyframes attspin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.att-spin{animation:none!important}}"}</style>
     <Header title="Trainer Attendance" sub="HSP / PSP attendance by trainer and class — from the Charlton Brown attendance portal"
       right={<div style={{ display: "flex", gap: 8 }}>
         <Btn small onClick={() => setReload(n => n + 1)} disabled={loading}>{loading ? "Loading…" : "↻ Refresh"}</Btn>
-        <Btn small onClick={exportCsv} disabled={!sorted.length}>Export CSV</Btn>
+        <Btn small onClick={exportCsv} disabled={loading || !sorted.length}>Export CSV</Btn>
       </div>} />
     <Pane>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -10133,97 +10143,99 @@ function TrainerAttendancePage() {
         {!draftOk && <span style={{ fontSize: 12, color: T.bad }}>The end date must be on or after the start date.</span>}
       </div>
 
-      {error && <div style={{ padding: "12px 16px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 10, fontSize: 13, color: T.bad, lineHeight: 1.5 }}>{error}</div>}
-      {loading && !data && <div style={{ padding: 32, textAlign: "center", color: T.textMuted, fontSize: 14 }}>Loading attendance from the portal…</div>}
+      {error && <div role="alert" style={{ padding: "12px 16px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 10, fontSize: 13, color: T.bad, lineHeight: 1.5, maxWidth: 1100 }}>{error}</div>}
 
-      {data && (<>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Metric label="Attendance rate" value={pct(kpi.attendanceRatePct)} sub={`${kpi.sessionsPresent.toLocaleString()} of ${kpi.sessionsScheduled.toLocaleString()} sessions`} status={attStatus(kpi.attendanceRatePct)} />
-          <Metric label="Marked rate" value={pct(kpi.markedRatePct)} sub="marked sessions only" status={attStatus(kpi.markedRatePct)} />
-          <Metric label="Trainers" value={trainers.length} sub={gapCount ? `${gapCount} with unmarked sessions` : "all rolls marked"} />
-          <Metric label="Students" value={kpi.studentCount} sub={`${kpi.classCount} classes`} />
-          <Metric label="No attendance yet" value={noRecord} sub="classes never marked" status={noRecord ? "yellow" : undefined} />
-        </div>
-
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={program} onChange={e => setProgram(e.target.value)} style={sel} aria-label="Program">
-            <option value="all">All programs</option>{programs.map(p => <option key={p} value={p}>{p.replace("_", " + ")}</option>)}
-          </select>
-          <select value={campus} onChange={e => setCampus(e.target.value)} style={sel} aria-label="Campus">
-            <option value="all">All campuses</option>{campuses.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search trainer…" style={{ fontSize: 13, padding: "8px 12px", width: isMobile ? "100%" : 220 }} />
-          <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: T.textMuted }}>
-            {data.from} to {data.to}{data.generatedAt ? ` · read ${new Date(data.generatedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}
-          </span>
-        </div>
-
-        {!sorted.length
-          ? <EmptyState text={classes.length ? "No trainers match these filters." : "The portal returned no classes for this period."} />
-          : (
-            <div style={{ overflowX: "auto", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
-                <thead><tr>
-                  {sortTh("trainerName", "Trainer")}
-                  {sortTh("classCount", "Classes", true)}
-                  {sortTh("studentCount", "Students", true)}
-                  {sortTh("attendanceRatePct", "Attendance rate")}
-                  {sortTh("markedRatePct", "Marked rate", true)}
-                  <th style={th}>Flags</th>
-                </tr></thead>
-                <tbody>
-                  {sorted.map(t => {
-                    const isOpen = open.has(t.trainerId), own = classesOf(t.trainerId);
-                    return (
-                      <Fragment key={t.trainerId}>
-                        <tr onClick={() => toggle(t.trainerId)} style={{ cursor: "pointer", background: isOpen ? T.raised : "transparent" }}>
-                          <td style={{ ...td, fontWeight: 600 }}><span style={{ display: "inline-block", width: 16, color: T.textMuted }}>{isOpen ? "▾" : "▸"}</span>{t.trainerName || "—"}</td>
-                          <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.classCount}</td>
-                          <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.studentCount}</td>
-                          <td style={td}>{rateCell(t.attendanceRatePct, true)}</td>
-                          <td style={td}>{rateCell(t.markedRatePct, false)}</td>
-                          <td style={td}>
-                            {t.attendanceRatePct == null && chip("No data", T.textMuted, T.raised)}
-                            {attHasGap(t) && chip("Unmarked sessions", T.warn, T.warnDim)}
-                          </td>
-                        </tr>
-                        {isOpen && (
-                          <tr><td colSpan={6} style={{ padding: "4px 12px 14px 40px", background: T.raised, borderBottom: `1px solid ${T.border}` }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", background: T.surface, borderRadius: 8 }}>
-                              <thead><tr>{["Program", "Campus", "Level", "Students", "Attendance", "Marked", "Counted from", ""].map((h, i) => <th key={i} style={{ ...th, background: "transparent", textAlign: i >= 3 && i <= 5 ? "right" : "left" }}>{h}</th>)}</tr></thead>
-                              <tbody>
-                                {own.map((c, i) => (
-                                  <tr key={i}>
-                                    <td style={td}>{String(c.program || "—").replace("_", " + ")}</td>
-                                    <td style={td}>{c.campus || "—"}</td>
-                                    <td style={td}>{c.levelGroup || "—"}</td>
-                                    <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{c.studentCount}</td>
-                                    <td style={td}>{rateCell(c.attendanceRatePct, false)}</td>
-                                    <td style={td}>{rateCell(c.markedRatePct, false)}</td>
-                                    <td style={{ ...td, color: T.textMuted }}>{c.countedFrom || "—"}</td>
-                                    <td style={td}>
-                                      {c.noAttendanceRecorded ? chip("No attendance recorded", T.textMuted, T.raised) : attHasGap(c) ? chip("Unmarked sessions", T.warn, T.warnDim) : null}
-                                    </td>
-                                  </tr>
-                                ))}
-                                {!own.length && <tr><td colSpan={8} style={{ ...td, color: T.textMuted }}>No classes for this trainer in the current filter.</td></tr>}
-                              </tbody>
-                            </table>
-                          </td></tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+      <div style={{ position: "relative", maxWidth: 1100, width: "100%", minHeight: loading ? 240 : 0 }} aria-busy={loading}>
+        {loading && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", justifyContent: "center", alignItems: "flex-start", background: data ? "rgba(245,245,247,0.45)" : "transparent", borderRadius: 12 }}>
+            <div role="status" style={{ position: "sticky", top: 120, marginTop: 70, display: "flex", alignItems: "center", gap: 12, padding: "14px 22px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, boxShadow: T.shadow, fontSize: 14, fontWeight: 600, color: T.text }}>
+              {spinner}{loadingText}
             </div>
-          )}
-        <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>
-          Sessions 1–3 only; Late and Excursion count as present; public holidays are left out. Attendance rate counts a scheduled session nobody marked against the class; marked rate uses only marked sessions, so a gap of {ATT_GAP}+ points means rolls were missed.
-          Colours: {ATT_GOOD}%+ green, {ATT_WARN}–{ATT_GOOD}% amber, below {ATT_WARN}% red. Each student counts from the later of their start date and the class's first marked day.
-        </div>
-      </>)}
+          </div>
+        )}
+        {data && (
+          <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 24, opacity: loading ? 0.4 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Metric label="Attendance rate" value={pct(kpi.attendanceRatePct)} sub={`${kpi.sessionsPresent.toLocaleString()} of ${kpi.sessionsScheduled.toLocaleString()} sessions`} status={attStatus(kpi.attendanceRatePct)} />
+              <Metric label="Marked rate" value={pct(kpi.markedRatePct)} sub="marked sessions only" status={attStatus(kpi.markedRatePct)} />
+              <Metric label="Trainers" value={trainers.length} sub={gapCount ? `${gapCount} with unmarked sessions` : "all rolls marked"} />
+              <Metric label="Students" value={kpi.studentCount} sub={`${kpi.classCount} classes`} />
+              <Metric label="No attendance yet" value={noRecord} sub="classes never marked" status={noRecord ? "yellow" : undefined} />
+            </div>
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <select value={progSel} onChange={e => setProgram(e.target.value)} style={sel} aria-label="Program">
+                <option value="all">All programs</option>{programs.map(p => <option key={p} value={p}>{p.replace("_", " + ")}</option>)}
+              </select>
+              <select value={campSel} onChange={e => setCampus(e.target.value)} style={sel} aria-label="Campus">
+                <option value="all">All campuses</option>{campuses.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search trainer…" style={{ fontSize: 13, padding: "8px 12px", width: isMobile ? "100%" : 220 }} />
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 12, color: T.textMuted }}>
+                {rangeLabel([data.from, data.to])}{data.generatedAt ? ` · read ${new Date(data.generatedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}
+              </span>
+            </div>
+
+            {!sorted.length
+              ? <EmptyState text={classes.length ? "No trainers match these filters." : "The portal returned no classes for this period."} />
+              : (
+                <div style={{ overflowX: "auto", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+                  <table style={{ width: "100%", minWidth: 820, borderCollapse: "collapse", tableLayout: "fixed" }}>
+                    <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
+                    <thead><tr>
+                      {sortTh("trainerName", "Trainer / class")}
+                      {sortTh("classCount", "Classes", true)}
+                      {sortTh("studentCount", "Students", true)}
+                      {sortTh("attendanceRatePct", "Attendance rate", true)}
+                      {sortTh("markedRatePct", "Marked", true)}
+                      <th style={th}>Flags</th>
+                    </tr></thead>
+                    <tbody>
+                      {sorted.map(t => {
+                        const isOpen = open.has(t.trainerId), own = classesOf(t.trainerId);
+                        return (
+                          <Fragment key={t.trainerId}>
+                            <tr onClick={() => toggle(t.trainerId)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(t.trainerId); } }} tabIndex={0} aria-expanded={isOpen}
+                              style={{ cursor: "pointer", background: isOpen ? T.raised : "transparent" }}>
+                              <td style={{ ...td, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ display: "inline-block", width: 18, color: T.textMuted }}>{isOpen ? "▾" : "▸"}</span>{t.trainerName || "—"}</td>
+                              <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.classCount}</td>
+                              <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.studentCount}</td>
+                              <td style={td}>{rateCell(t.attendanceRatePct, true)}</td>
+                              <td style={td}>{rateCell(t.markedRatePct, false)}</td>
+                              <td style={td}>
+                                {t.attendanceRatePct == null && chip("No data", T.textMuted, T.raised)}
+                                {attHasGap(t) && chip("Unmarked sessions", T.warn, T.warnDim)}
+                              </td>
+                            </tr>
+                            {isOpen && own.map((c, i) => (
+                              <tr key={i} style={{ background: T.bgSoft }}>
+                                <td style={{ ...td, paddingLeft: 42 }}>
+                                  <div style={{ color: T.text }}>{[String(c.program || "—").replace("_", " + "), c.campus, c.levelGroup ? "Level " + c.levelGroup : null].filter(Boolean).join(" · ")}</div>
+                                  <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 2 }}>{c.noAttendanceRecorded ? "No attendance recorded yet" : c.countedFrom ? "Counted from " + fmtDay(c.countedFrom, true) : ""}</div>
+                                </td>
+                                <td style={td} />
+                                <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{c.studentCount}</td>
+                                <td style={td}>{rateCell(c.attendanceRatePct, true)}</td>
+                                <td style={td}>{rateCell(c.markedRatePct, false)}</td>
+                                <td style={td}>{c.noAttendanceRecorded ? chip("No data", T.textMuted, T.raised) : attHasGap(c) ? chip("Unmarked sessions", T.warn, T.warnDim) : null}</td>
+                              </tr>
+                            ))}
+                            {isOpen && !own.length && <tr style={{ background: T.bgSoft }}><td colSpan={6} style={{ ...td, paddingLeft: 42, color: T.textMuted }}>No classes for this trainer in the current filter.</td></tr>}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>
+              Sessions 1–3 only; Late and Excursion count as present; public holidays are left out. Attendance rate counts a scheduled session nobody marked against the class; marked rate uses only marked sessions, so a gap of {ATT_GAP}+ points means rolls were missed.
+              Colours: {ATT_GOOD}%+ green, {ATT_WARN}–{ATT_GOOD}% amber, below {ATT_WARN}% red. Each student counts from the later of their start date and the class's first marked day.
+            </div>
+          </div>
+        )}
+      </div>
     </Pane>
   </>);
 }
