@@ -2968,39 +2968,76 @@ function pilotProjectSection({ projects, users, depts, fmtMoney }) {
 
 // NIET Pilot context — Pursuits / Pipeline. Same figures as the Pursuits page: weighted value counts a pursuit
 // without a probability at full value. allowed=false sends nothing but a note, so the Pilot can't reveal any of it.
-function pilotPursuitSection({ pursuits, users, depts, fmtMoney, allowed }) {
+// Dates are YYYY-MM-DD; a pursuit never edited has no updatedDate, so its start date counts as the last activity.
+const PURSUIT_STALE_DAYS = 30, PURSUIT_DUE_SOON_DAYS = 14;
+function pilotPursuitSection({ pursuits, users, depts, fmtMoney, allowed, today = new Date() }) {
   if (!allowed) return "PURSUITS / PIPELINE: not available — this user does not have Pursuits / Pipeline access. If asked about pursuits or the pipeline, say so and do not guess.";
+  const day0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const daysFrom = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "")); return m ? Math.round((new Date(+m[1], +m[2] - 1, +m[3]) - day0) / 86400000) : null; };
   const outcomeOf = p => p.outcome || "active";
   const active = pursuits.filter(p => outcomeOf(p) === "active");
   const closed = o => pursuits.filter(p => outcomeOf(p) === o);
   const won = closed("won"), lost = closed("lost"), deferred = closed("deferred");
+  const hasVal = p => p.estimatedValue != null && p.estimatedValue !== "";
+  const hasProb = p => p.probability != null && p.probability !== "";
   const val = p => Number(p.estimatedValue) || 0;
-  const weighted = p => val(p) * (p.probability != null && p.probability !== "" ? Number(p.probability) / 100 : 1);
+  const weighted = p => val(p) * (hasProb(p) ? Number(p.probability) / 100 : 1);
   const sum = (arr, fn = val) => arr.reduce((t, p) => t + fn(p), 0);
   const owner = p => users.find(u => u.id === p.mgrId);
   const deptOf = p => { const o = owner(p); return o ? (depts.find(d => d.id === o.deptId)?.name || "—") : "—"; };
   const stageLabel = id => (PURSUIT_STAGES.find(st => st.id === (id || "opportunity")) || PURSUIT_STAGES[0]).label;
+  const lastActivity = p => p.updatedDate || p.startDate || "";
+  const flags = p => {
+    const f = [], toDeadline = daysFrom(p.deadline), idle = daysFrom(lastActivity(p));
+    if (p.deadline && isPastDue(p.deadline)) f.push(["OVERDUE", `deadline ${p.deadline} passed`]);
+    else if (toDeadline != null && toDeadline <= PURSUIT_DUE_SOON_DAYS) f.push(["DUE SOON", toDeadline === 0 ? "deadline is today" : `deadline in ${toDeadline} day${toDeadline === 1 ? "" : "s"}`]);
+    if (idle != null && -idle > PURSUIT_STALE_DAYS) f.push(["STALE", `no update for ${-idle} days`]);
+    if (!hasVal(p)) f.push(["NO VALUE", "no estimated value"]);
+    if (!hasProb(p)) f.push(["NO PROBABILITY", "no probability"]);
+    return f;
+  };
   const line = p => {
+    const age = daysFrom(p.startDate), idle = daysFrom(lastActivity(p)), toDeadline = daysFrom(p.deadline);
     let l = `  "${p.name}" | ${deptOf(p)} | Owner: ${owner(p)?.name || "—"} | Stage: ${stageLabel(p.stage)}`;
-    l += ` | Est. value: ${p.estimatedValue != null && p.estimatedValue !== "" ? fmtMoney(val(p)) : "not set"}`;
-    if (p.probability != null && p.probability !== "") l += ` | Probability: ${p.probability}% | Weighted: ${fmtMoney(Math.round(weighted(p)))}`;
-    l += ` | Deadline: ${p.deadline || "none"}${outcomeOf(p) === "active" && isPastDue(p.deadline) ? " [OVERDUE]" : ""}`;
-    if (p.nextAction) l += ` | Next action: ${String(p.nextAction).slice(0, 120)}`;
-    if (p.notes) l += `\n    Notes: ${String(p.notes).slice(0, 100)}${String(p.notes).length > 100 ? "…" : ""}`;
+    l += ` | Est. value: ${hasVal(p) ? fmtMoney(val(p)) : "not set"}`;
+    l += hasProb(p) ? ` | Probability: ${p.probability}% | Weighted: ${fmtMoney(Math.round(weighted(p)))}` : " | Probability: not set";
+    l += ` | Deadline: ${p.deadline || "none"}${toDeadline != null && !isPastDue(p.deadline) ? ` (in ${toDeadline} days)` : ""}`;
+    l += ` | Started: ${p.startDate || "unknown"}${age != null ? ` (${-age} days ago)` : ""}`;
+    l += ` | Last updated: ${p.updatedDate || "never"}${p.updatedDate && idle != null ? ` (${-idle} days ago)` : ""}`;
+    const tags = flags(p).map(([t]) => `[${t}]`).join(" ");
+    if (tags) l += ` ${tags}`;
+    if (p.nextAction) l += `\n    Next action: ${String(p.nextAction).slice(0, 200)}`;
+    if (p.notes) l += `\n    Notes: ${String(p.notes).slice(0, 300)}${String(p.notes).length > 300 ? "…" : ""}`;
     return l;
   };
-  const brief = arr => arr.slice(0, 20).map(p => `"${p.name}" (${p.estimatedValue != null && p.estimatedValue !== "" ? fmtMoney(val(p)) : "no value"}, ${deptOf(p)})`).join(", ") + (arr.length > 20 ? `, and ${arr.length - 20} more` : "");
+  const closedDate = p => p.updatedDate || p.startDate || "";
+  const closedList = (label, arr) => arr.length
+    ? `${label} (${arr.length}, newest first):\n` + [...arr].sort((a, b) => closedDate(b).localeCompare(closedDate(a))).slice(0, 20)
+      .map(p => `  "${p.name}" | ${hasVal(p) ? fmtMoney(val(p)) : "no value"} | ${deptOf(p)} | Owner: ${owner(p)?.name || "—"} | Closed: ${closedDate(p) || "unknown"}`).join("\n")
+      + (arr.length > 20 ? `\n  …and ${arr.length - 20} more` : "")
+    : "";
   const decided = won.length + lost.length;
-  const byStage = PURSUIT_STAGES.map(st => { const items = active.filter(p => (p.stage || "opportunity") === st.id); return items.length ? `${st.label} ${items.length} (${fmtMoney(sum(items))})` : null; }).filter(Boolean);
+  const byStage = PURSUIT_STAGES.map(st => { const items = active.filter(p => (p.stage || "opportunity") === st.id); return items.length ? `${st.label}: ${items.length} | ${fmtMoney(sum(items))} | weighted ${fmtMoney(Math.round(sum(items, weighted)))}` : null; }).filter(Boolean);
+  const deptNames = [...new Set(active.map(deptOf))].sort();
+  const byDept = deptNames.map(d => { const items = active.filter(p => deptOf(p) === d); return `${d}: ${items.length} | ${fmtMoney(sum(items))} | weighted ${fmtMoney(Math.round(sum(items, weighted)))}`; });
+  const ranked = [...active].sort((a, b) => weighted(b) - weighted(a) || a.name.localeCompare(b.name));
+  const attention = ranked.map(p => ({ p, f: flags(p) })).filter(x => x.f.length);
   return [
-    "PURSUITS / PIPELINE — business opportunities being pursued; they are not projects yet and are not counted in PROJECTS. When a question is about projects, add a short pipeline summary after the projects; when it is about pursuits or the pipeline, answer in detail.",
+    "PURSUITS / PIPELINE — business opportunities being pursued; they are not projects yet and are not counted in PROJECTS.",
+    "How to answer with this section:",
+    "- A question about projects, or a general / business overview: projects are the main subject. Put the pipeline after the projects as a compact part of at most about 30% of the answer: one overview sentence (active count, estimated value, weighted value, win rate), a small table by stage (count and value), and a 'Needs attention' list with one line per pursuit (name — reasons), or 'No pursuits need attention'. Do not list every pursuit or add a chart for the pipeline in this case.",
+    "- A question only about pursuits or the pipeline: answer in full — overview; table by stage (count, value, weighted value); table of active pursuits ordered by weighted value (name, owner, department, stage, value, probability, deadline, next action); needs attention; recent wins and losses; suggested next steps based only on the next actions and notes below, never invented.",
     `Active: ${active.length} | Estimated value ${fmtMoney(sum(active))} | Weighted by probability ${fmtMoney(Math.round(sum(active, weighted)))}`,
-    byStage.length ? `By stage: ${byStage.join("; ")}` : "",
-    `Closed: Won ${won.length} (${fmtMoney(sum(won))}), Lost ${lost.length} (${fmtMoney(sum(lost))}), Deferred ${deferred.length} (${fmtMoney(sum(deferred))})${decided ? ` | Win rate ${Math.round(won.length / decided * 100)}% (won ÷ won + lost)` : ""}`,
-    active.length ? `Active pursuits (${active.length}):\n${active.map(line).join("\n")}` : "Active pursuits: none",
-    won.length ? `Won: ${brief(won)}` : "",
-    lost.length ? `Lost: ${brief(lost)}` : "",
-    deferred.length ? `Deferred: ${brief(deferred)}` : "",
+    `Closed: Won ${won.length} (${fmtMoney(sum(won))}), Lost ${lost.length} (${fmtMoney(sum(lost))}), Deferred ${deferred.length} (${fmtMoney(sum(deferred))})${decided ? ` | Win rate ${Math.round(won.length / decided * 100)}% (won ÷ won + lost)` : " | Win rate: no pursuits won or lost yet"}`,
+    byStage.length ? `By stage (active):\n  ${byStage.join("\n  ")}` : "",
+    byDept.length ? `By department (active):\n  ${byDept.join("\n  ")}` : "",
+    ranked.length ? `Top ${Math.min(5, ranked.length)} by weighted value: ${ranked.slice(0, 5).map(p => `"${p.name}" ${fmtMoney(Math.round(weighted(p)))}`).join(", ")}` : "",
+    `Needs attention (${attention.length}):` + (attention.length ? "\n" + attention.map(({ p, f }) => `  "${p.name}" — ${f.map(([, why]) => why).join("; ")}`).join("\n") : " none"),
+    `Flags: [OVERDUE] deadline passed; [DUE SOON] deadline within ${PURSUIT_DUE_SOON_DAYS} days; [STALE] no update for over ${PURSUIT_STALE_DAYS} days; [NO VALUE] / [NO PROBABILITY] not filled in.`,
+    ranked.length ? `Active pursuits (${ranked.length}, highest weighted value first):\n${ranked.map(line).join("\n")}` : "Active pursuits: none",
+    closedList("Won", won),
+    closedList("Lost", lost),
+    closedList("Deferred", deferred),
   ].filter(Boolean).join("\n");
 }
 
