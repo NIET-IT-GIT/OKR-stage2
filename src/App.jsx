@@ -2987,9 +2987,11 @@ function pilotPursuitSection({ pursuits, users, depts, fmtMoney, allowed, today 
   const deptOf = p => { const o = owner(p); return o ? (depts.find(d => d.id === o.deptId)?.name || "—") : "—"; };
   const stageLabel = id => (PURSUIT_STAGES.find(st => st.id === (id || "opportunity")) || PURSUIT_STAGES[0]).label;
   const lastActivity = p => p.updatedDate || p.startDate || "";
+  // Overdue from the day after the deadline, judged on the same "today" as the day counts
+  const overdue = p => { const d = daysFrom(p.deadline); return d != null ? d < 0 : !!p.deadline && isPastDue(p.deadline); };
   const flags = p => {
     const f = [], toDeadline = daysFrom(p.deadline), idle = daysFrom(lastActivity(p));
-    if (p.deadline && isPastDue(p.deadline)) f.push(["OVERDUE", `deadline ${p.deadline} passed`]);
+    if (p.deadline && overdue(p)) f.push(["OVERDUE", `deadline ${p.deadline} passed`]);
     else if (toDeadline != null && toDeadline <= PURSUIT_DUE_SOON_DAYS) f.push(["DUE SOON", toDeadline === 0 ? "deadline is today" : `deadline in ${toDeadline} day${toDeadline === 1 ? "" : "s"}`]);
     if (idle != null && -idle > PURSUIT_STALE_DAYS) f.push(["STALE", `no update for ${-idle} days`]);
     if (!hasVal(p)) f.push(["NO VALUE", "no estimated value"]);
@@ -3001,7 +3003,7 @@ function pilotPursuitSection({ pursuits, users, depts, fmtMoney, allowed, today 
     let l = `  "${p.name}" | ${deptOf(p)} | Owner: ${owner(p)?.name || "—"} | Stage: ${stageLabel(p.stage)}`;
     l += ` | Est. value: ${hasVal(p) ? fmtMoney(val(p)) : "not set"}`;
     l += hasProb(p) ? ` | Probability: ${p.probability}% | Weighted: ${fmtMoney(Math.round(weighted(p)))}` : " | Probability: not set";
-    l += ` | Deadline: ${p.deadline || "none"}${toDeadline != null && !isPastDue(p.deadline) ? ` (in ${toDeadline} days)` : ""}`;
+    l += ` | Deadline: ${p.deadline || "none"}${toDeadline != null && !overdue(p) ? ` (in ${toDeadline} days)` : ""}`;
     l += ` | Started: ${p.startDate || "unknown"}${age != null ? ` (${-age} days ago)` : ""}`;
     l += ` | Last updated: ${p.updatedDate || "never"}${p.updatedDate && idle != null ? ` (${-idle} days ago)` : ""}`;
     const tags = flags(p).map(([t]) => `[${t}]`).join(" ");
@@ -3297,7 +3299,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
     setChatHistory(messages);
   }
 
-  function buildChatContext(grv = grvData) {
+  function buildChatContext(grv = grvData, attendance = null) {
     const { depts, memberData, okrSubmissions = [], monthlyReports = [], users, projects = [] } = state;
     const now = new Date();
     const getCompletedYear = projectCompletedYear;
@@ -3629,6 +3631,7 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
       `\n${pendingSection}`,
       `\n${projectSection}`,
       `\n${pursuitSection}`,
+      `\n${pilotAttendanceSection(attendance)}`,
       `\n${enrolmentSection}`,
       `\n${coeSection}`,
       `\n${buildGrvContextStr(grv)}`,
@@ -3672,11 +3675,11 @@ function AdminPortal({ user, onLogout, state, allUsers, dispatch, onImpersonate 
     setChatLoading(true);
     const customPrompt = settings?.aiChatPrompt || DEFAULT_CHAT_PROMPT;
     try {
-      const grv = await waitForGrv();
+      const [grv, attendance] = await Promise.all([waitForGrv(), loadPilotAttendance()]);
       const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext(grv), lang: "en" }),
+        body: JSON.stringify({ question: q, systemPrompt: customPrompt, contextData: buildChatContext(grv, attendance), lang: "en" }),
       });
       const text = await res.text();
       let data;
@@ -8903,7 +8906,7 @@ async function cashParseFiles(fileSheets) {
 //   aggregateUserIds — people whose numbers feed the department completion figures (never listed individually)
 //   deptIds          — departments in view; finance — whether P&L / cash data may be included
 // Admin passes no scope and sees everything.
-function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [], cashRecords = [], grvData = {}, scope = null }) {
+function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoaded, coeRecords, coeError, admissionsEnabled = true, plRecords = [], cashRecords = [], grvData = {}, scope = null, attendance = null }) {
   const detailIds = scope ? new Set(scope.detailUserIds) : null;
   const aggIds = scope ? new Set([...scope.aggregateUserIds, ...scope.detailUserIds]) : null;
   const isDetail = id => !detailIds || detailIds.has(id);
@@ -9230,6 +9233,7 @@ function buildNietPilotContext({ state, enrLoaded, enrRecords, enrError, coeLoad
     `\n${pendingSection}`,
     `\n${projectSection}`,
     `\n${pursuitSection}`,
+    `\n${scope ? "TRAINER ATTENDANCE: not available — trainer attendance is visible to administrators only. If asked, say so and do not guess." : pilotAttendanceSection(attendance)}`,
     `\n${enrolmentSection}`,
     `\n${coeSection}`,
     `\n${buildGrvContextStr(grvData)}`,
@@ -10031,9 +10035,10 @@ const fpToLines = text => String(text || "").split("\n").map(s => s.replace(/^[\
 const fpHasText = e => !!e && FP_SECTIONS.some(([k]) => fpToLines(e[k]).length);
 
 /* ─────────────────────────────────────────────────────────────
-   TRAINER ATTENDANCE (admin) — HSP/PSP attendance from the Charlton Brown portal, read through /api/attendance
+   TRAINER ATTENDANCE (admin) — HSP/PSP and VET attendance from the Charlton Brown portals, read through /api/attendance
    ───────────────────────────────────────────────────────────────── */
 const ATT_GOOD = 90, ATT_WARN = 80, ATT_GAP = 5;
+const ATT_PORTALS = [["hsp", "HSP/PSP"], ["vet", "VET"]];
 function attStatus(rate) { return rate == null ? null : rate >= ATT_GOOD ? "green" : rate >= ATT_WARN ? "yellow" : "red"; }
 function attRate(num, den) { return den > 0 ? Math.round(num / den * 1000) / 10 : null; }
 // Sessions scheduled but never marked show up as a gap between the two rates
@@ -10046,7 +10051,7 @@ function attPresetRange(id, today = new Date()) {
   if (id === "this-year") return [localDateKey(new Date(y, 0, 1)), localDateKey(today)];
   return null;
 }
-// Adds up classes first, then works out the rates (the portal's rule for trainer figures)
+// Adds up classes first, then works out the rates (the portals' rule for trainer figures)
 function attRollUp(classes) {
   const t = classes.reduce((s, c) => ({
     studentCount: s.studentCount + (c.studentCount || 0),
@@ -10057,19 +10062,146 @@ function attRollUp(classes) {
     attendanceRatePct: attRate(t.sessionsPresent, t.sessionsScheduled),
     markedRatePct: attRate(t.sessionsMarkedPresent, t.sessionsMarkedPresent + t.sessionsMarkedAbsent) };
 }
+const attNorm = s => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+// "Carol Ly (Hobart)" → "Carol Ly": the VET portal lists online teaching for another campus under its own name
+const attBaseName = s => String(s || "").replace(/\s*\([^)]*\)\s*$/, "").trim() || String(s || "").trim();
+function attWithRates(r) { return { ...r, attendanceRatePct: attRate(r.sessionsPresent, r.sessionsScheduled), markedRatePct: attRate(r.sessionsMarkedPresent, r.sessionsMarkedPresent + r.sessionsMarkedAbsent) }; }
+
+// One row per class (HSP/PSP) or per trainer + course (VET), in the HSP field names, so the page and the Pilot treat both alike.
+// VET: marked figures come from `classes`; timetable figures from `scheduled` (a preview the portal has not documented yet),
+// matched by trainer and course name, ignoring case and spacing. A course that was timetabled but never marked still gets a row.
+function attNormalize(portal, data) {
+  if (!data) return { rows: [], hasScheduled: false, markedOnlyNames: [] };
+  if (portal === "hsp") {
+    return { hasScheduled: true, markedOnlyNames: [], rows: (data.classes || []).map(c => attWithRates({
+      portal: "hsp", trainerKey: "hsp:" + (c.trainerId ?? attNorm(c.trainerName)), trainerName: c.trainerName || "—", sourceName: c.trainerName || "—",
+      program: c.program || "", campus: c.campus || "", levelGroup: c.levelGroup || "", courseCode: "", courseName: "",
+      studentCount: c.studentCount || 0, sessionsPresent: c.sessionsPresent || 0, sessionsScheduled: c.sessionsScheduled || 0,
+      sessionsMarkedPresent: c.sessionsMarkedPresent || 0, sessionsMarkedAbsent: c.sessionsMarkedAbsent || 0,
+      countedFrom: c.countedFrom || null, noAttendanceRecorded: !!c.noAttendanceRecorded, noMarked: false, timetabled: true,
+    })) };
+  }
+  const sched = Array.isArray(data.scheduled?.trainers) ? data.scheduled.trainers : null;
+  const pairKey = (t, c) => attNorm(t) + "|" + attNorm(c);
+  const schedByKey = new Map();
+  (sched || []).forEach(t => (t.courses || []).forEach(c => {
+    const k = pairKey(t.trainerName, c.courseName), prev = schedByKey.get(k);
+    schedByKey.set(k, prev
+      ? { ...prev, studentCount: prev.studentCount + (c.studentCount || 0), expected: prev.expected + (c.expectedSessions || 0), present: prev.present + (c.presentSessions || 0) }
+      : { trainerName: t.trainerName, courseCode: c.courseCode, courseName: c.courseName, studentCount: c.studentCount || 0, expected: c.expectedSessions || 0, present: c.presentSessions || 0 });
+  }));
+  const vetRow = (name, code, course, students, present, absent, s) => attWithRates({
+    portal: "vet", trainerKey: "vet:" + attNorm(name), trainerName: name || "—", sourceName: name || "—",
+    program: "VET", campus: "", levelGroup: "", courseCode: code || "", courseName: course || "",
+    studentCount: students || 0, sessionsMarkedPresent: present || 0, sessionsMarkedAbsent: absent || 0,
+    sessionsPresent: s ? s.present : 0, sessionsScheduled: s ? s.expected : 0,
+    countedFrom: null, noAttendanceRecorded: false, timetabled: !!s,
+    noMarked: !!s && s.expected > 0 && (present || 0) + (absent || 0) === 0,
+  });
+  const marked = data.classes || [], used = new Set(), rows = [];
+  marked.forEach(c => {
+    const k = pairKey(c.trainerName, c.courseName), s = schedByKey.get(k);
+    if (s) used.add(k);
+    rows.push(vetRow(c.trainerName, c.courseCode, c.courseName, s ? Math.max(s.studentCount, c.studentCount || 0) : c.studentCount, c.presentCount, c.absentCount, s));
+  });
+  schedByKey.forEach((s, k) => { if (!used.has(k) && s.expected > 0) rows.push(vetRow(s.trainerName, s.courseCode, s.courseName, s.studentCount, 0, 0, s)); });
+  const schedNames = new Set((sched || []).map(t => attNorm(t.trainerName)));
+  const markedOnlyNames = sched ? [...new Set(marked.map(c => c.trainerName).filter(n => !schedNames.has(attNorm(n))))].sort() : [];
+  return { rows, hasScheduled: !!sched, markedOnlyNames };
+}
+// Optionally files VET online-teaching names under the trainer ("Carol Ly (Hobart)" → "Carol Ly"); the row keeps its sourceName
+function attMergeNames(rows, merge) {
+  return rows.map(r => (merge && r.portal === "vet" ? { ...r, trainerName: attBaseName(r.sourceName), trainerKey: "vet:" + attNorm(attBaseName(r.sourceName)) } : r));
+}
+// Trainer figures = the sum of their rows; the name shown is the first spelling seen
+function attTrainers(rows) {
+  const by = new Map();
+  rows.forEach(r => { if (!by.has(r.trainerKey)) by.set(r.trainerKey, []); by.get(r.trainerKey).push(r); });
+  return [...by.entries()].map(([trainerKey, list]) => ({ trainerKey, trainerName: list[0].trainerName, portal: list[0].portal,
+    notMarked: list.filter(r => r.noAttendanceRecorded || r.noMarked).length, ...attRollUp(list) }));
+}
+function attRowLabel(r) {
+  return r.portal === "vet"
+    ? [r.courseCode, r.courseName].filter(Boolean).join(" · ") || "Course not named"
+    : [String(r.program || "—").replace("_", " + "), r.campus, r.levelGroup ? "Level " + r.levelGroup : null].filter(Boolean).join(" · ");
+}
+
+// Shared by the page and the Pilot; answers are kept 10 minutes, a failed request is not kept
+const ATT_CACHE = new Map();
+function attFetch(portal, from, to, { fresh = false } = {}) {
+  const k = portal + "|" + from + "|" + to, hit = ATT_CACHE.get(k);
+  if (!fresh && hit && Date.now() - hit.at < 600000) return hit.promise;
+  const promise = apiFetch(`/api/attendance?portal=${portal}&from=${from}&to=${to}`).then(async res => {
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    return body;
+  });
+  ATT_CACHE.set(k, { at: Date.now(), promise });
+  promise.catch(() => { if (ATT_CACHE.get(k)?.promise === promise) ATT_CACHE.delete(k); });
+  return promise;
+}
+
+// NIET Pilot (admins only): last month and this month to date from both portals
+async function loadPilotAttendance(today = new Date()) {
+  const periods = [["last-month", "Last month"], ["this-month", "This month to date"]].map(([id, label]) => ({ id, label, range: attPresetRange(id, today) }));
+  const jobs = periods.flatMap(pd => ATT_PORTALS.map(([p, name]) => attFetch(p, pd.range[0], pd.range[1])
+    .then(data => ({ pd, portal: p, name, data }), err => ({ pd, portal: p, name, error: err.message }))));
+  let timer;
+  const timeout = new Promise(r => { timer = setTimeout(() => r("timeout"), 15000); });
+  const results = await Promise.race([Promise.all(jobs), timeout]);
+  clearTimeout(timer);
+  return results === "timeout" ? { error: "the attendance portals took too long to answer" } : { periods, results };
+}
+function pilotAttendanceSection(att) {
+  if (!att) return "TRAINER ATTENDANCE: not loaded for this question.";
+  if (att.error) return `TRAINER ATTENDANCE: not available right now (${att.error}). If asked, say the attendance data couldn't be loaded; do not guess.`;
+  const pct = v => (v == null ? "no data" : v + "%");
+  const out = [
+    "TRAINER ATTENDANCE — from the Charlton Brown attendance portals: HSP/PSP and VET. Two measures for each trainer, class and course:",
+    "- attendance rate = present ÷ timetabled sessions; a timetabled session nobody marked counts against it. For VET this comes from the portal's timetable figures, which are a preview the portal team has not confirmed yet — say so when you use a VET attendance rate.",
+    "- marked rate = present ÷ (present + absent), counting only sessions that were marked.",
+    "How to answer: name the measure you use. A marked rate far above the attendance rate means rolls were not marked, not that attendance is excellent — point this out. Compare HSP/PSP and VET only on the same measure. Use only the figures below; never estimate. Online teaching for another campus (e.g. \"Carol Ly (Hobart)\") is combined under the trainer's name; attendance recorded before a trainer handover stays under the original trainer's name.",
+  ];
+  att.periods.forEach(pd => {
+    out.push(`${pd.label} (${pd.range[0]} to ${pd.range[1]}):`);
+    const okRows = [];
+    att.results.filter(x => x.pd === pd).forEach(x => {
+      if (x.error) { out.push(`  ${x.name}: not available — ${x.error}`); return; }
+      const norm = attNormalize(x.portal, x.data), rows = attMergeNames(norm.rows, true), tot = attRollUp(rows);
+      okRows.push(...rows);
+      const unit = x.portal === "vet" ? "course" : "class";
+      const notMarked = rows.filter(r => r.noAttendanceRecorded || r.noMarked).length;
+      out.push(`  ${x.name}: attendance rate ${pct(tot.attendanceRatePct)} (${tot.sessionsPresent} present of ${tot.sessionsScheduled} timetabled sessions)${x.portal === "vet" ? " [preview]" : ""} | marked rate ${pct(tot.markedRatePct)} (${tot.sessionsMarkedPresent} present, ${tot.sessionsMarkedAbsent} absent) | ${attTrainers(rows).length} trainers | ${tot.studentCount} students | ${rows.length} ${unit}${rows.length === 1 ? "" : "s"} | ${notMarked} ${unit}${notMarked === 1 ? "" : "s"} timetabled with nothing marked`);
+      if (x.portal === "vet" && !norm.hasScheduled) out.push("    VET timetable figures were not provided, so VET attendance rates are not available; marked rates only.");
+      const trainers = attTrainers(rows).sort((a, b) => (a.attendanceRatePct ?? 1e9) - (b.attendanceRatePct ?? 1e9) || String(a.trainerName).localeCompare(String(b.trainerName)));
+      trainers.forEach(t => {
+        out.push(`    ${t.trainerName} | ${t.classCount} ${unit}${t.classCount === 1 ? "" : "s"} | ${t.studentCount} students | attendance ${pct(t.attendanceRatePct)} | marked ${pct(t.markedRatePct)}${attHasGap(t) ? " [UNMARKED SESSIONS]" : ""}`);
+        rows.filter(r => r.trainerKey === t.trainerKey).forEach(r => out.push(`      - ${attRowLabel(r)} | ${r.studentCount} students | attendance ${pct(r.attendanceRatePct)} | marked ${pct(r.markedRatePct)}${r.noAttendanceRecorded || r.noMarked ? " [NOTHING MARKED]" : ""}${r.sourceName !== r.trainerName ? ` (listed as "${r.sourceName}")` : ""}`));
+      });
+      if (norm.markedOnlyNames.length) out.push(`    Marked under a name with no timetable in this period: ${norm.markedOnlyNames.join(", ")}`);
+    });
+    if (att.results.filter(x => x.pd === pd && !x.error).length === 2) {
+      const all = attRollUp(okRows);
+      out.push(`  Both portals together: marked rate ${pct(all.markedRatePct)} (${all.sessionsMarkedPresent} present, ${all.sessionsMarkedAbsent} absent) | attendance rate ${pct(all.attendanceRatePct)} (${all.sessionsPresent} of ${all.sessionsScheduled}; the VET part is a preview)`);
+    }
+  });
+  return out.join("\n");
+}
 
 function TrainerAttendancePage() {
   const { isMobile } = useContext(MobileContext);
+  const [tab, setTab] = useState("hsp");
   const [preset, setPreset] = useState("this-month");
   const [range, setRange] = useState(() => attPresetRange("this-month"));
   const [draft, setDraft] = useState(() => attPresetRange("this-month"));
   const [reload, setReload] = useState(0);
-  // The latest answer, tagged with the request it belongs to; loading = no answer yet for the current request
-  const [result, setResult] = useState(null);
+  // The latest answer per portal, tagged with the request it belongs to; loading = no answer yet for the current request
+  const [results, setResults] = useState({});
   const reqKey = range[0] + "|" + range[1] + "|" + reload;
-  const loading = !result || result.key !== reqKey;
-  const data = result?.data || null;
-  const error = result && result.key === reqKey ? result.error : null;
+  const tabPortals = tab === "all" ? ["hsp", "vet"] : [tab];
+  const loading = tabPortals.some(p => results[p]?.key !== reqKey);
+  const errors = tabPortals.map(p => (results[p]?.key === reqKey ? results[p].error : null)).filter(Boolean);
+  const [merge, setMerge] = useState(true);
   const [program, setProgram] = useState("all");
   const [campus, setCampus] = useState("all");
   const [search, setSearch] = useState("");
@@ -10079,13 +10211,11 @@ function TrainerAttendancePage() {
   useEffect(() => {
     let alive = true;
     const key = range[0] + "|" + range[1] + "|" + reload;
-    apiFetch(`/api/attendance?from=${range[0]}&to=${range[1]}`)
-      .then(async res => {
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-        if (alive) setResult({ key, data: body, error: null });
-      })
-      .catch(err => { if (alive) setResult({ key, data: null, error: err.message }); });
+    ATT_PORTALS.forEach(([p]) => {
+      attFetch(p, range[0], range[1], { fresh: true })
+        .then(data => { if (alive) setResults(prev => ({ ...prev, [p]: { key, data, error: null } })); })
+        .catch(err => { if (alive) setResults(prev => ({ ...prev, [p]: { key, data: null, error: err.message } })); });
+    });
     return () => { alive = false; };
   }, [range, reload]);
 
@@ -10093,19 +10223,23 @@ function TrainerAttendancePage() {
   const draftOk = /^\d{4}-\d{2}-\d{2}$/.test(draft[0]) && /^\d{4}-\d{2}-\d{2}$/.test(draft[1]) && draft[0] <= draft[1];
   const applyDraft = () => { if (draftOk) { setPreset("custom"); setRange([...draft]); } };
 
-  const classes = data?.classes || [];
-  const programs = [...new Set(classes.map(c => c.program).filter(Boolean))].sort();
-  const campuses = [...new Set(classes.map(c => c.campus).filter(Boolean))].sort();
+  const norms = useMemo(() => Object.fromEntries(ATT_PORTALS.map(([p]) => [p, attNormalize(p, results[p]?.data)])), [results]);
+  const haveData = tabPortals.some(p => results[p]?.data);
+  const shownData = tabPortals.map(p => results[p]?.data).filter(Boolean);
+  const allRows = attMergeNames(tabPortals.flatMap(p => norms[p].rows), merge);
+  // VET notes, the name toggle and "preview" labels only when VET figures are actually on screen
+  const vetPreview = tabPortals.includes("vet") && !!results.vet?.data;
+  const vetNoSched = tabPortals.includes("vet") && results.vet?.data && !norms.vet.hasScheduled;
+  const programs = [...new Set(allRows.map(r => r.program).filter(Boolean))].sort();
+  const campuses = [...new Set(allRows.map(r => r.campus).filter(Boolean))].sort();
   // A programme or campus that isn't in this period's data falls back to "all"
   const progSel = programs.includes(program) ? program : "all", campSel = campuses.includes(campus) ? campus : "all";
-  const filtering = progSel !== "all" || campSel !== "all";
-  const shownClasses = classes.filter(c => (progSel === "all" || c.program === progSel) && (campSel === "all" || c.campus === campSel));
-  const classesOf = id => shownClasses.filter(c => c.trainerId === id);
-  // With a programme or campus filter, trainer figures are rebuilt from just the matching classes
-  const trainers = (filtering
-    ? [...new Set(shownClasses.map(c => c.trainerId))].map(id => ({ trainerId: id, trainerName: shownClasses.find(c => c.trainerId === id)?.trainerName, ...attRollUp(classesOf(id)) }))
-    : (data?.trainers || []))
-    .filter(t => !search.trim() || String(t.trainerName || "").toLowerCase().includes(search.trim().toLowerCase()));
+  const q = search.trim().toLowerCase();
+  const filtered = allRows.filter(r => (progSel === "all" || r.program === progSel) && (campSel === "all" || r.campus === campSel));
+  // Search keeps a trainer whole when their name matches, else only the matching courses / classes
+  const shownRows = !q ? filtered : filtered.filter(r => [r.trainerName, r.sourceName].some(n => String(n).toLowerCase().includes(q)) || attRowLabel(r).toLowerCase().includes(q));
+  const trainers = attTrainers(shownRows);
+  const rowsOf = key => shownRows.filter(r => r.trainerKey === key);
   const sorted = [...trainers].sort((a, b) => {
     const va = a[sort.key], vb = b[sort.key];
     if (va == null && vb == null) return String(a.trainerName).localeCompare(String(b.trainerName));
@@ -10114,25 +10248,28 @@ function TrainerAttendancePage() {
     const c = typeof va === "string" ? va.localeCompare(vb) : va - vb;
     return c * sort.dir || String(a.trainerName).localeCompare(String(b.trainerName));
   });
-  const visibleIds = new Set(trainers.map(t => t.trainerId));
-  const kpi = attRollUp(shownClasses.filter(c => visibleIds.has(c.trainerId)));
-  const noRecord = shownClasses.filter(c => visibleIds.has(c.trainerId) && c.noAttendanceRecorded).length;
+  const kpi = attRollUp(shownRows);
+  const noRecord = shownRows.filter(r => r.noAttendanceRecorded || r.noMarked).length;
   const gapCount = trainers.filter(attHasGap).length;
+  const markedOnly = tabPortals.includes("vet") ? norms.vet.markedOnlyNames : [];
+  const unitWord = tab === "vet" ? "courses" : tab === "hsp" ? "classes" : "classes / courses";
 
   const pct = v => (v == null ? "No data" : `${v}%`);
   const toggle = id => setOpen(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const sortBy = key => setSort(s => (s.key === key ? { key, dir: -s.dir } : { key, dir: key === "trainerName" ? 1 : key === "attendanceRatePct" || key === "markedRatePct" ? 1 : -1 }));
 
   const exportCsv = () => {
-    const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const head = ["Row", "Trainer", "Program", "Campus", "Level group", "Classes", "Students", "Sessions present", "Sessions scheduled", "Attendance rate %", "Marked present", "Marked absent", "Marked rate %", "Counted from", "Note"];
+    const qv = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const head = ["Row", "Portal", "Trainer", "Name in portal", "Program", "Campus", "Level group", "Course code", "Course name", "Classes / courses", "Students", "Sessions present (timetable)", "Sessions timetabled", "Attendance rate %", "Marked present", "Marked absent", "Marked rate %", "Counted from", "Note"];
     const rows = [];
+    const portalName = p => (p === "vet" ? "VET" : "HSP/PSP");
     sorted.forEach(t => {
-      rows.push(["Trainer", t.trainerName, "", "", "", t.classCount, t.studentCount, t.sessionsPresent, t.sessionsScheduled, t.attendanceRatePct, t.sessionsMarkedPresent, t.sessionsMarkedAbsent, t.markedRatePct, "", attHasGap(t) ? "Unmarked sessions" : ""]);
-      classesOf(t.trainerId).forEach(c => rows.push(["Class", c.trainerName, c.program, c.campus, c.levelGroup, 1, c.studentCount, c.sessionsPresent, c.sessionsScheduled, c.attendanceRatePct, c.sessionsMarkedPresent, c.sessionsMarkedAbsent, c.markedRatePct, c.countedFrom, c.noAttendanceRecorded ? "No attendance recorded" : attHasGap(c) ? "Unmarked sessions" : ""]));
+      rows.push(["Trainer", portalName(t.portal), t.trainerName, "", "", "", "", "", "", t.classCount, t.studentCount, t.sessionsPresent, t.sessionsScheduled, t.attendanceRatePct, t.sessionsMarkedPresent, t.sessionsMarkedAbsent, t.markedRatePct, "", attHasGap(t) ? "Unmarked sessions" : ""]);
+      rowsOf(t.trainerKey).forEach(r => rows.push([r.portal === "vet" ? "Course" : "Class", portalName(r.portal), r.trainerName, r.sourceName, r.program, r.campus, r.levelGroup, r.courseCode, r.courseName, 1, r.studentCount, r.sessionsPresent, r.sessionsScheduled, r.attendanceRatePct, r.sessionsMarkedPresent, r.sessionsMarkedAbsent, r.markedRatePct, r.countedFrom,
+        r.noAttendanceRecorded ? "No attendance recorded" : r.noMarked ? "Timetabled, nothing marked" : r.portal === "vet" && !r.timetabled && norms.vet.hasScheduled ? "No timetable match" : attHasGap(r) ? "Unmarked sessions" : ""]));
     });
-    const csv = [head, ...rows].map(r => r.map(q).join(",")).join("\n");
-    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })), download: `trainer-attendance_${range[0]}_to_${range[1]}.csv` });
+    const csv = [head, ...rows].map(r => r.map(qv).join(",")).join("\n");
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })), download: `trainer-attendance_${tab}_${range[0]}_to_${range[1]}.csv` });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
@@ -10155,22 +10292,34 @@ function TrainerAttendancePage() {
   };
   const chip = (text, color, bg) => <span style={{ fontSize: 11, fontWeight: 700, color, background: bg, borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap" }}>{text}</span>;
   const PRESETS = [["this-month", "This month"], ["last-month", "Last month"], ["last-30", "Last 30 days"], ["this-year", "This year"]];
+  const TABS = [["hsp", "HSP / PSP"], ["vet", "VET"], ["all", "All"]];
   const fmtDay = (s, withYear) => new Date(s + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
   const rangeLabel = r => (r[0].slice(0, 4) === r[1].slice(0, 4) ? `${fmtDay(r[0])} – ${fmtDay(r[1], true)}` : `${fmtDay(r[0], true)} – ${fmtDay(r[1], true)}`);
   const presetName = (PRESETS.find(([id]) => id === preset) || [])[1];
   const loadingText = `Loading ${presetName ? presetName.toLowerCase() + " (" + rangeLabel(range) + ")" : rangeLabel(range)}…`;
   const spinner = <span className="att-spin" aria-hidden="true" style={{ width: 22, height: 22, border: `3px solid ${T.brandBorder}`, borderTopColor: T.brand, borderRadius: "50%", display: "inline-block", animation: "attspin 0.8s linear infinite", flexShrink: 0 }} />;
-  // Same columns for trainer rows and their class rows, so everything lines up
+  // Same columns for trainer rows and their class / course rows, so everything lines up
   const COLS = ["34%", "9%", "9%", "24%", "10%", "14%"];
+  const shownFrom = shownData[0];
+  const rowNote = r => (r.portal === "vet"
+    ? [r.sourceName !== r.trainerName ? `listed as "${r.sourceName}"` : null, r.noMarked ? "Timetabled, nothing marked" : null, !r.timetabled && norms.vet.hasScheduled ? "No timetable match for this course" : null].filter(Boolean).join(" · ")
+    : r.noAttendanceRecorded ? "No attendance recorded yet" : r.countedFrom ? "Counted from " + fmtDay(r.countedFrom, true) : "");
 
   return (<>
     <style>{"@keyframes attspin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){.att-spin{animation:none!important}}"}</style>
-    <Header title="Trainer Attendance" sub="HSP / PSP attendance by trainer and class — from the Charlton Brown attendance portal"
+    <Header title="Trainer Attendance" sub="HSP / PSP and VET attendance by trainer — from the Charlton Brown attendance portals"
       right={<div style={{ display: "flex", gap: 8 }}>
         <Btn small onClick={() => setReload(n => n + 1)} disabled={loading}>{loading ? "Loading…" : "↻ Refresh"}</Btn>
         <Btn small onClick={exportCsv} disabled={loading || !sorted.length}>Export CSV</Btn>
       </div>} />
     <Pane>
+      <div role="tablist" aria-label="Attendance portal" style={{ display: "flex", gap: 4, padding: 4, background: T.raised, borderRadius: 10, width: "fit-content", maxWidth: "100%" }}>
+        {TABS.map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+            style={{ border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: "pointer", background: tab === id ? T.surface : "transparent", color: tab === id ? T.text : T.textMuted, boxShadow: tab === id ? T.shadowSm : "none" }}>{label}</button>
+        ))}
+      </div>
+
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {PRESETS.map(([id, label]) => <Btn key={id} small primary={preset === id} onClick={() => choosePreset(id)}>{label}</Btn>)}
         <span style={{ width: 8 }} />
@@ -10180,85 +10329,102 @@ function TrainerAttendancePage() {
         {!draftOk && <span style={{ fontSize: 12, color: T.bad }}>The end date must be on or after the start date.</span>}
       </div>
 
-      {error && <div role="alert" style={{ padding: "12px 16px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 10, fontSize: 13, color: T.bad, lineHeight: 1.5, maxWidth: 1100 }}>{error}</div>}
+      {errors.map(err => <div key={err} role="alert" style={{ padding: "12px 16px", background: T.badDim, border: `1px solid ${T.badBorder}`, borderRadius: 10, fontSize: 13, color: T.bad, lineHeight: 1.5, maxWidth: 1100 }}>{err}</div>)}
 
       <div style={{ position: "relative", maxWidth: 1100, width: "100%", minHeight: loading ? 240 : 0 }} aria-busy={loading}>
         {loading && (
-          <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", justifyContent: "center", alignItems: "flex-start", background: data ? "rgba(245,245,247,0.45)" : "transparent", borderRadius: 12 }}>
+          <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", justifyContent: "center", alignItems: "flex-start", background: haveData ? "rgba(245,245,247,0.45)" : "transparent", borderRadius: 12 }}>
             <div role="status" style={{ position: "sticky", top: 120, marginTop: 70, display: "flex", alignItems: "center", gap: 12, padding: "14px 22px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, boxShadow: T.shadow, fontSize: 14, fontWeight: 600, color: T.text }}>
               {spinner}{loadingText}
             </div>
           </div>
         )}
-        {data && (
+        {haveData && (
           <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 24, opacity: loading ? 0.4 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <Metric label="Attendance rate" value={pct(kpi.attendanceRatePct)} sub={`${kpi.sessionsPresent.toLocaleString()} of ${kpi.sessionsScheduled.toLocaleString()} sessions`} status={attStatus(kpi.attendanceRatePct)} />
+              <Metric label="Attendance rate" value={pct(kpi.attendanceRatePct)} status={attStatus(kpi.attendanceRatePct)}
+                sub={`${kpi.sessionsPresent.toLocaleString()} of ${kpi.sessionsScheduled.toLocaleString()} timetabled${vetPreview ? (tab === "vet" ? " · preview" : " · VET part is a preview") : ""}`} />
               <Metric label="Marked rate" value={pct(kpi.markedRatePct)} sub="marked sessions only" status={attStatus(kpi.markedRatePct)} />
               <Metric label="Trainers" value={trainers.length} sub={gapCount ? `${gapCount} with unmarked sessions` : "all rolls marked"} />
-              <Metric label="Students" value={kpi.studentCount} sub={`${kpi.classCount} classes`} />
-              <Metric label="No attendance yet" value={noRecord} sub="classes never marked" status={noRecord ? "yellow" : undefined} />
+              <Metric label="Students" value={kpi.studentCount} sub={`${kpi.classCount} ${unitWord}`} />
+              <Metric label="Nothing marked" value={noRecord} sub={`${unitWord} timetabled, never marked`} status={noRecord ? "yellow" : undefined} />
             </div>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <select value={progSel} onChange={e => setProgram(e.target.value)} style={sel} aria-label="Program">
-                <option value="all">All programs</option>{programs.map(p => <option key={p} value={p}>{p.replace("_", " + ")}</option>)}
-              </select>
-              <select value={campSel} onChange={e => setCampus(e.target.value)} style={sel} aria-label="Campus">
-                <option value="all">All campuses</option>{campuses.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search trainer…" style={{ fontSize: 13, padding: "8px 12px", width: isMobile ? "100%" : 220 }} />
+              {programs.length > 1 && (
+                <select value={progSel} onChange={e => setProgram(e.target.value)} style={sel} aria-label="Program">
+                  <option value="all">All programs</option>{programs.map(p => <option key={p} value={p}>{p.replace("_", " + ")}</option>)}
+                </select>
+              )}
+              {campuses.length > 0 && (
+                <select value={campSel} onChange={e => setCampus(e.target.value)} style={sel} aria-label="Campus">
+                  <option value="all">All campuses</option>{campuses.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
+              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder={tab === "hsp" ? "Search trainer…" : "Search trainer or course…"} style={{ fontSize: 13, padding: "8px 12px", width: isMobile ? "100%" : 240 }} />
+              {vetPreview && (
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: T.textSoft, cursor: "pointer" }}>
+                  <input type="checkbox" checked={merge} onChange={e => setMerge(e.target.checked)} />
+                  Combine online-teaching names (e.g. "Carol Ly (Hobart)")
+                </label>
+              )}
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 12, color: T.textMuted }}>
-                {rangeLabel([data.from, data.to])}{data.generatedAt ? ` · read ${new Date(data.generatedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}
-              </span>
+              {shownFrom && (
+                <span style={{ fontSize: 12, color: T.textMuted }}>
+                  {rangeLabel([shownFrom.from, shownFrom.to])}{shownFrom.generatedAt ? ` · read ${new Date(shownFrom.generatedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}
+                </span>
+              )}
             </div>
 
             {!sorted.length
-              ? <EmptyState text={classes.length ? "No trainers match these filters." : "The portal returned no classes for this period."} />
+              ? <EmptyState text={allRows.length ? "No trainers match these filters." : "The portal returned no classes for this period."} />
               : (
                 <div style={{ overflowX: "auto", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12 }}>
                   <table style={{ width: "100%", minWidth: 820, borderCollapse: "collapse", tableLayout: "fixed" }}>
                     <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
                     <thead><tr>
-                      {sortTh("trainerName", "Trainer / class")}
-                      {sortTh("classCount", "Classes", true)}
+                      {sortTh("trainerName", tab === "vet" ? "Trainer / course" : tab === "hsp" ? "Trainer / class" : "Trainer / class or course")}
+                      {sortTh("classCount", tab === "vet" ? "Courses" : tab === "hsp" ? "Classes" : "Classes", true)}
                       {sortTh("studentCount", "Students", true)}
-                      {sortTh("attendanceRatePct", "Attendance rate", true)}
+                      {sortTh("attendanceRatePct", vetPreview ? "Attendance rate*" : "Attendance rate", true)}
                       {sortTh("markedRatePct", "Marked", true)}
                       <th style={th}>Flags</th>
                     </tr></thead>
                     <tbody>
                       {sorted.map(t => {
-                        const isOpen = open.has(t.trainerId), own = classesOf(t.trainerId);
+                        const isOpen = open.has(t.trainerKey), own = rowsOf(t.trainerKey);
                         return (
-                          <Fragment key={t.trainerId}>
-                            <tr onClick={() => toggle(t.trainerId)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(t.trainerId); } }} tabIndex={0} aria-expanded={isOpen}
+                          <Fragment key={t.trainerKey}>
+                            <tr onClick={() => toggle(t.trainerKey)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(t.trainerKey); } }} tabIndex={0} aria-expanded={isOpen}
                               style={{ cursor: "pointer", background: isOpen ? T.raised : "transparent" }}>
-                              <td style={{ ...td, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ display: "inline-block", width: 18, color: T.textMuted }}>{isOpen ? "▾" : "▸"}</span>{t.trainerName || "—"}</td>
+                              <td style={{ ...td, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <span style={{ display: "inline-block", width: 18, color: T.textMuted }}>{isOpen ? "▾" : "▸"}</span>
+                                {tab === "all" && <span style={{ fontSize: 10.5, fontWeight: 700, color: t.portal === "vet" ? "#0369a1" : T.brand, background: t.portal === "vet" ? "#e0f2fe" : T.brandDim, borderRadius: 5, padding: "1px 6px", marginRight: 8 }}>{t.portal === "vet" ? "VET" : "HSP"}</span>}
+                                {t.trainerName || "—"}
+                              </td>
                               <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.classCount}</td>
                               <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{t.studentCount}</td>
                               <td style={td}>{rateCell(t.attendanceRatePct, true)}</td>
                               <td style={td}>{rateCell(t.markedRatePct, false)}</td>
                               <td style={td}>
-                                {t.attendanceRatePct == null && chip("No data", T.textMuted, T.raised)}
+                                {t.attendanceRatePct == null && t.markedRatePct == null && chip("No data", T.textMuted, T.raised)}
                                 {attHasGap(t) && chip("Unmarked sessions", T.warn, T.warnDim)}
                               </td>
                             </tr>
-                            {isOpen && own.map((c, i) => (
+                            {isOpen && own.map((r, i) => (
                               <tr key={i} style={{ background: T.bgSoft }}>
                                 <td style={{ ...td, paddingLeft: 42 }}>
-                                  <div style={{ color: T.text }}>{[String(c.program || "—").replace("_", " + "), c.campus, c.levelGroup ? "Level " + c.levelGroup : null].filter(Boolean).join(" · ")}</div>
-                                  <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 2 }}>{c.noAttendanceRecorded ? "No attendance recorded yet" : c.countedFrom ? "Counted from " + fmtDay(c.countedFrom, true) : ""}</div>
+                                  <div style={{ color: T.text }}>{attRowLabel(r)}</div>
+                                  {rowNote(r) && <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 2 }}>{rowNote(r)}</div>}
                                 </td>
                                 <td style={td} />
-                                <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{c.studentCount}</td>
-                                <td style={td}>{rateCell(c.attendanceRatePct, true)}</td>
-                                <td style={td}>{rateCell(c.markedRatePct, false)}</td>
-                                <td style={td}>{c.noAttendanceRecorded ? chip("No data", T.textMuted, T.raised) : attHasGap(c) ? chip("Unmarked sessions", T.warn, T.warnDim) : null}</td>
+                                <td style={{ ...td, textAlign: "right", fontFamily: F.mono }}>{r.studentCount}</td>
+                                <td style={td}>{rateCell(r.attendanceRatePct, true)}</td>
+                                <td style={td}>{rateCell(r.markedRatePct, false)}</td>
+                                <td style={td}>{r.noAttendanceRecorded || r.noMarked ? chip("Nothing marked", T.textMuted, T.raised) : attHasGap(r) ? chip("Unmarked sessions", T.warn, T.warnDim) : null}</td>
                               </tr>
                             ))}
-                            {isOpen && !own.length && <tr style={{ background: T.bgSoft }}><td colSpan={6} style={{ ...td, paddingLeft: 42, color: T.textMuted }}>No classes for this trainer in the current filter.</td></tr>}
+                            {isOpen && !own.length && <tr style={{ background: T.bgSoft }}><td colSpan={6} style={{ ...td, paddingLeft: 42, color: T.textMuted }}>Nothing for this trainer in the current filter.</td></tr>}
                           </Fragment>
                         );
                       })}
@@ -10266,9 +10432,18 @@ function TrainerAttendancePage() {
                   </table>
                 </div>
               )}
+            {markedOnly.length > 0 && (
+              <div style={{ fontSize: 12.5, color: T.textSoft, lineHeight: 1.6, padding: "10px 14px", background: T.raised, borderRadius: 10 }}>
+                <b>VET names with marked attendance but no timetable in this period:</b> {markedOnly.join(", ")}. These are usually trainers who handed classes over, or combined names such as "Nicole Hicks/Nati"; their courses show no attendance rate.
+              </div>
+            )}
             <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>
-              Sessions 1–3 only; Late and Excursion count as present; public holidays are left out. Attendance rate counts a scheduled session nobody marked against the class; marked rate uses only marked sessions, so a gap of {ATT_GAP}+ points means rolls were missed.
-              Colours: {ATT_GOOD}%+ green, {ATT_WARN}–{ATT_GOOD}% amber, below {ATT_WARN}% red. Each student counts from the later of their start date and the class's first marked day.
+              <b>Attendance rate</b> = present ÷ timetabled sessions, so a session nobody marked counts against it. <b>Marked rate</b> = present ÷ (present + absent), marked sessions only; a gap of {ATT_GAP}+ points means rolls were missed.
+              {tab !== "vet" && " HSP/PSP: Sessions 1–3 only; Late and Excursion count as present; public holidays are left out; each student counts from the later of their start date and the class's first marked day."}
+              {vetPreview && (vetNoSched
+                ? " VET: the portal sent no timetable figures for this period, so VET attendance rates are blank; marked rates only."
+                : " *VET attendance rates come from the portal's timetable figures, a preview not yet in its documentation — confirm with the attendance team before relying on them. VET marked rates count only Present and Absent records (voided excursions are excluded). Attendance recorded before a trainer handover stays under the original trainer's name.")}
+              {` Colours: ${ATT_GOOD}%+ green, ${ATT_WARN}–${ATT_GOOD}% amber, below ${ATT_WARN}% red.`}
             </div>
           </div>
         )}
